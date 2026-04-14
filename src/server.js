@@ -5,6 +5,7 @@ import authRouter from './routes/auth.js';
 import paymentRouter from './routes/payment.js';
 import transcribeRouter from './routes/transcribe.js';
 import downloadRouter from './routes/download.js';
+import translateRouter from './routes/translate.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync } from 'fs';
@@ -27,6 +28,7 @@ app.use('/api/auth', authRouter);
 app.use('/api/payment', paymentRouter);
 app.use('/api/transcribe', transcribeRouter);
 app.use('/api/download', downloadRouter);
+app.use('/api/translate', translateRouter);
 
 // Static files (production)
 if (existsSync(distPath)) {

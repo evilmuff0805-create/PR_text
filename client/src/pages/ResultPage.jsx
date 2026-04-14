@@ -14,6 +14,11 @@ export default function ResultPage() {
   const [editedText, setEditedText] = useState(text);
   const [downloading, setDownloading] = useState(false);
 
+  // 영어 번역 상태
+  const [showTranslation, setShowTranslation] = useState(false);
+  const [translatedSegments, setTranslatedSegments] = useState(null);
+  const [translating, setTranslating] = useState(false);
+
   // ASS 설정 패널 표시 여부
   const [showAssPanel, setShowAssPanel] = useState(false);
 
@@ -92,6 +97,51 @@ export default function ResultPage() {
     } finally {
       setDownloading(false);
     }
+  }
+
+  async function handleToggleTranslation() {
+    if (showTranslation) {
+      setShowTranslation(false);
+      return;
+    }
+    setShowTranslation(true);
+    if (translatedSegments) return; // 캐시 히트
+    setTranslating(true);
+    try {
+      const token = localStorage.getItem('token');
+      const res = await fetch('/api/translate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ segments }),
+      });
+      if (!res.ok) throw new Error('번역 요청 실패');
+      const data = await res.json();
+      setTranslatedSegments(data.translatedSegments);
+    } catch (err) {
+      alert(err.message);
+      setShowTranslation(false);
+    } finally {
+      setTranslating(false);
+    }
+  }
+
+  function handleTranslationTxtDownload() {
+    if (!translatedSegments) return;
+    const lines = translatedSegments
+      .flatMap(s => [s.text, s.translatedText])
+      .join('\n');
+    const blob = new Blob([lines], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'translation.txt';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   }
 
   function handleAssDownload() {
@@ -174,6 +224,68 @@ export default function ResultPage() {
             boxSizing: 'border-box',
           }}
         />
+      </div>
+
+      {/* 영어 번역 토글 */}
+      <div style={{ marginBottom: '24px' }}>
+        <button
+          onClick={handleToggleTranslation}
+          disabled={translating}
+          style={{
+            background: showTranslation ? 'linear-gradient(135deg, #39FF14, #00F5FF)' : 'var(--bg-tertiary)',
+            border: '1px solid var(--border-color)',
+            color: showTranslation ? '#000' : 'var(--text-primary)',
+            padding: '10px 24px',
+            borderRadius: 'var(--border-radius)',
+            fontFamily: 'var(--font-family)',
+            fontWeight: 600,
+            fontSize: '0.95rem',
+            cursor: translating ? 'not-allowed' : 'pointer',
+            opacity: translating ? 0.6 : 1,
+            transition: 'all 0.2s',
+          }}
+        >
+          {translating ? '번역 중...' : '🌐 영어 번역'}
+        </button>
+
+        {showTranslation && translatedSegments && (
+          <div style={{
+            marginTop: '16px',
+            background: 'var(--bg-tertiary)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 'var(--border-radius)',
+            padding: '16px',
+            maxHeight: '360px',
+            overflowY: 'auto',
+          }}>
+            {translatedSegments.map((seg, idx) => (
+              <div key={idx} style={{ marginBottom: '10px', lineHeight: '1.5' }}>
+                <div style={{ color: '#FFFFFF', fontSize: '0.95rem' }}>{seg.text}</div>
+                <div style={{ color: '#4ADE80', fontSize: '0.9rem', paddingLeft: '12px' }}>{seg.translatedText}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {showTranslation && translatedSegments && (
+          <button
+            onClick={handleTranslationTxtDownload}
+            style={{
+              marginTop: '12px',
+              background: 'var(--bg-tertiary)',
+              border: '1px solid #4ADE80',
+              color: '#4ADE80',
+              padding: '8px 20px',
+              borderRadius: 'var(--border-radius)',
+              fontFamily: 'var(--font-family)',
+              fontWeight: 600,
+              fontSize: '0.875rem',
+              cursor: 'pointer',
+            }}
+          >
+            번역 TXT 다운로드
+          </button>
+        )}
       </div>
 
       {/* 다운로드 버튼 */}

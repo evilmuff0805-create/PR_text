@@ -21,6 +21,25 @@ export async function correctText(text, language) {
   }
 }
 
+export async function translateToEnglish(text) {
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o',
+      temperature: 0.3,
+      messages: [
+        {
+          role: 'system',
+          content: `당신은 전문 번역가입니다. 입력은 여러 줄의 한국어 자막입니다. 각 줄을 독립적으로 자연스러운 영어로 번역하세요. 반드시 입력과 동일한 줄 수를 유지하세요. 줄을 합치거나 분리하지 마세요. 번역된 텍스트만 출력하세요.`,
+        },
+        { role: 'user', content: text },
+      ],
+    });
+    return response.choices[0].message.content.trim();
+  } catch (err) {
+    throw new Error(`GPT API 오류: ${err.message}`);
+  }
+}
+
 export async function translateToKorean(text, sourceLanguage) {
   try {
     const response = await openai.chat.completions.create({
