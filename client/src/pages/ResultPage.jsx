@@ -5,11 +5,21 @@ export default function ResultPage() {
   const { state } = useLocation();
   const navigate = useNavigate();
 
+  // location.state가 있으면 sessionStorage에 저장, 없으면 복원
   useEffect(() => {
-    if (!state) navigate('/');
+    if (state) {
+      sessionStorage.setItem('lastResult', JSON.stringify(state));
+    } else {
+      const saved = sessionStorage.getItem('lastResult');
+      if (!saved) navigate('/');
+    }
   }, [state, navigate]);
 
-  const { text = '', segments = [], language = '' } = state || {};
+  const resolved = state || (() => {
+    try { return JSON.parse(sessionStorage.getItem('lastResult')); } catch { return null; }
+  })();
+
+  const { text = '', segments = [], language = '' } = resolved || {};
 
   const [editedText, setEditedText] = useState(text);
   const [downloading, setDownloading] = useState(false);
@@ -153,7 +163,7 @@ export default function ResultPage() {
     });
   }
 
-  if (!state) return null;
+  if (!resolved) return null;
 
   const selectStyle = {
     padding: '8px 12px',
@@ -245,7 +255,7 @@ export default function ResultPage() {
             transition: 'all 0.2s',
           }}
         >
-          {translating ? '번역 중...' : '🌐 영어 번역'}
+          {translating ? `번역 중... (약 ${Math.max(Math.ceil(segments.length / 30) * 5, 5)}초 소요 예상)` : '🌐 영어 번역'}
         </button>
 
         {showTranslation && translatedSegments && (
@@ -394,6 +404,9 @@ export default function ResultPage() {
                   <option key={f.value} value={f.value}>{f.label}</option>
                 ))}
               </select>
+              <p style={{ fontSize: '0.75rem', color: '#999', marginTop: '6px' }}>
+                선택한 폰트가 영상 재생기에 설치되어 있어야 정상 표시됩니다.
+              </p>
             </div>
 
             {/* 색상 */}

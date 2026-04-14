@@ -46,7 +46,7 @@ export default function AuthModal({ isOpen, onClose }) {
         onClose();
       } else if (mode === 'signup') {
         await signup(email, password);
-        setSuccess('인증 메일이 발송되었습니다! 메일함을 확인해주세요. (스팸함도 확인)');
+        setSuccess('인증 메일이 발송되었습니다! 메일함을 확인해주세요.');
       } else if (mode === 'reset') {
         const res = await fetch('/api/auth/reset-password', {
           method: 'POST',
@@ -122,7 +122,12 @@ export default function AuthModal({ isOpen, onClose }) {
         )}
 
         {error && <p style={{ color: '#ff4444', fontSize: '0.85rem', marginBottom: '12px' }}>{error}</p>}
-        {success && <p style={{ color: '#22c55e', fontSize: '0.85rem', marginBottom: '12px' }}>{success}</p>}
+        {success && (
+          <div style={{ marginBottom: '12px' }}>
+            <p style={{ color: '#22c55e', fontSize: '0.85rem', marginBottom: '4px' }}>{success}</p>
+            <p style={{ color: '#999', fontSize: '0.85rem' }}>이메일이 도착하지 않으면 스팸함을 확인해주세요.</p>
+          </div>
+        )}
 
         {mode === 'reset' && <div style={{ marginBottom: '16px' }} />}
 

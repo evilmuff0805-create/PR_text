@@ -18,30 +18,38 @@ router.post('/', authMiddleware, async (req, res) => {
 
     for (let i = 0; i < segments.length; i += CHUNK_SIZE) {
       const chunk = segments.slice(i, i + CHUNK_SIZE);
-      const allText = chunk.map(s => s.text).join('\n');
+      // 1-based 번호를 붙여서 전송: "1: 텍스트\n2: 텍스트\n..."
+      const numberedText = chunk.map((s, j) => `${j + 1}: ${s.text}`).join('\n');
       let translated;
       try {
-        translated = await translateToEnglish(allText);
+        translated = await translateToEnglish(numberedText);
       } catch (err) {
         console.error('[translate chunk]', i, err.message);
-        // 실패 시 원본 텍스트 유지
         for (const seg of chunk) {
-          translatedSegments.push({ ...seg, translatedText: seg.text });
+          translatedSegments.push({ ...seg, translatedText: '(번역 없음)' });
         }
         continue;
       }
 
-      const lines = translated.split('\n');
-      if (lines.length !== chunk.length) {
-        console.warn(`[translate chunk ${i}] 줄 수 불일치: 원본 ${chunk.length}줄, GPT ${lines.length}줄 → 원본 유지`);
-        for (const seg of chunk) {
-          translatedSegments.push({ ...seg, translatedText: seg.text });
+      // 번호 기준으로 파싱: "1: translation text" → { 1: 'translation text', ... }
+      const translationMap = {};
+      for (const line of translated.split('\n')) {
+        const match = line.match(/^(\d+):\s*(.+)/);
+        if (match) {
+          translationMap[parseInt(match[1], 10)] = match[2].trim();
         }
-        continue;
       }
 
       for (let j = 0; j < chunk.length; j++) {
-        translatedSegments.push({ ...chunk[j], translatedText: (lines[j] || chunk[j].text).trim() });
+        translatedSegments.push({
+          ...chunk[j],
+          translatedText: translationMap[j + 1] || '(번역 없음)',
+        });
+      }
+
+      const matched = chunk.filter((_, j) => translationMap[j + 1]).length;
+      if (matched < chunk.length) {
+        console.warn(`[translate chunk ${i}] 번호 매칭: ${matched}/${chunk.length}개 성공`);
       }
     }
 

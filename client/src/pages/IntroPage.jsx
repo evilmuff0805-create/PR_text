@@ -1,4 +1,10 @@
+import { useEffect } from 'react';
+
 export default function IntroPage() {
+  useEffect(() => {
+    localStorage.setItem('visited', 'true');
+  }, []);
+
   return (
     <div>
       <h2 className="gradient-text" style={{ fontSize: '1.8rem', marginBottom: '24px' }}>

@@ -69,6 +69,12 @@ function removeCommas(text) {
 router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: '오디오 파일이 필요합니다.' });
+
+    // 1단계: 변환 전 최소 크레딧 검증
+    if (req.user.credits < 1) {
+      return res.status(402).json({ error: '크레딧이 부족합니다. 충전 후 이용해주세요.' });
+    }
+
     const { buffer, originalname } = req.file;
     const language = req.body.language || null;
     const result = await transcribe(buffer, originalname, language);
@@ -79,8 +85,23 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
     const audioMinutes = Math.ceil(totalSeconds / 60);
     const creditsNeeded = Math.max(audioMinutes, 1);
 
-    // 크레딧 부족 체크
-    if (req.user.credits < creditsNeeded) {
+    // 2단계: Atomic 크레딧 차감 (race condition 방지)
+    // Supabase RPC 함수 deduct_credits 호출:
+    //   UPDATE profiles SET credits = credits - p_credits, updated_at = now()
+    //   WHERE id = p_user_id AND credits >= p_credits
+    //   RETURNING credits
+    // 크레딧 부족 또는 동시 요청으로 조건 불충족 시 null 반환
+    const { data: deducted, error: deductErr } = await supabaseAdmin.rpc('deduct_credits', {
+      p_user_id: req.user.id,
+      p_credits: creditsNeeded,
+    });
+
+    if (deductErr) {
+      console.error(`[transcribe] 크레딧 차감 DB 오류 — user_id: ${req.user.id}, creditsNeeded: ${creditsNeeded}`, deductErr.message);
+      return res.status(500).json({ error: '크레딧 처리 중 오류가 발생했습니다.' });
+    }
+
+    if (deducted === null || deducted === undefined) {
       return res.status(402).json({
         error: `크레딧이 부족합니다. 필요: ${creditsNeeded}, 보유: ${req.user.credits}`,
         creditsNeeded,
@@ -88,11 +109,7 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
       });
     }
 
-    // 크레딧 차감 및 프로필 업데이트
-    const newCredits = req.user.credits - creditsNeeded;
-    await supabaseAdmin.from('profiles')
-      .update({ credits: newCredits, updated_at: new Date().toISOString() })
-      .eq('id', req.user.id);
+    const newCredits = deducted;
 
     // 사용 로그 기록
     await supabaseAdmin.from('usage_logs').insert({
@@ -134,6 +151,7 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
       language: result.language,
       segments_count: processedSegments.length,
       text_preview: processedText.slice(0, 200),
+      segments: processedSegments,
     }).then(({ error }) => {
       if (error) console.error('[transcription_logs] 기록 실패:', error.message);
     });

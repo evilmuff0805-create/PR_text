@@ -91,6 +91,7 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
               <p style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                 {user ? user.credits : 0}
               </p>
+              <p style={{ fontSize: '0.75rem', color: '#999' }}>(1크레딧 = 1분)</p>
             </div>
           </div>
           {user && (

@@ -100,7 +100,7 @@ router.get('/me', authMiddleware, async (req, res) => {
 
   const { data: transcriptionLogs, error: transcriptionLogsError } = await supabaseAdmin
     .from('transcription_logs')
-    .select('*')
+    .select('id, user_id, filename, duration_seconds, language, segments_count, text_preview, created_at')
     .eq('user_id', id)
     .order('created_at', { ascending: false })
     .limit(20);
@@ -110,6 +110,73 @@ router.get('/me', authMiddleware, async (req, res) => {
   }
 
   res.json({ id, email, credits, plan, usageLogs: usageLogs || [], transcriptionLogs: transcriptionLogs || [] });
+});
+
+// 사용 내역 페이지네이션
+// type=all(기본): 두 테이블 모두 반환 (초기 로드)
+// type=usage: usage_logs만 반환
+// type=transcription: transcription_logs만 반환
+router.get('/usage-logs', authMiddleware, async (req, res) => {
+  const { id } = req.user;
+  const page = Math.max(parseInt(req.query.page) || 1, 1);
+  const limit = Math.min(parseInt(req.query.limit) || 20, 100);
+  const offset = (page - 1) * limit;
+  const type = req.query.type || 'all';
+
+  try {
+    let usageLogs = null, usageTotal = null;
+    let transcriptionLogs = null, transcriptionTotal = null;
+
+    if (type === 'all' || type === 'usage') {
+      const [{ data: logs, error: logsErr }, { count, error: countErr }] = await Promise.all([
+        supabaseAdmin.from('usage_logs').select('*').eq('user_id', id)
+          .order('created_at', { ascending: false }).range(offset, offset + limit - 1),
+        supabaseAdmin.from('usage_logs').select('*', { count: 'exact', head: true }).eq('user_id', id),
+      ]);
+      if (logsErr) throw new Error(logsErr.message);
+      if (countErr) throw new Error(countErr.message);
+      usageLogs = logs || [];
+      usageTotal = count || 0;
+    }
+
+    if (type === 'all' || type === 'transcription') {
+      const [{ data: logs, error: logsErr }, { count, error: countErr }] = await Promise.all([
+        supabaseAdmin.from('transcription_logs')
+          .select('id, user_id, filename, duration_seconds, language, segments_count, text_preview, created_at')
+          .eq('user_id', id)
+          .order('created_at', { ascending: false }).range(offset, offset + limit - 1),
+        supabaseAdmin.from('transcription_logs').select('*', { count: 'exact', head: true }).eq('user_id', id),
+      ]);
+      if (logsErr) throw new Error(logsErr.message);
+      if (countErr) throw new Error(countErr.message);
+      transcriptionLogs = logs || [];
+      transcriptionTotal = count || 0;
+    }
+
+    res.json({ usageLogs, usageTotal, transcriptionLogs, transcriptionTotal });
+  } catch (err) {
+    console.error('[/usage-logs]', err.message);
+    res.status(500).json({ error: '사용 내역을 불러오지 못했습니다.' });
+  }
+});
+
+// 특정 변환 기록 상세 조회 (segments 포함)
+router.get('/transcription/:id', authMiddleware, async (req, res) => {
+  const { id: logId } = req.params;
+  const { id: userId } = req.user;
+
+  const { data, error } = await supabaseAdmin
+    .from('transcription_logs')
+    .select('*')
+    .eq('id', logId)
+    .eq('user_id', userId)
+    .single();
+
+  if (error || !data) {
+    return res.status(404).json({ error: '변환 기록을 찾을 수 없습니다.' });
+  }
+
+  res.json(data);
 });
 
 export default router;

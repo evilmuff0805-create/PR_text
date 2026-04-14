@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import AuthModal from '../components/AuthModal.jsx';
@@ -103,6 +103,17 @@ export default function HomePage() {
 
   const isLoading = status !== 'idle' && status !== 'error';
 
+  // 변환 진행 중 페이지 이탈 경고
+  useEffect(() => {
+    if (!isLoading) return;
+    const handleBeforeUnload = (e) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [isLoading]);
+
   return (
     <div style={{ maxWidth: '640px', margin: '0 auto', padding: '40px 20px' }}>
       <h1 className="gradient-text" style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '8px' }}>
@@ -171,7 +182,10 @@ export default function HomePage() {
               오디오 파일을 드래그하거나 클릭하여 업로드
             </p>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-              mp3, wav, m4a, webm, mp4 · 최대 150MB
+              mp3, wav, m4a, webm, mp4 · 최대 150MB (영상 파일은 오디오만 추출)
+            </p>
+            <p style={{ color: '#999', fontSize: '0.8rem', marginTop: '6px' }}>
+              1크레딧으로 약 1분 분량의 음성을 변환할 수 있습니다
             </p>
           </div>
         )}
@@ -229,9 +243,28 @@ export default function HomePage() {
 
       {/* 에러 메시지 */}
       {status === 'error' && (
-        <p style={{ marginTop: '16px', textAlign: 'center', color: '#FF4444', fontSize: '0.9rem' }}>
-          {error}
-        </p>
+        <div style={{ marginTop: '16px', textAlign: 'center' }}>
+          <p style={{ color: '#FF4444', fontSize: '0.9rem' }}>{error}</p>
+          {error.includes('크레딧') && (
+            <button
+              onClick={() => navigate('/payment')}
+              style={{
+                marginTop: '12px',
+                background: 'linear-gradient(135deg, #A855F7, #6366F1)',
+                color: '#FFFFFF',
+                border: 'none',
+                borderRadius: 'var(--border-radius)',
+                padding: '10px 24px',
+                fontFamily: 'var(--font-family)',
+                fontWeight: 600,
+                fontSize: '0.95rem',
+                cursor: 'pointer',
+              }}
+            >
+              💎 크레딧 충전하기
+            </button>
+          )}
+        </div>
       )}
       <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
     </div>
