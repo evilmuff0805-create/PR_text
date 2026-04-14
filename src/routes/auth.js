@@ -98,7 +98,18 @@ router.get('/me', authMiddleware, async (req, res) => {
     console.error('[/me] usage_logs 조회 실패:', logsError.message);
   }
 
-  res.json({ id, email, credits, plan, usageLogs: usageLogs || [] });
+  const { data: transcriptionLogs, error: transcriptionLogsError } = await supabaseAdmin
+    .from('transcription_logs')
+    .select('*')
+    .eq('user_id', id)
+    .order('created_at', { ascending: false })
+    .limit(20);
+
+  if (transcriptionLogsError) {
+    console.error('[/me] transcription_logs 조회 실패:', transcriptionLogsError.message);
+  }
+
+  res.json({ id, email, credits, plan, usageLogs: usageLogs || [], transcriptionLogs: transcriptionLogs || [] });
 });
 
 export default router;

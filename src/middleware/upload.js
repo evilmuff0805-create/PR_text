@@ -22,6 +22,8 @@ const upload = multer({
     fileSize: 150 * 1024 * 1024,
   },
   fileFilter(req, file, cb) {
+    // multer는 latin1으로 파일명을 읽으므로 한글 파일명 복원
+    file.originalname = Buffer.from(file.originalname, 'latin1').toString('utf8');
     const extOk = ALLOWED_EXTENSIONS.test(file.originalname);
     const mimeOk = ALLOWED_MIMETYPES.includes(file.mimetype);
     if (extOk || mimeOk) {

@@ -126,6 +126,18 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
     // 5번: 줄바꿈으로 텍스트 결합 (기존: join(' ') → 변경: join('\n'))
     const processedText = processedSegments.map(s => s.text).join('\n');
 
+    // 변환 이력 기록 (실패해도 응답에 영향 없음)
+    supabaseAdmin.from('transcription_logs').insert({
+      user_id: req.user.id,
+      filename: originalname,
+      duration_seconds: totalSeconds,
+      language: result.language,
+      segments_count: processedSegments.length,
+      text_preview: processedText.slice(0, 200),
+    }).then(({ error }) => {
+      if (error) console.error('[transcription_logs] 기록 실패:', error.message);
+    });
+
     res.json({
       text: processedText,
       segments: processedSegments,
