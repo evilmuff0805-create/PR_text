@@ -75,11 +75,36 @@ export default function Layout({ children }) {
         flex: 1,
         marginLeft: isMobile ? 0 : '220px',
         paddingTop: '52px',
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: '100vh',
       }}>
         {!isMobile && <Header />}
-        <main style={{ padding: isMobile ? '20px 16px' : '32px 40px', maxWidth: '1000px' }}>
+        <main style={{ padding: isMobile ? '20px 16px' : '32px 40px', maxWidth: '1000px', flex: 1 }}>
           {children}
         </main>
+        <footer style={{
+          borderTop: '1px solid var(--border-color)',
+          padding: '24px',
+          textAlign: 'center',
+          fontSize: '0.75rem',
+          color: 'var(--text-muted, #666)',
+          display: 'flex',
+          flexWrap: 'wrap',
+          justifyContent: 'center',
+          gap: '6px 12px',
+          lineHeight: 1.8,
+        }}>
+          <span>상호명: 코드밋(CodeMeet)</span>
+          <span style={{ color: 'var(--border-color, #333)' }}>|</span>
+          <span>사업자등록번호: 470-32-01835</span>
+          <span style={{ color: 'var(--border-color, #333)' }}>|</span>
+          <span>대표자: 석예림</span>
+          <span style={{ color: 'var(--border-color, #333)' }}>|</span>
+          <span>사업장 주소: 경기도 김포시 김포한강9로12번길 50(구래동)</span>
+          <span style={{ color: 'var(--border-color, #333)' }}>|</span>
+          <span>전화번호: 010-4901-1421</span>
+        </footer>
       </div>
     </div>
   );
