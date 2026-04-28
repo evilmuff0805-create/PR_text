@@ -77,6 +77,19 @@ router.post('/reset-password', async (req, res) => {
   res.json({ message: '비밀번호 재설정 링크가 이메일로 발송되었습니다.' });
 });
 
+// 비밀번호 변경 (로그인 상태)
+router.put('/password', authMiddleware, async (req, res) => {
+  const { newPassword } = req.body;
+  if (!newPassword || newPassword.length < 6) {
+    return res.status(400).json({ error: '비밀번호는 6자 이상이어야 합니다.' });
+  }
+  const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, {
+    password: newPassword,
+  });
+  if (error) return res.status(400).json({ error: error.message });
+  res.json({ message: '비밀번호가 변경되었습니다.' });
+});
+
 // 로그아웃
 router.post('/logout', authMiddleware, async (req, res) => {
   await supabase.auth.signOut();

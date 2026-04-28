@@ -365,6 +365,74 @@ export default function UsagePage() {
           )}
         </>
       )}
+      <PasswordChangeSection token={token} />
+    </div>
+  );
+}
+
+function PasswordChangeSection({ token }) {
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [pwError, setPwError] = useState('');
+  const [pwSuccess, setPwSuccess] = useState('');
+  const [pwLoading, setPwLoading] = useState(false);
+
+  const handleChange = async () => {
+    setPwError('');
+    setPwSuccess('');
+    if (newPassword.length < 6) return setPwError('비밀번호는 6자 이상이어야 합니다.');
+    if (newPassword !== confirmPassword) return setPwError('비밀번호가 일치하지 않습니다.');
+
+    setPwLoading(true);
+    try {
+      const res = await fetch('/api/auth/password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ newPassword }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setPwSuccess('비밀번호가 변경되었습니다.');
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (err) {
+      setPwError(err.message || '비밀번호 변경에 실패했습니다.');
+    } finally {
+      setPwLoading(false);
+    }
+  };
+
+  const inputStyle = {
+    width: '100%', padding: '10px 12px', boxSizing: 'border-box',
+    background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)',
+    borderRadius: '8px', color: 'var(--text-primary)', fontSize: '0.9rem',
+  };
+
+  return (
+    <div className="card" style={{ marginTop: '32px', maxWidth: '420px' }}>
+      <h3 style={{ fontSize: '1rem', marginBottom: '16px', color: 'var(--text-primary)' }}>계정 설정</h3>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <input
+          type="password" placeholder="새 비밀번호 (6자 이상)"
+          value={newPassword} onChange={e => setNewPassword(e.target.value)}
+          style={inputStyle}
+        />
+        <input
+          type="password" placeholder="새 비밀번호 확인"
+          value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)}
+          style={inputStyle}
+        />
+        {pwError && <p style={{ color: '#FF4444', fontSize: '0.85rem', margin: 0 }}>{pwError}</p>}
+        {pwSuccess && <p style={{ color: '#22c55e', fontSize: '0.85rem', margin: 0 }}>{pwSuccess}</p>}
+        <button
+          className="gradient-btn"
+          onClick={handleChange}
+          disabled={pwLoading}
+          style={{ padding: '10px', opacity: pwLoading ? 0.6 : 1 }}
+        >
+          {pwLoading ? '변경 중...' : '비밀번호 변경'}
+        </button>
+      </div>
     </div>
   );
 }

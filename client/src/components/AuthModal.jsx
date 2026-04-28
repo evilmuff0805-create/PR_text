@@ -47,6 +47,15 @@ export default function AuthModal({ isOpen, onClose }) {
       } else if (mode === 'signup') {
         await signup(email, password);
         setSuccess('인증 메일이 발송되었습니다! 메일함을 확인해주세요.');
+        let count = 3;
+        const timer = setInterval(() => {
+          count -= 1;
+          if (count <= 0) {
+            clearInterval(timer);
+            setMode('login');
+            setSuccess('이메일 인증이 완료되면 로그인할 수 있습니다.');
+          }
+        }, 1000);
       } else if (mode === 'reset') {
         const res = await fetch('/api/auth/reset-password', {
           method: 'POST',
