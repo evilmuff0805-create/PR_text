@@ -182,7 +182,7 @@ export default function HomePage() {
               오디오 파일을 드래그하거나 클릭하여 업로드
             </p>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-              mp3, wav, m4a, webm, mp4 · 최대 150MB (영상 파일은 오디오만 추출)
+              mp3, wav, m4a, webm, mp4 · 최대 150MB · 대용량 파일은 자동 압축 후 변환 (영상 파일은 오디오만 추출)
             </p>
             <p style={{ color: '#999', fontSize: '0.8rem', marginTop: '6px' }}>
               1크레딧으로 약 1분 분량의 음성을 변환할 수 있습니다
