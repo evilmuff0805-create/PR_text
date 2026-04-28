@@ -12,6 +12,9 @@ export default function IntroPage() {
       </h2>
       <div className="card" style={{ marginBottom: '20px' }}>
         <h3 style={{ fontSize: '1.1rem', marginBottom: '12px', color: 'var(--text-primary)' }}>프리뷰 자막 머신 V.1.0</h3>
+        <p style={{ color: '#39FF14', fontWeight: 700, marginBottom: '12px' }}>
+          💰 월 구독 없이 사용한 만큼만 크레딧 차감! 크레딧은 만료되지 않습니다.
+        </p>
         <p style={{ color: 'var(--text-secondary)', lineHeight: 1.8 }}>
           음성 파일을 업로드하면 자동으로 텍스트로 변환하고, 맞춤법을 교정한 뒤, SRT/TXT/ASS 자막 파일로 다운로드할 수 있는 서비스입니다. 95% 이상의 정확도를 보여주는 깔끔한 자막을 제공합니다.
         </p>
