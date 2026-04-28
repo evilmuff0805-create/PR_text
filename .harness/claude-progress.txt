@@ -5,6 +5,19 @@
 - Directory structure: already established
 - Ready for harness-driven development
 
-Current progress: 0/32 features verified (0%)
+[2026-04-28] 보안/안정성 패치 세션 (7개 수정)
+- Files changed:
+    client/src/pages/PaymentFailPage.jsx  — 깨진 파일 완전 교체 (결제 실패 UI: 오류코드/메시지 표시, 재시도 버튼)
+    client/src/App.jsx                    — /payment/fail 라우트 추가
+    src/routes/payment.js                 — orderId에 planId 포함 (order_${planId}_...), confirm에서 orderId 파싱 + 구버전 fallback
+    src/server.js                         — CORS origin 제한 (APP_URL + localhost), 서버 시작 시 필수 환경변수 6개 검증
+    src/services/gpt.js                   — withRetry 헬퍼 추가, correctText/translateToEnglish/translateToKorean 재시도 2회
+    src/services/whisper.js               — FFmpeg execFileAsync에 timeout: 120_000 (2분) 추가
+    client/src/pages/PaymentSuccessPage.jsx — 결제 성공 후 5초 카운트다운 자동 리다이렉트 추가
 
-Next: Begin verifying high-priority features starting from Feature #1 (음성 파일 업로드 → Whisper 변환)
+- Status: ✅ 7개 수정 완료
+- Pending: P1-2 (usage_logs에 order_id 컬럼 추가 — Supabase 대시보드에서 직접 추가 필요)
+
+Current progress: 7/32 features patched (보안/안정성 기준)
+
+Next: Supabase usage_logs 테이블에 order_id 컬럼 추가 후 P1-2 중복 결제 방지 구현

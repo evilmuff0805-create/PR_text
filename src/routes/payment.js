@@ -19,7 +19,7 @@ router.post('/create', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: '유효하지 않은 플랜입니다.' });
   }
 
-  const orderId = `order_${req.user.id.slice(0, 8)}_${Date.now()}`;
+  const orderId = `order_${planId}_${req.user.id.slice(0, 8)}_${Date.now()}`;
 
   res.json({
     orderId,
@@ -35,8 +35,14 @@ router.post('/create', authMiddleware, async (req, res) => {
 router.post('/confirm', authMiddleware, async (req, res) => {
   const { paymentKey, orderId, amount } = req.body;
 
-  // orderId에서 플랜 확인
-  const planEntry = Object.entries(PLANS).find(([, p]) => p.price === amount);
+  // orderId에서 planId 파싱 (신규 포맷: order_${planId}_${userId}_${ts})
+  // 구버전 포맷(order_${userId}_${ts}) fallback: amount로 플랜 역방향 검색
+  const orderParts = orderId.split('_');
+  const parsedPlanId = orderParts.length >= 4 ? orderParts[1] : null;
+  let planEntry = parsedPlanId ? Object.entries(PLANS).find(([id]) => id === parsedPlanId) : null;
+  if (!planEntry) {
+    planEntry = Object.entries(PLANS).find(([, p]) => p.price === amount);
+  }
   if (!planEntry) {
     return res.status(400).json({ error: '결제 금액이 유효하지 않습니다.' });
   }
@@ -44,6 +50,18 @@ router.post('/confirm', authMiddleware, async (req, res) => {
   const [planId, plan] = planEntry;
 
   try {
+    // 중복 결제 방지: orderId가 이미 처리됐는지 확인
+    const { data: existing } = await supabaseAdmin
+      .from('usage_logs')
+      .select('id')
+      .eq('order_id', orderId)
+      .maybeSingle();
+
+    if (existing) {
+      console.warn(`[payment] 중복 결제 시도 — orderId: ${orderId}, user: ${req.user.email}`);
+      return res.status(400).json({ error: '이미 처리된 결제입니다.' });
+    }
+
     // 토스페이먼츠 결제 승인 API 호출
     const secretKey = process.env.TOSS_SECRET_KEY;
     const basicAuth = Buffer.from(`${secretKey}:`).toString('base64');
@@ -86,6 +104,7 @@ router.post('/confirm', authMiddleware, async (req, res) => {
         user_id: req.user.id,
         action: 'charge',
         credits_used: -plan.credits,
+        order_id: orderId,
         description: `${plan.name} 결제 (${plan.price.toLocaleString()}원)`,
       });
 

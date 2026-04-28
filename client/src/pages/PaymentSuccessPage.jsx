@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
@@ -8,6 +8,8 @@ export default function PaymentSuccessPage() {
   const { updateCredits, getToken } = useAuth();
   const [status, setStatus] = useState('processing');
   const [message, setMessage] = useState('결제 승인 중...');
+  const [countdown, setCountdown] = useState(5);
+  const timerRef = useRef(null);
 
   useEffect(() => {
     const paymentKey = searchParams.get('paymentKey');
@@ -41,6 +43,16 @@ export default function PaymentSuccessPage() {
         updateCredits(data.credits);
         setStatus('success');
         setMessage(`${data.charged} 크레딧이 충전되었습니다! (총 ${data.credits} 크레딧)`);
+
+        let count = 5;
+        timerRef.current = setInterval(() => {
+          count -= 1;
+          setCountdown(count);
+          if (count <= 0) {
+            clearInterval(timerRef.current);
+            navigate('/');
+          }
+        }, 1000);
       } catch (err) {
         setStatus('error');
         setMessage(err.message || '결제 처리 중 오류가 발생했습니다.');
@@ -48,6 +60,7 @@ export default function PaymentSuccessPage() {
     };
 
     confirm();
+    return () => clearInterval(timerRef.current);
   }, []);
 
   return (
@@ -64,8 +77,11 @@ export default function PaymentSuccessPage() {
           <>
             <p style={{ fontSize: '3rem', marginBottom: '16px' }}>✅</p>
             <h2 style={{ color: '#22c55e', marginBottom: '12px' }}>충전 완료!</h2>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>{message}</p>
-            <button className="gradient-btn" onClick={() => navigate('/')} style={{ padding: '12px 32px' }}>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>{message}</p>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '24px' }}>
+              {countdown}초 후 자동으로 이동합니다...
+            </p>
+            <button className="gradient-btn" onClick={() => { clearInterval(timerRef.current); navigate('/'); }} style={{ padding: '12px 32px' }}>
               자막 변환하러 가기
             </button>
           </>

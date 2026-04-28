@@ -26,7 +26,7 @@ async function compressAudio(buffer, originalname) {
       '-b:a', '32k',
       '-y',
       outputPath,
-    ]);
+    ], { timeout: 120_000 });
 
     const compressed = await readFile(outputPath);
     return compressed;

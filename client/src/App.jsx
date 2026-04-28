@@ -8,6 +8,7 @@ import TermsPage from './pages/TermsPage.jsx';
 import SupportPage from './pages/SupportPage.jsx';
 import PaymentPage from './pages/PaymentPage.jsx';
 import PaymentSuccessPage from './pages/PaymentSuccessPage.jsx';
+import PaymentFailPage from './pages/PaymentFailPage.jsx';
 import UsagePage from './pages/UsagePage.jsx';
 
 function HomeOrIntro() {
@@ -24,6 +25,7 @@ function App() {
         <Route path="/guide" element={<GuidePage />} />
         <Route path="/payment" element={<PaymentPage />} />
         <Route path="/payment/success" element={<PaymentSuccessPage />} />
+        <Route path="/payment/fail" element={<PaymentFailPage />} />
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/support" element={<SupportPage />} />
         <Route path="/usage" element={<UsagePage />} />

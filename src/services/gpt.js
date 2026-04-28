@@ -2,9 +2,21 @@ import OpenAI from 'openai';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
+async function withRetry(fn, retries = 2) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt === retries) throw err;
+      const delay = 1000 * (attempt + 1);
+      await new Promise(r => setTimeout(r, delay));
+    }
+  }
+}
+
 export async function correctText(text, language) {
   try {
-    const response = await openai.chat.completions.create({
+    const response = await withRetry(() => openai.chat.completions.create({
       model: 'gpt-4o',
       temperature: 0.3,
       messages: [
@@ -14,7 +26,7 @@ export async function correctText(text, language) {
         },
         { role: 'user', content: text },
       ],
-    });
+    }));
     return response.choices[0].message.content.trim();
   } catch (err) {
     throw new Error(`GPT API 오류: ${err.message}`);
@@ -23,7 +35,7 @@ export async function correctText(text, language) {
 
 export async function translateToEnglish(text) {
   try {
-    const response = await openai.chat.completions.create({
+    const response = await withRetry(() => openai.chat.completions.create({
       model: 'gpt-4o',
       temperature: 0.3,
       messages: [
@@ -33,7 +45,7 @@ export async function translateToEnglish(text) {
         },
         { role: 'user', content: text },
       ],
-    });
+    }));
     return response.choices[0].message.content.trim();
   } catch (err) {
     throw new Error(`GPT API 오류: ${err.message}`);
@@ -42,7 +54,7 @@ export async function translateToEnglish(text) {
 
 export async function translateToKorean(text, sourceLanguage) {
   try {
-    const response = await openai.chat.completions.create({
+    const response = await withRetry(() => openai.chat.completions.create({
       model: 'gpt-4o',
       temperature: 0.3,
       messages: [
@@ -52,7 +64,7 @@ export async function translateToKorean(text, sourceLanguage) {
         },
         { role: 'user', content: text },
       ],
-    });
+    }));
     return response.choices[0].message.content.trim();
   } catch (err) {
     throw new Error(`GPT API 오류: ${err.message}`);

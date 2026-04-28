@@ -14,10 +14,36 @@ import { existsSync } from 'fs';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const distPath = join(__dirname, '../dist');
 
+const REQUIRED_ENV = [
+  'OPENAI_API_KEY',
+  'SUPABASE_URL',
+  'SUPABASE_ANON_KEY',
+  'SUPABASE_SERVICE_ROLE_KEY',
+  'TOSS_SECRET_KEY',
+  'TOSS_CLIENT_KEY',
+];
+const missingEnv = REQUIRED_ENV.filter(k => !process.env[k]);
+if (missingEnv.length > 0) {
+  console.error(`[ENV] 필수 환경변수 누락: ${missingEnv.join(', ')}`);
+  process.exit(1);
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+const allowedOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  ...(process.env.APP_URL ? [process.env.APP_URL] : []),
+];
+app.use(cors({
+  origin: (origin, cb) => {
+    // 서버 to 서버, curl 등 origin 없는 요청 허용
+    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
+    cb(new Error(`CORS: origin not allowed — ${origin}`));
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '50mb' }));
 
 // Rate limit 공통 응답
