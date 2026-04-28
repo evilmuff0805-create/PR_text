@@ -1,0 +1,390 @@
+[
+  {
+    "id": 1,
+    "category": "functional",
+    "priority": "high",
+    "description": "음성 파일 업로드 후 Whisper API로 텍스트 변환이 완료된다",
+    "steps": [
+      "홈 페이지 접속",
+      "오디오 파일 업로드",
+      "변환 시작 버튼 클릭",
+      "로딩 중 상태 표시 확인",
+      "변환 완료 후 결과 텍스트 표시 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 2,
+    "category": "functional",
+    "priority": "high",
+    "description": "GPT-4o 맞춤법 교정이 적용된 결과가 반환된다",
+    "steps": [
+      "변환 완료 후 결과 페이지 확인",
+      "원본 텍스트와 교정 텍스트 비교",
+      "교정 적용 여부 UI 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 3,
+    "category": "functional",
+    "priority": "high",
+    "description": "SRT 자막 파일 다운로드가 정상 동작한다",
+    "steps": [
+      "결과 페이지 접속",
+      "SRT 다운로드 버튼 클릭",
+      "파일 다운로드 확인",
+      "SRT 포맷 유효성 확인 (타임스탬프, 텍스트)"
+    ],
+    "passes": false
+  },
+  {
+    "id": 4,
+    "category": "functional",
+    "priority": "high",
+    "description": "TXT 자막 파일 다운로드가 정상 동작한다",
+    "steps": [
+      "결과 페이지에서 TXT 다운로드 버튼 클릭",
+      "파일 다운로드 확인",
+      "내용 유효성 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 5,
+    "category": "functional",
+    "priority": "high",
+    "description": "ASS 자막 파일 다운로드가 정상 동작한다",
+    "steps": [
+      "결과 페이지에서 ASS 다운로드 버튼 클릭",
+      "파일 다운로드 확인",
+      "ASS 포맷 헤더/이벤트 블록 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 6,
+    "category": "functional",
+    "priority": "high",
+    "description": "토스페이먼츠 결제 위젯이 정상 로드된다",
+    "steps": [
+      "결제 페이지 접속",
+      "토스페이먼츠 위젯 렌더링 확인",
+      "금액 표시 확인",
+      "결제 버튼 활성화 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 7,
+    "category": "functional",
+    "priority": "high",
+    "description": "결제 성공 후 크레딧이 충전된다",
+    "steps": [
+      "결제 성공 페이지 도달",
+      "크레딧 잔액 증가 확인",
+      "성공 메시지 표시 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 8,
+    "category": "functional",
+    "priority": "high",
+    "description": "결제 실패 시 실패 페이지가 표시된다",
+    "steps": [
+      "결제 실패 시뮬레이션",
+      "실패 페이지 리디렉션 확인",
+      "에러 메시지 표시 확인",
+      "재시도 버튼 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 9,
+    "category": "functional",
+    "priority": "high",
+    "description": "사용 내역 페이지에서 변환 이력이 표시된다",
+    "steps": [
+      "사용 내역 페이지 접속",
+      "변환 이력 목록 표시 확인",
+      "날짜, 파일명, 크레딧 소모량 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 10,
+    "category": "functional",
+    "priority": "high",
+    "description": "변환 이력 개별 다운로드가 동작한다",
+    "steps": [
+      "사용 내역 페이지 접속",
+      "이전 변환 항목 선택",
+      "다운로드 버튼 클릭",
+      "파일 다운로드 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 11,
+    "category": "functional",
+    "priority": "medium",
+    "description": "영어 음성 → 영어 텍스트 변환이 정상 동작한다",
+    "steps": [
+      "영어 오디오 파일 업로드",
+      "언어 자동 감지 또는 영어 수동 선택",
+      "영어 텍스트 결과 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 12,
+    "category": "functional",
+    "priority": "medium",
+    "description": "일본어 음성 → 한국어 번역 변환이 정상 동작한다",
+    "steps": [
+      "일본어 오디오 파일 업로드",
+      "한국어 번역 결과 확인",
+      "원문 일본어와 번역 한국어 비교"
+    ],
+    "passes": false
+  },
+  {
+    "id": 13,
+    "category": "functional",
+    "priority": "medium",
+    "description": "중국어 음성 → 한국어 번역 변환이 정상 동작한다",
+    "steps": [
+      "중국어 오디오 파일 업로드",
+      "한국어 번역 결과 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 14,
+    "category": "functional",
+    "priority": "medium",
+    "description": "영어 번역 토글이 동작한다 (한국어 결과 → 영어 번역 표시)",
+    "steps": [
+      "한국어 변환 결과 페이지 접속",
+      "영어 번역 토글 버튼 클릭",
+      "영어 번역 텍스트 표시 확인",
+      "줄 대 줄 대응 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 15,
+    "category": "functional",
+    "priority": "medium",
+    "description": "결과 텍스트 직접 편집이 가능하다",
+    "steps": [
+      "결과 페이지에서 텍스트 클릭",
+      "편집 모드 진입 확인",
+      "텍스트 수정",
+      "저장 또는 포커스 아웃 후 수정 반영 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 16,
+    "category": "functional",
+    "priority": "medium",
+    "description": "hanspell 폴백 맞춤법 교정이 동작한다",
+    "steps": [
+      "GPT-4o 교정 실패 시나리오 시뮬레이션",
+      "hanspell 폴백 활성화 확인",
+      "교정 결과 반환 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 17,
+    "category": "functional",
+    "priority": "medium",
+    "description": "150MB 초과 파일 업로드 시 에러 메시지가 표시된다",
+    "steps": [
+      "150MB 초과 파일 업로드 시도",
+      "에러 메시지 표시 확인",
+      "업로드 차단 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 18,
+    "category": "functional",
+    "priority": "medium",
+    "description": "크레딧 부족 시 변환이 차단되고 안내 메시지가 표시된다",
+    "steps": [
+      "크레딧 0인 상태에서 변환 시도",
+      "차단 메시지 확인",
+      "결제 페이지 유도 버튼 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 19,
+    "category": "ui",
+    "priority": "high",
+    "description": "홈 페이지가 다크 UI 디자인으로 정상 렌더링된다",
+    "steps": [
+      "홈 페이지 접속",
+      "배경색 #0A0A0F 확인",
+      "그라데이션 텍스트 확인",
+      "카드 컴포넌트 스타일 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 20,
+    "category": "ui",
+    "priority": "high",
+    "description": "인트로 페이지가 올바르게 표시된다",
+    "steps": [
+      "인트로 페이지 접속",
+      "프리뷰 자막 머신 V.1.0 제목 확인",
+      "SRT 강조 박스 표시 확인 (보라색 반투명)",
+      "지원 기능 목록 표시 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 21,
+    "category": "ui",
+    "priority": "medium",
+    "description": "모바일 반응형 UI가 정상 동작한다",
+    "steps": [
+      "모바일 뷰포트(375px)로 전환",
+      "레이아웃 깨짐 없음 확인",
+      "버튼/입력 필드 터치 영역 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 22,
+    "category": "ui",
+    "priority": "medium",
+    "description": "로딩 상태 UI가 변환 중에 표시된다",
+    "steps": [
+      "파일 업로드 후 변환 시작",
+      "로딩 스피너 또는 진행 표시 확인",
+      "완료 후 로딩 UI 사라짐 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 23,
+    "category": "ui",
+    "priority": "medium",
+    "description": "푸터에 사업자 정보가 표시된다",
+    "steps": [
+      "임의 페이지 접속",
+      "푸터 영역 확인",
+      "사업자 정보 텍스트 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 24,
+    "category": "ui",
+    "priority": "low",
+    "description": "가이드 페이지가 올바르게 표시된다",
+    "steps": [
+      "가이드 페이지 접속",
+      "사용법 설명 내용 확인",
+      "이미지/아이콘 렌더링 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 25,
+    "category": "ui",
+    "priority": "low",
+    "description": "지원/문의 페이지가 올바르게 표시된다",
+    "steps": [
+      "지원 페이지 접속",
+      "문의 방법 안내 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 26,
+    "category": "ui",
+    "priority": "low",
+    "description": "이용약관 페이지가 올바르게 표시된다",
+    "steps": [
+      "이용약관 페이지 접속",
+      "약관 내용 표시 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 27,
+    "category": "performance",
+    "priority": "medium",
+    "description": "자막 세그먼트가 30자 초과 시 자동 분리된다",
+    "steps": [
+      "30자 초과 텍스트 세그먼트 확인",
+      "자동 분리 결과 확인",
+      "단어 중간 자르기 없음 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 28,
+    "category": "performance",
+    "priority": "medium",
+    "description": "5자 미만 짧은 세그먼트가 다음 세그먼트와 병합된다",
+    "steps": [
+      "짧은 세그먼트 포함 오디오 변환",
+      "병합 결과 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 29,
+    "category": "performance",
+    "priority": "medium",
+    "description": "한국어 종결어미 기준으로 문장이 자연스럽게 분리된다",
+    "steps": [
+      "한국어 음성 변환",
+      "~다, ~요, ~입니다 등 종결어미 기준 분리 확인",
+      "문장 흐름 자연스러움 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 30,
+    "category": "security",
+    "priority": "high",
+    "description": "API rate limit이 초과 요청에 대해 429를 반환한다",
+    "steps": [
+      "단시간 내 다수 요청 전송",
+      "429 Too Many Requests 응답 확인",
+      "일정 시간 후 요청 정상화 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 31,
+    "category": "security",
+    "priority": "high",
+    "description": "인증되지 않은 사용자는 변환 API에 접근할 수 없다",
+    "steps": [
+      "인증 없이 /api/transcribe 호출",
+      "401 또는 403 응답 확인"
+    ],
+    "passes": false
+  },
+  {
+    "id": 32,
+    "category": "security",
+    "priority": "medium",
+    "description": ".env 민감 정보가 클라이언트에 노출되지 않는다",
+    "steps": [
+      "빌드된 JS 번들 분석",
+      "API 키, 시크릿 포함 여부 확인"
+    ],
+    "passes": false
+  }
+]

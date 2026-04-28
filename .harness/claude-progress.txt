@@ -1,0 +1,10 @@
+[2026-04-28 00:00:00] Project harness initialized
+- Project: 프리뷰 자막 머신 (app-stt-v2)
+- Stack: Node.js + Express (ESM), React 18 + Vite, OpenAI Whisper + GPT-4o, 토스페이먼츠
+- Features defined: 32
+- Directory structure: already established
+- Ready for harness-driven development
+
+Current progress: 0/32 features verified (0%)
+
+Next: Begin verifying high-priority features starting from Feature #1 (음성 파일 업로드 → Whisper 변환)

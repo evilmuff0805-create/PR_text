@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(git -C \"d:/App/PR_text\" log --oneline -10)",
+      "Bash(cp \"d:/App/.harness-template/prompts/coding_agent.txt\" \"d:/App/PR_text/.harness/prompts/coding_agent.txt\")",
+      "Bash(cp \"d:/App/.harness-template/prompts/initializer.txt\" \"d:/App/PR_text/.harness/prompts/initializer.txt\")",
+      "Bash(cp \"d:/App/.harness-template/init.sh\" \"d:/App/PR_text/.harness/init.sh\")"
     ]
   }
 }
