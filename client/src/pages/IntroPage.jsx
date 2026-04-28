@@ -21,11 +21,11 @@ export default function IntroPage() {
           border: '1px solid rgba(99, 102, 241, 0.4)',
           borderRadius: '10px',
           padding: '20px',
-          color: '#A855F7',
-          fontWeight: 600,
+          color: '#ccc',
+          fontWeight: 400,
           lineHeight: 1.8,
         }}>
-          🎬 SRT 자막 파일을 영상 편집 프로그램에 불러오면, 오디오 싱크에 맞춰 자동으로 자막이 삽입됩니다. 별도의 타이밍 작업 없이 바로 사용할 수 있습니다.
+          <span style={{ color: '#A855F7', fontWeight: 600 }}>🎬 SRT 자막 파일을 영상 편집 프로그램에 불러오면, 오디오 싱크에 맞춰 자동으로 자막이 삽입됩니다. 별도의 타이밍 작업 없이 바로 사용할 수 있습니다.</span>
         </div>
         <div style={{
           marginTop: '16px',
@@ -33,11 +33,11 @@ export default function IntroPage() {
           border: '1px solid rgba(99, 102, 241, 0.4)',
           borderRadius: '12px',
           padding: '20px',
-          color: '#A855F7',
-          fontWeight: 600,
+          color: '#ccc',
+          fontWeight: 400,
           lineHeight: 1.8,
         }}>
-          <strong>🎞️ Premiere Pro에서 내 자막 디자인 그대로 적용하기</strong>
+          <strong style={{ color: '#A855F7', fontWeight: 600 }}>🎞️ Premiere Pro에서 내 자막 디자인 그대로 적용하기</strong>
           <p style={{ fontWeight: 400, margin: '8px 0 0' }}>
             다운로드한 SRT 파일을 Premiere Pro에 불러오면 캡션 트랙이 자동 생성됩니다. Essential Graphics 패널에서 기존에 사용하던 자막 스타일(폰트, 색상, 배경)을 하나만 설정하면, 전체 자막에 일괄 적용할 수 있습니다.
           </p>
@@ -54,11 +54,11 @@ export default function IntroPage() {
           border: '1px solid rgba(99, 102, 241, 0.4)',
           borderRadius: '12px',
           padding: '20px',
-          color: '#A855F7',
-          fontWeight: 600,
+          color: '#ccc',
+          fontWeight: 400,
           lineHeight: 1.8,
         }}>
-          <strong>🎨 ASS 자막 – 스타일까지 포함된 자막 파일</strong>
+          <strong style={{ color: '#A855F7', fontWeight: 600 }}>🎨 ASS 자막 – 스타일까지 포함된 자막 파일</strong>
           <p style={{ fontWeight: 400, margin: '8px 0 0' }}>
             폰트, 크기, 색상, 외곽선, 그림자, 위치를 파일 자체에 지정하여 다운로드 즉시 스타일이 적용됩니다. 사이트 내 실시간 미리보기로 원하는 디자인을 확인한 뒤 다운로드할 수 있습니다.
           </p>
