@@ -10,6 +10,7 @@ import PaymentPage from './pages/PaymentPage.jsx';
 import PaymentSuccessPage from './pages/PaymentSuccessPage.jsx';
 import PaymentFailPage from './pages/PaymentFailPage.jsx';
 import UsagePage from './pages/UsagePage.jsx';
+import SettingsPage from './pages/SettingsPage.jsx';
 
 function HomeOrIntro() {
   return localStorage.getItem('visited') ? <HomePage /> : <Navigate to="/intro" replace />;
@@ -29,6 +30,7 @@ function App() {
         <Route path="/terms" element={<TermsPage />} />
         <Route path="/support" element={<SupportPage />} />
         <Route path="/usage" element={<UsagePage />} />
+        <Route path="/settings" element={<SettingsPage />} />
       </Routes>
     </Layout>
   );

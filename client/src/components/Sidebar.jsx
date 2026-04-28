@@ -1,10 +1,11 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useState } from 'react';
 import AuthModal from './AuthModal.jsx';
 
 export default function Sidebar({ isOpen, isMobile, onClose }) {
   const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [showAuth, setShowAuth] = useState(false);
 
   const navLinkStyle = ({ isActive }) => ({
@@ -111,6 +112,26 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
         </nav>
 
         <div style={{ marginTop: 'auto', padding: '0 12px' }}>
+          {user && (
+            <button
+              onClick={() => { navigate('/settings'); if (isMobile) onClose(); }}
+              style={{
+                width: '100%',
+                padding: '10px',
+                marginBottom: '8px',
+                background: 'var(--bg-tertiary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                color: 'var(--text-secondary)',
+                fontSize: '0.85rem',
+                fontWeight: 400,
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              ⚙️ 계정 설정
+            </button>
+          )}
           {user ? (
             <button
               onClick={logout}
