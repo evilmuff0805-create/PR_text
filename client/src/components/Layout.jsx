@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { NavLink } from 'react-router-dom';
 import Sidebar from './Sidebar.jsx';
 import Header from './Header.jsx';
 
@@ -32,49 +33,88 @@ export default function Layout({ children }) {
           top: 0,
           left: 0,
           right: 0,
-          height: '52px',
+          height: 'auto',
           background: 'var(--bg-secondary)',
           borderBottom: '1px solid var(--border-color)',
           display: 'flex',
-          alignItems: 'center',
-          padding: '0 16px',
-          gap: '12px',
+          flexDirection: 'column',
           zIndex: 150,
         }}>
-          <button
-            onClick={() => setSidebarOpen(true)}
-            aria-label="메뉴 열기"
-            style={{
-              background: 'none',
-              border: 'none',
-              color: 'var(--text-primary)',
-              fontSize: '1.4rem',
-              cursor: 'pointer',
-              padding: '4px 8px',
-              borderRadius: '6px',
-              lineHeight: 1,
-              display: 'flex',
-              alignItems: 'center',
-            }}
-          >
-            ☰
-          </button>
-          <span style={{
-            fontSize: '1rem',
-            fontWeight: 700,
-            background: 'var(--gradient)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
+          {/* 1단: 햄버거 + 로고 */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            padding: '0 16px',
+            gap: '12px',
+            height: '44px',
           }}>
-            프리뷰 자막 머신
-          </span>
+            <button
+              onClick={() => setSidebarOpen(true)}
+              aria-label="메뉴 열기"
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--text-primary)',
+                fontSize: '1.4rem',
+                cursor: 'pointer',
+                padding: '4px 8px',
+                borderRadius: '6px',
+                lineHeight: 1,
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              ☰
+            </button>
+            <span style={{
+              fontSize: '1rem',
+              fontWeight: 700,
+              background: 'var(--gradient)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+            }}>
+              프리뷰 자막 머신
+            </span>
+          </div>
+          {/* 2단: 소개 / 사용법 / 결제 탭 */}
+          <nav style={{
+            display: 'flex',
+            justifyContent: 'space-around',
+            borderTop: '1px solid var(--border-color)',
+            height: '48px',
+            alignItems: 'center',
+          }}>
+            {[
+              { to: '/intro', label: '소개' },
+              { to: '/guide', label: '사용법' },
+              { to: '/payment', label: '결제' },
+            ].map(({ to, label }) => (
+              <NavLink
+                key={to}
+                to={to}
+                style={({ isActive }) => ({
+                  flex: 1,
+                  textAlign: 'center',
+                  padding: '8px 0',
+                  fontSize: '0.85rem',
+                  fontWeight: isActive ? 600 : 400,
+                  color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                  textDecoration: 'none',
+                  borderBottom: isActive ? '2px solid var(--gradient-start)' : '2px solid transparent',
+                  transition: 'all 0.2s',
+                })}
+              >
+                {label}
+              </NavLink>
+            ))}
+          </nav>
         </div>
       )}
 
       <div style={{
         flex: 1,
         marginLeft: isMobile ? 0 : '220px',
-        paddingTop: '52px',
+        paddingTop: isMobile ? '92px' : '52px',
         display: 'flex',
         flexDirection: 'column',
         minHeight: '100vh',

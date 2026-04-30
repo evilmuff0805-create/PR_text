@@ -20,4 +20,12 @@
 
 Current progress: 7/32 features patched (보안/안정성 기준)
 
+[2026-04-30] 모바일 상단 네비게이션 탭 추가
+- Files changed: client/src/components/Layout.jsx
+- 변경 내용: 모바일 헤더를 2단 구조로 변경 (1단: 햄버거+로고 / 2단: 소개·사용법·결제 탭)
+- height: '52px' 고정 → 'auto' + flexDirection: 'column' 으로 재편
+- paddingTop: 모바일 92px / 데스크탑 52px로 분리
+- Status: ✅ 브라우저(모바일 375px) 수동 확인 완료
+- feature_list.json #21 (모바일 반응형 UI) 관련 — E2E 테스트 미작성으로 passes 미변경
+
 Next: Supabase usage_logs 테이블에 order_id 컬럼 추가 후 P1-2 중복 결제 방지 구현
