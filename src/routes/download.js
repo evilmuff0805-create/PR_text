@@ -6,7 +6,7 @@ const router = Router();
 // POST /api/download
 router.post('/', (req, res) => {
   try {
-    const { segments, format, assOptions } = req.body;
+    const { segments, format, assOptions, speakerColors } = req.body;
 
     if (!segments || !Array.isArray(segments) || segments.length === 0) {
       return res.status(400).json({ error: 'segments가 필요합니다.' });
@@ -17,13 +17,15 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: `지원하지 않는 형식입니다: ${format}` });
     }
 
+    const colors = speakerColors && Object.keys(speakerColors).length > 0 ? speakerColors : null;
+
     let content;
     if (format === 'srt') {
-      content = generateSRT(segments);
+      content = generateSRT(segments, colors);
     } else if (format === 'txt') {
       content = generateTXT(segments);
     } else if (format === 'ass') {
-      content = generateASS(segments, assOptions || {});
+      content = generateASS(segments, assOptions || {}, colors);
     }
 
     const mimeTypes = { srt: 'application/x-subrip', txt: 'text/plain', ass: 'text/x-ssa' };

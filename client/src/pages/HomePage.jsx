@@ -12,6 +12,7 @@ export default function HomePage() {
   const [progress, setProgress] = useState('');
   const [error, setError] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
+  const [diarize, setDiarize] = useState(false);
 
   const fileInputRef = useRef(null);
   const navigate = useNavigate();
@@ -59,6 +60,7 @@ export default function HomePage() {
       const formData = new FormData();
       formData.append('audio', file);
       if (language) formData.append('language', language);
+      if (diarize) formData.append('diarize', 'true');
 
       const token = getToken();
       const res = await fetch('/api/transcribe', {
@@ -86,7 +88,7 @@ export default function HomePage() {
       }
 
       setStatus('transcribing');
-      setProgress('음성 변환 완료');
+      setProgress(diarize ? '화자 분석 중... (일반 변환보다 시간이 더 소요됩니다)' : '음성 변환 완료');
 
       const data = await res.json();
 
@@ -94,7 +96,7 @@ export default function HomePage() {
         updateCredits(data.creditsRemaining);
       }
 
-      navigate('/result', { state: { text: data.text, segments: data.segments, language: data.language } });
+      navigate('/result', { state: { text: data.text, segments: data.segments, language: data.language, diarize: data.diarize } });
     } catch (err) {
       setStatus('error');
       setError(err.message || '오류가 발생했습니다.');
@@ -217,6 +219,43 @@ export default function HomePage() {
           <option value="ja">일본어</option>
           <option value="zh">중국어</option>
         </select>
+      </div>
+
+      {/* 다화자 분리 옵션 */}
+      <div
+        onClick={() => setDiarize(v => !v)}
+        style={{
+          marginTop: '16px',
+          padding: '14px 16px',
+          background: diarize ? 'rgba(57, 255, 20, 0.08)' : 'var(--bg-tertiary)',
+          border: `1px solid ${diarize ? 'var(--gradient-start)' : 'var(--border-color)'}`,
+          borderRadius: 'var(--border-radius)',
+          cursor: 'pointer',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '12px',
+          transition: 'all 0.2s',
+        }}
+      >
+        <input
+          type="checkbox"
+          checked={diarize}
+          onChange={() => {}}
+          style={{ marginTop: '2px', accentColor: 'var(--gradient-start)', cursor: 'pointer', flexShrink: 0 }}
+        />
+        <div>
+          <p style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.95rem', margin: 0, marginBottom: '4px' }}>
+            인물 여러 명
+          </p>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', margin: 0, lineHeight: '1.5' }}>
+            인물이 여러 명일 때 체크하면 텍스트에서 색깔로 자동 구분합니다
+          </p>
+          {diarize && (
+            <p style={{ color: 'var(--gradient-start)', fontSize: '0.78rem', margin: 0, marginTop: '4px' }}>
+              최대 20분 지원 · 일반 변환보다 시간이 더 소요됩니다
+            </p>
+          )}
+        </div>
       </div>
 
       {/* 변환 버튼 */}
