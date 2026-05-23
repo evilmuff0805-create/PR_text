@@ -38,6 +38,59 @@ async function compressAudio(buffer, originalname) {
   }
 }
 
+export async function transcribeWithDiarization(buffer, originalname, language) {
+  try {
+    let audioBuffer = buffer;
+    let audioName = originalname;
+
+    if (buffer.length >= WHISPER_LIMIT) {
+      console.log(`[diarize] 압축 전: ${(buffer.length / 1024 / 1024).toFixed(2)}MB`);
+      audioBuffer = await compressAudio(buffer, originalname);
+      audioName = 'compressed.mp3';
+      console.log(`[diarize] 압축 후: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+    }
+
+    const file = await toFile(audioBuffer, audioName);
+
+    const params = {
+      file,
+      model: 'gpt-4o-transcribe-diarize',
+      response_format: 'diarized_json',
+    };
+
+    if (language) {
+      params.language = language;
+    }
+
+    const response = await openai.audio.transcriptions.create(params);
+
+    const rawSegments = response.segments ?? [];
+
+    // 오디오 길이 제한 확인 (1400초 초과 시 에러)
+    const lastEnd = rawSegments.length > 0 ? rawSegments[rawSegments.length - 1].end : 0;
+    if (lastEnd > 1400) {
+      throw new Error('다화자 분리 모드는 최대 20분 음성만 지원합니다. 파일을 분할 후 다시 시도해주세요.');
+    }
+
+    // speaker "A"→0, "B"→1, ... 매핑
+    const segments = rawSegments.map(s => ({
+      start: s.start,
+      end: s.end,
+      text: s.text,
+      speaker: typeof s.speaker === 'string' ? s.speaker.charCodeAt(0) - 65 : 0,
+    }));
+
+    return {
+      text: response.text,
+      segments,
+      language: response.language ?? language ?? 'unknown',
+    };
+  } catch (err) {
+    if (err.message.includes('최대 20분')) throw err;
+    throw new Error(`Whisper Diarize API 오류: ${err.message}`);
+  }
+}
+
 /**
  * @param {Buffer} buffer - 오디오 파일 버퍼
  * @param {string} originalname - 원본 파일명 (확장자 추출용)

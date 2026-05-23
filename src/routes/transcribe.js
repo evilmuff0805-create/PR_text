@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import uploadMiddleware from '../middleware/upload.js';
-import { transcribe } from '../services/whisper.js';
+import { transcribe, transcribeWithDiarization } from '../services/whisper.js';
 import { correctText, translateToKorean } from '../services/gpt.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { supabaseAdmin } from '../lib/supabase.js';
@@ -77,7 +77,10 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
 
     const { buffer, originalname } = req.file;
     const language = req.body.language || null;
-    const result = await transcribe(buffer, originalname, language);
+    const diarize = req.body.diarize === 'true' || req.body.diarize === true;
+    const result = diarize
+      ? await transcribeWithDiarization(buffer, originalname, language)
+      : await transcribe(buffer, originalname, language);
 
     // 오디오 길이 → 크레딧 필요량 (1분당 1크레딧, 최소 1)
     const lastSegment = result.segments[result.segments.length - 1];
@@ -161,11 +164,13 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
       language: result.language,
       creditsUsed: creditsNeeded,
       creditsRemaining: newCredits,
+      diarize,
     });
   } catch (err) {
     console.error('[transcribe]', err.message);
     if (err.message.includes('지원하지 않는 파일')) return res.status(415).json({ error: err.message });
-    if (err.message.includes('Whisper API')) return res.status(502).json({ error: err.message });
+    if (err.message.includes('최대 20분')) return res.status(400).json({ error: err.message });
+    if (err.message.includes('Whisper API') || err.message.includes('Diarize API')) return res.status(502).json({ error: err.message });
     res.status(500).json({ error: '변환 중 오류가 발생했습니다.' });
   }
 });

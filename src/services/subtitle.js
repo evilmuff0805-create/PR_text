@@ -1,3 +1,12 @@
+export const DEFAULT_SPEAKER_COLORS = [
+  '#FFFFFF', // 0: 흰색
+  '#39FF14', // 1: 형광 그린
+  '#FFE600', // 2: 노란색
+  '#00F5FF', // 3: 형광 시안
+  '#FF6B35', // 4: 주황색
+  '#FF4BCB', // 5: 마젠타
+];
+
 const SENTENCE_END = /[다요죠까!?]$/;
 const CONJUNCTIVE = /[면고서며]$|지만$|는데$|니까$|므로$|거나$|든지$/;
 const POSTPOSITION = /[은는이가을를에도로]$/;
@@ -24,23 +33,24 @@ function findCutAt(text, maxLen) {
 
 function splitSegment(segment, maxLen = 35, depth = 0) {
   const text = depth === 0 ? cleanText(segment.text) : segment.text;
+  const spk = segment.speaker;
   if (!text || text.length <= maxLen || depth > 10) {
-    return [{ start: segment.start, end: segment.end, text: text || '' }];
+    return [{ start: segment.start, end: segment.end, text: text || '', speaker: spk }];
   }
   const cutAt = findCutAt(text, maxLen);
   if (cutAt <= 0 || cutAt >= text.length) {
-    return [{ start: segment.start, end: segment.end, text }];
+    return [{ start: segment.start, end: segment.end, text, speaker: spk }];
   }
   const frontText = text.slice(0, cutAt).trimEnd();
   const backText = text.slice(cutAt).trimStart();
   if (!frontText || !backText) {
-    return [{ start: segment.start, end: segment.end, text }];
+    return [{ start: segment.start, end: segment.end, text, speaker: spk }];
   }
   const total = frontText.length + backText.length;
   const duration = segment.end - segment.start;
   const midTime = segment.start + duration * (frontText.length / total);
-  const front = { start: segment.start, end: midTime, text: frontText };
-  const back = { start: midTime, end: segment.end, text: backText };
+  const front = { start: segment.start, end: midTime, text: frontText, speaker: spk };
+  const back = { start: midTime, end: segment.end, text: backText, speaker: spk };
   return [
     ...splitSegment(front, maxLen, depth + 1),
     ...splitSegment(back, maxLen, depth + 1),
@@ -63,12 +73,17 @@ function formatASS(seconds) {
   return String(h) + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0') + '.' + String(cs).padStart(2, '0');
 }
 
-export function generateSRT(segments) {
+export function generateSRT(segments, speakerColors = null) {
   if (!segments || segments.length === 0) return '';
   const split = segments.flatMap((seg) => splitSegment(seg));
-  return split.map((seg, i) =>
-    `${i + 1}\n${formatSRT(seg.start)} --> ${formatSRT(seg.end)}\n${seg.text}`
-  ).join('\n\n');
+  return split.map((seg, i) => {
+    let line = seg.text;
+    if (speakerColors && seg.speaker !== undefined) {
+      const color = speakerColors[String(seg.speaker)] ?? '#FFFFFF';
+      line = `<font color="${color}">${line}</font>`;
+    }
+    return `${i + 1}\n${formatSRT(seg.start)} --> ${formatSRT(seg.end)}\n${line}`;
+  }).join('\n\n');
 }
 
 export function generateTXT(segments) {
@@ -85,7 +100,7 @@ export function generateTXT(segments) {
  * @param {string} options.fontColor - HEX 색상 '#RRGGBB' (기본: '#FFFFFF')
  * @param {number} options.fontSize - 폰트 크기 (기본: 20)
  */
-export function generateASS(segments, options = {}) {
+export function generateASS(segments, options = {}, speakerColors = null) {
   if (!segments || segments.length === 0) return '';
 
   const {
@@ -109,6 +124,9 @@ export function generateASS(segments, options = {}) {
   }
 
   const primaryColour = hexToASS(fontColor);
+  const styleFormat = 'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding';
+  const makeStyleLine = (name, color) =>
+    `Style: ${name},${fontFamily},${fontSize},${hexToASS(color)},&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,${alignment},10,10,10,1`;
 
   const scriptInfo = [
     '[Script Info]',
@@ -119,10 +137,15 @@ export function generateASS(segments, options = {}) {
     '',
   ].join('\n');
 
+  const speakerStyleLines = speakerColors
+    ? Object.entries(speakerColors).map(([idx, hex]) => makeStyleLine(`Speaker${idx}`, hex))
+    : [];
+
   const styles = [
     '[V4+ Styles]',
-    'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    `Style: Default,${fontFamily},${fontSize},${primaryColour},&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,${alignment},10,10,10,1`,
+    styleFormat,
+    makeStyleLine('Default', fontColor),
+    ...speakerStyleLines,
     '',
   ].join('\n');
 
@@ -131,9 +154,12 @@ export function generateASS(segments, options = {}) {
   const events = [
     '[Events]',
     'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
-    ...split.map((seg) =>
-      `Dialogue: 0,${formatASS(seg.start)},${formatASS(seg.end)},Default,,0,0,0,,${seg.text}`
-    ),
+    ...split.map((seg) => {
+      const styleName = speakerColors && seg.speaker !== undefined
+        ? `Speaker${seg.speaker}`
+        : 'Default';
+      return `Dialogue: 0,${formatASS(seg.start)},${formatASS(seg.end)},${styleName},,0,0,0,,${seg.text}`;
+    }),
   ].join('\n');
 
   return scriptInfo + styles + events;

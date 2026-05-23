@@ -19,10 +19,18 @@ export default function ResultPage() {
     try { return JSON.parse(sessionStorage.getItem('lastResult')); } catch { return null; }
   })();
 
-  const { text = '', segments = [], language = '' } = resolved || {};
+  const { text = '', segments = [], language = '', diarize = false } = resolved || {};
 
   const [editedText, setEditedText] = useState(text);
   const [downloading, setDownloading] = useState(false);
+
+  const DEFAULT_SPEAKER_COLORS = ['#FFFFFF', '#39FF14', '#FFE600', '#00F5FF', '#FF6B35', '#FF4BCB'];
+  const speakerIds = [...new Set(segments.filter(s => s.speaker !== undefined).map(s => s.speaker))].sort((a, b) => a - b);
+  const [speakerColors, setSpeakerColors] = useState(() => {
+    const init = {};
+    speakerIds.forEach(id => { init[String(id)] = DEFAULT_SPEAKER_COLORS[id] ?? '#39FF14'; });
+    return init;
+  });
 
   // 영어 번역 상태
   const [showTranslation, setShowTranslation] = useState(false);
@@ -86,6 +94,9 @@ export default function ResultPage() {
       const body = { segments, format };
       if (format === 'ass' && options) {
         body.assOptions = options;
+      }
+      if (speakerIds.length > 0) {
+        body.speakerColors = speakerColors;
       }
       const res = await fetch('/api/download', {
         method: 'POST',
@@ -212,6 +223,45 @@ export default function ResultPage() {
         </p>
       </div>
 
+      {/* 화자 색상 설정 패널 (다화자 모드일 때만 표시) */}
+      {speakerIds.length > 0 && (
+        <div className="card" style={{ padding: '16px', marginBottom: '24px', border: '1px solid var(--gradient-start)' }}>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 600, marginBottom: '12px' }}>
+            화자별 색상 설정
+          </p>
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+            {speakerIds.map(id => (
+              <label
+                key={id}
+                style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+              >
+                <span style={{
+                  display: 'inline-block',
+                  width: '20px',
+                  height: '20px',
+                  borderRadius: '4px',
+                  background: speakerColors[String(id)],
+                  border: '2px solid var(--border-color)',
+                  flexShrink: 0,
+                }} />
+                <span style={{ color: 'var(--text-primary)', fontSize: '0.875rem' }}>
+                  인물 {id + 1}
+                </span>
+                <input
+                  type="color"
+                  value={speakerColors[String(id)]}
+                  onChange={(e) => setSpeakerColors(prev => ({ ...prev, [String(id)]: e.target.value }))}
+                  style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                />
+              </label>
+            ))}
+          </div>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', margin: 0 }}>
+            색깔 칩을 클릭하면 색상을 바꿀 수 있습니다 · SRT/ASS 다운로드 시 색상이 적용됩니다
+          </p>
+        </div>
+      )}
+
       <div style={{ marginBottom: '24px' }}>
         <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>
           변환 결과 (직접 편집 가능)
@@ -311,6 +361,10 @@ export default function ResultPage() {
               disabled={downloading}
               style={{
                 ...outlineBtn,
+                ...(format === 'srt' && speakerIds.length > 0 ? {
+                  borderColor: 'var(--gradient-start)',
+                  color: 'var(--gradient-start)',
+                } : {}),
                 ...(format === 'ass' && showAssPanel ? {
                   borderColor: 'var(--gradient-start)',
                   color: 'var(--gradient-start)',
@@ -321,6 +375,11 @@ export default function ResultPage() {
             </button>
           ))}
         </div>
+        {speakerIds.length > 0 && (
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: '8px' }}>
+            SRT/ASS에 화자별 색상이 적용됩니다 · VLC·편집 프로그램 호환 / YouTube 업로드 시 일반 텍스트로 표시됨
+          </p>
+        )}
       </div>
 
       {/* ASS 스타일 설정 패널 (ASS 버튼 클릭 시 표시) */}
