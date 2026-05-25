@@ -29,6 +29,7 @@ if (missingEnv.length > 0) {
 }
 
 const app = express();
+app.set('trust proxy', 1); // Railway 등 리버스 프록시 환경에서 X-Forwarded-For 신뢰
 const PORT = process.env.PORT || 3000;
 
 const allowedOrigins = [
