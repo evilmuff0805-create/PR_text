@@ -42,7 +42,7 @@ export default function PaymentSuccessPage() {
 
         updateCredits(data.credits);
         setStatus('success');
-        setMessage(`${data.charged} 크레딧이 충전되었습니다! (총 ${data.credits} 크레딧)`);
+        setMessage(`${data.charged}분이 충전되었습니다! (총 ${data.credits}분)`);
 
         let count = 5;
         timerRef.current = setInterval(() => {

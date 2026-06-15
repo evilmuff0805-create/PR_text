@@ -144,6 +144,8 @@ export default function Layout({ children }) {
           <span>사업장 주소: 경기도 김포시 김포한강9로12번길 50(구래동)</span>
           <span style={{ color: 'var(--border-color, #333)' }}>|</span>
           <span>전화번호: 010-4901-1421</span>
+          <span style={{ color: 'var(--border-color, #333)' }}>|</span>
+          <span>통신판매업 신고번호: 신청 준비중</span>
         </footer>
       </div>
     </div>

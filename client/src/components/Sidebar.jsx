@@ -86,13 +86,13 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
               color: '#000',
               fontSize: '0.8rem',
               fontWeight: 700,
-            }}>C</span>
+            }}>⏱</span>
             <div>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>잔여 크레딧</p>
+              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>잔여 변환 시간</p>
               <p style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-                {user ? user.credits : 0}
+                {user ? user.credits : 0}분
               </p>
-              <p style={{ fontSize: '0.75rem', color: '#999' }}>(1크레딧 = 1분)</p>
+              <p style={{ fontSize: '0.75rem', color: '#999' }}>(분 단위로 차감)</p>
             </div>
           </div>
           {user && (

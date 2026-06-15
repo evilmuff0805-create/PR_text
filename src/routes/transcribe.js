@@ -72,7 +72,7 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
 
     // 1단계: 변환 전 최소 크레딧 검증
     if (req.user.credits < 1) {
-      return res.status(402).json({ error: '크레딧이 부족합니다. 충전 후 이용해주세요.' });
+      return res.status(402).json({ error: '변환 가능 시간이 부족합니다. 충전 후 이용해주세요.' });
     }
 
     const { buffer, originalname } = req.file;
@@ -101,12 +101,12 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
 
     if (deductErr) {
       console.error(`[transcribe] 크레딧 차감 DB 오류 — user_id: ${req.user.id}, creditsNeeded: ${creditsNeeded}`, deductErr.message);
-      return res.status(500).json({ error: '크레딧 처리 중 오류가 발생했습니다.' });
+      return res.status(500).json({ error: '변환 시간 처리 중 오류가 발생했습니다.' });
     }
 
     if (deducted === null || deducted === undefined) {
       return res.status(402).json({
-        error: `크레딧이 부족합니다. 필요: ${creditsNeeded}, 보유: ${req.user.credits}`,
+        error: `변환 가능 시간이 부족합니다. 필요: ${creditsNeeded}분, 보유: ${req.user.credits}분`,
         creditsNeeded,
         creditsHave: req.user.credits,
       });

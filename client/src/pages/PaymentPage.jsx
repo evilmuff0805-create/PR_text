@@ -67,15 +67,15 @@ export default function PaymentPage() {
   return (
     <div>
       <h2 className="gradient-text" style={{ fontSize: '1.8rem', marginBottom: '8px' }}>
-        크레딧 충전
+        이용권 구매
       </h2>
       <p style={{ color: 'var(--text-secondary)', marginBottom: '12px' }}>
-        1크레딧 = 1분 변환. 크레딧은 만료되지 않습니다.
+        결제하시면 변환 가능 시간(분)이 충전됩니다. 충전된 시간은 만료되지 않습니다.
       </p>
       <div className="card" style={{ marginBottom: '24px', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
         <span style={{ fontSize: '1.5rem' }}>🎁</span>
         <div>
-          <p style={{ color: 'var(--text-primary)', fontWeight: 600 }}>무료 체험 10크레딧</p>
+          <p style={{ color: 'var(--text-primary)', fontWeight: 600 }}>무료 체험 10분</p>
           <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>회원가입 시 10분 무료 변환 제공</p>
         </div>
       </div>
@@ -115,7 +115,7 @@ export default function PaymentPage() {
               {plan.name}
             </h3>
             <p style={{ fontSize: '2rem', fontWeight: 700, color: plan.color, marginBottom: '4px' }}>
-              {plan.credits} <span style={{ fontSize: '0.9rem', fontWeight: 400 }}>크레딧</span>
+              {plan.credits} <span style={{ fontSize: '0.9rem', fontWeight: 400 }}>분</span>
             </p>
             <p style={{ marginBottom: '4px' }}>
               <span style={{ color: '#FF4444', textDecoration: 'line-through', fontSize: '0.95rem' }}>

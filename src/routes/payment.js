@@ -5,9 +5,9 @@ import { supabaseAdmin } from '../lib/supabase.js';
 const router = Router();
 
 const PLANS = {
-  basic: { credits: 100, price: 4900, name: '베이직 100크레딧' },
-  pro: { credits: 300, price: 12900, name: '프로 300크레딧' },
-  creator: { credits: 1000, price: 34900, name: '크리에이터 1000크레딧' },
+  basic: { credits: 100, price: 4900, name: '베이직 100분' },
+  pro: { credits: 300, price: 12900, name: '프로 300분' },
+  creator: { credits: 1000, price: 34900, name: '크리에이터 1000분' },
 };
 
 // 결제 요청 생성
@@ -114,7 +114,7 @@ router.post('/confirm', authMiddleware, async (req, res) => {
       success: true,
       credits: newCredits,
       charged: plan.credits,
-      message: `${plan.credits} 크레딧이 충전되었습니다.`,
+      message: `${plan.credits}분이 충전되었습니다.`,
     });
   } catch (err) {
     console.error('[payment] 오류:', err.message);

@@ -78,7 +78,7 @@ export default function HomePage() {
       if (res.status === 402) {
         const data = await res.json();
         setStatus('error');
-        setError(`크레딧이 부족합니다. 필요: ${data.creditsNeeded}, 보유: ${data.creditsHave}. 결제 페이지에서 충전해주세요.`);
+        setError(`변환 가능 시간이 부족합니다. 필요: ${data.creditsNeeded}분, 보유: ${data.creditsHave}분. 결제 페이지에서 충전해주세요.`);
         return;
       }
 
@@ -187,7 +187,7 @@ export default function HomePage() {
               mp3, wav, m4a, webm, mp4 · 최대 150MB · 대용량 파일은 자동 압축 후 변환 (영상 파일은 오디오만 추출)
             </p>
             <p style={{ color: '#999', fontSize: '0.8rem', marginTop: '6px' }}>
-              1크레딧으로 약 1분 분량의 음성을 변환할 수 있습니다
+              변환 시간은 음성 1분당 1분씩 차감됩니다
             </p>
           </div>
         )}
@@ -284,7 +284,7 @@ export default function HomePage() {
       {status === 'error' && (
         <div style={{ marginTop: '16px', textAlign: 'center' }}>
           <p style={{ color: '#FF4444', fontSize: '0.9rem' }}>{error}</p>
-          {error.includes('크레딧') && (
+          {(error.includes('시간이 부족') || error.includes('충전')) && (
             <button
               onClick={() => navigate('/payment')}
               style={{
@@ -300,7 +300,7 @@ export default function HomePage() {
                 cursor: 'pointer',
               }}
             >
-              💎 크레딧 충전하기
+              💎 변환 시간 충전하기
             </button>
           )}
         </div>

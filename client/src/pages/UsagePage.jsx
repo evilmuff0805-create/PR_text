@@ -150,7 +150,7 @@ export default function UsagePage() {
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', padding: '40px 24px' }}>
-      {/* 상단 크레딧 표시 */}
+      {/* 상단 변환 시간 표시 */}
       <div style={{
         background: 'var(--bg-secondary)',
         border: '1px solid var(--border-color)',
@@ -165,11 +165,11 @@ export default function UsagePage() {
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
           width: '48px', height: '48px', borderRadius: '50%',
           background: 'var(--gradient)', color: '#000', fontSize: '1.2rem', fontWeight: 700,
-        }}>C</span>
+        }}>⏱</span>
         <div>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '4px' }}>현재 보유 크레딧</p>
+          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '4px' }}>현재 보유 변환 시간</p>
           <p style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-            {user ? user.credits : '-'}
+            {user ? `${user.credits}분` : '-'}
           </p>
         </div>
       </div>
@@ -188,7 +188,7 @@ export default function UsagePage() {
         </p>
       )}
 
-      {/* 크레딧 사용 내역 */}
+      {/* 변환 시간 사용 내역 */}
       {!loading && !error && token && (
         <>
           <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '16px' }}>
@@ -211,7 +211,7 @@ export default function UsagePage() {
                 <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      {['날짜', '구분', '크레딧 변동', '설명'].map((h) => (
+                      {['날짜', '구분', '시간 변동(분)', '설명'].map((h) => (
                         <th key={h} style={thStyle}>{h}</th>
                       ))}
                     </tr>
@@ -243,7 +243,7 @@ export default function UsagePage() {
                             </span>
                           </td>
                           <td style={{ padding: '14px 16px', fontSize: '0.95rem', fontWeight: 700, color: isCharge ? '#39FF14' : '#FF4444' }}>
-                            {isCharge ? '+' : '-'}{Math.abs(log.amount ?? log.credits_used ?? 0)}
+                            {isCharge ? '+' : '-'}{Math.abs(log.amount ?? log.credits_used ?? 0)}분
                           </td>
                           <td style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                             {log.description || log.note || '-'}
