@@ -145,7 +145,7 @@ export default function Layout({ children }) {
           <span style={{ color: 'var(--border-color, #333)' }}>|</span>
           <span>전화번호: 010-4901-1421</span>
           <span style={{ color: 'var(--border-color, #333)' }}>|</span>
-          <span>통신판매업 신고번호: 신청 준비중</span>
+          <span>통신판매업 신고번호: 제 2026-경기김포-4391 호</span>
         </footer>
       </div>
     </div>
