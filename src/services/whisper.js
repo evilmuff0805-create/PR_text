@@ -6,7 +6,7 @@ import { writeFile, unlink, readFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 4 });
 const execFileAsync = promisify(execFile);
 
 const WHISPER_LIMIT = 25 * 1024 * 1024; // 25MB
@@ -87,6 +87,11 @@ export async function transcribeWithDiarization(buffer, originalname, language) 
     };
   } catch (err) {
     if (err.message.includes('최대 20분')) throw err;
+    if (err instanceof OpenAI.APIConnectionError) {
+      const e = new Error('OpenAI 서버 연결이 일시적으로 불안정합니다. 잠시 후 다시 시도해주세요.');
+      e.code = 'CONNECTION';
+      throw e;
+    }
     throw new Error(`Whisper Diarize API 오류: ${err.message}`);
   }
 }
@@ -130,6 +135,11 @@ export async function transcribe(buffer, originalname, language) {
       language: response.language ?? language ?? 'unknown',
     };
   } catch (err) {
+    if (err instanceof OpenAI.APIConnectionError) {
+      const e = new Error('OpenAI 서버 연결이 일시적으로 불안정합니다. 잠시 후 다시 시도해주세요.');
+      e.code = 'CONNECTION';
+      throw e;
+    }
     throw new Error(`Whisper API 오류: ${err.message}`);
   }
 }

@@ -303,6 +303,25 @@ export default function HomePage() {
               💎 변환 시간 충전하기
             </button>
           )}
+          {error.includes('연결') && (
+            <button
+              onClick={handleSubmit}
+              style={{
+                marginTop: '12px',
+                background: 'var(--gradient)',
+                color: '#0A0A0F',
+                border: 'none',
+                borderRadius: 'var(--border-radius)',
+                padding: '10px 24px',
+                fontFamily: 'var(--font-family)',
+                fontWeight: 600,
+                fontSize: '0.95rem',
+                cursor: 'pointer',
+              }}
+            >
+              🔄 다시 시도
+            </button>
+          )}
         </div>
       )}
       <AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} />
