@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import OpenAI from 'openai';
 import { rateLimit } from 'express-rate-limit';
 import authRouter from './routes/auth.js';
 import paymentRouter from './routes/payment.js';
@@ -90,6 +91,24 @@ const downloadLimiter = rateLimit({
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({ status: 'ok' });
+});
+
+// OpenAI 연결 진단용 엔드포인트 (문제 해결 후 삭제 가능)
+const _diagClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 0, timeout: 10_000 });
+app.get('/api/health/openai', async (req, res) => {
+  try {
+    await _diagClient.models.list();
+    res.json({ status: 'ok', message: 'OpenAI API 연결 정상', baseURL: _diagClient.baseURL });
+  } catch (err) {
+    res.json({
+      status: 'error',
+      errorType: err?.constructor?.name ?? 'Unknown',
+      message: err?.message ?? String(err),
+      statusCode: err?.status ?? null,
+      cause: err?.cause?.message ?? err?.cause?.code ?? null,
+      baseURL: _diagClient.baseURL,
+    });
+  }
 });
 
 app.use('/api/auth/reset-password', resetPasswordLimiter);
