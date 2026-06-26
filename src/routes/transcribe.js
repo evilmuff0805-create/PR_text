@@ -169,6 +169,8 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
   } catch (err) {
     console.error('[transcribe]', err.message);
     if (err.code === 'CONNECTION') return res.status(503).json({ error: err.message, retryable: true });
+    if (err.code === 'QUOTA') return res.status(503).json({ error: err.message });
+    if (err.code === 'RATELIMIT') return res.status(429).json({ error: err.message });
     if (err.message.includes('지원하지 않는 파일')) return res.status(415).json({ error: err.message });
     if (err.message.includes('최대 20분')) return res.status(400).json({ error: err.message });
     if (err.message.includes('Whisper API') || err.message.includes('Diarize API')) return res.status(502).json({ error: err.message });

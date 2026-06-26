@@ -86,11 +86,18 @@ export async function transcribeWithDiarization(buffer, originalname, language) 
       language: response.language ?? language ?? 'unknown',
     };
   } catch (err) {
-    console.error('[diarize] 에러 타입:', err?.constructor?.name, '/ 메시지:', err?.message, '/ 상태코드:', err?.status ?? 'N/A', '/ cause:', err?.cause?.code ?? err?.cause?.message ?? 'N/A');
     if (err.message.includes('최대 20분')) throw err;
     if (err instanceof OpenAI.APIConnectionError) {
       const e = new Error('OpenAI 서버 연결이 일시적으로 불안정합니다. 잠시 후 다시 시도해주세요.');
       e.code = 'CONNECTION';
+      throw e;
+    }
+    if (err.status === 429) {
+      const quota = err.code === 'insufficient_quota';
+      const e = new Error(quota
+        ? '변환 서버(OpenAI) 사용량이 소진되었습니다. 관리자에게 문의해주세요.'
+        : '요청이 일시적으로 많습니다. 잠시 후 다시 시도해주세요.');
+      e.code = quota ? 'QUOTA' : 'RATELIMIT';
       throw e;
     }
     throw new Error(`Whisper Diarize API 오류: ${err.message}`);
@@ -136,10 +143,17 @@ export async function transcribe(buffer, originalname, language) {
       language: response.language ?? language ?? 'unknown',
     };
   } catch (err) {
-    console.error('[whisper] 에러 타입:', err?.constructor?.name, '/ 메시지:', err?.message, '/ 상태코드:', err?.status ?? 'N/A', '/ cause:', err?.cause?.code ?? err?.cause?.message ?? 'N/A');
     if (err instanceof OpenAI.APIConnectionError) {
       const e = new Error('OpenAI 서버 연결이 일시적으로 불안정합니다. 잠시 후 다시 시도해주세요.');
       e.code = 'CONNECTION';
+      throw e;
+    }
+    if (err.status === 429) {
+      const quota = err.code === 'insufficient_quota';
+      const e = new Error(quota
+        ? '변환 서버(OpenAI) 사용량이 소진되었습니다. 관리자에게 문의해주세요.'
+        : '요청이 일시적으로 많습니다. 잠시 후 다시 시도해주세요.');
+      e.code = quota ? 'QUOTA' : 'RATELIMIT';
       throw e;
     }
     throw new Error(`Whisper API 오류: ${err.message}`);
