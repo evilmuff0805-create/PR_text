@@ -1,11 +1,12 @@
 import { Router } from 'express';
 import uploadMiddleware from '../middleware/upload.js';
-import { probeAudioDuration, transcribe, transcribeWithDiarization } from '../services/whisper.js';
-import { processSegmentsWithTiming } from '../services/postprocess.js';
+import { probeAudioDuration, transcribe } from '../services/whisper.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { randomUUID } from 'crypto';
 import { performance } from 'perf_hooks';
+import { enqueueDiarizationJob } from '../services/diarization-jobs.js';
+import { joinSegmentText, processTranscriptionSegments } from '../services/transcription-processing.js';
 
 const router = Router();
 
@@ -148,26 +149,6 @@ function completeTiming(req, res, outcome) {
   }));
 }
 
-// 무음 세그먼트 필터링 (텍스트가 비어있거나 의미없는 내용만 있는 경우)
-function filterSilentSegments(segments) {
-  return segments.filter(seg => {
-    const text = (seg.text || '').trim();
-    // 빈 텍스트
-    if (!text) return false;
-    // Whisper가 무음에 넣는 패턴들: "...", "(무음)", "[음악]", "(음악)", "MBC 뉴스", 등
-    const silencePatterns = /^(\.\.\.|…|\.+|\s+|\(.*무음.*\)|\[.*무음.*\]|\(.*음악.*\)|\[.*음악.*\]|\(.*박수.*\)|\[.*박수.*\])$/i;
-    if (silencePatterns.test(text)) return false;
-    // 공백·특수문자만 있는 경우
-    if (/^[\s.,!?;:'"()\[\]{}…\-_]+$/.test(text)) return false;
-    return true;
-  });
-}
-
-// 한국어 텍스트에서 쉼표 제거
-function removeCommas(text) {
-  return text.replace(/,/g, '').replace(/，/g, '');
-}
-
 // POST /api/transcribe
 router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
   try {
@@ -203,10 +184,47 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
       }
     }
 
+    if (diarize) {
+      if (durationSeconds === null) {
+        completeTiming(req, res, 'duration_probe_required_for_diarization');
+        return res.status(422).json({
+          error: '다화자 변환을 위해 파일 길이를 확인하지 못했습니다. 다른 형식으로 다시 시도해주세요.',
+        });
+      }
+
+      const creditsNeeded = Math.max(Math.ceil(durationSeconds / 60), 1);
+      const queued = await enqueueDiarizationJob({
+        userId: req.user.id,
+        filename: originalname,
+        buffer,
+        contentType: req.file.mimetype,
+        language,
+        durationSeconds,
+        creditsNeeded,
+      });
+
+      if (!queued) {
+        completeTiming(req, res, 'insufficient_credits_when_queuing_diarization');
+        return res.status(402).json({
+          error: `변환 가능 시간이 부족합니다. 필요: ${creditsNeeded}분, 보유: ${req.user.credits}분`,
+          creditsNeeded,
+          creditsHave: req.user.credits,
+        });
+      }
+
+      console.log(`[diarization.job] 유저 ${req.user.email}: ${creditsNeeded}크레딧 예약 (${queued.creditsRemaining} 남음), job=${queued.jobId}`);
+      completeTiming(req, res, 'diarization_queued');
+      return res.status(202).json({
+        jobId: queued.jobId,
+        status: 'queued',
+        creditsUsed: queued.creditsUsed,
+        creditsRemaining: queued.creditsRemaining,
+        diarize: true,
+      });
+    }
+
     const transcriptionStartedAt = performance.now();
-    const result = diarize
-      ? await transcribeWithDiarization(buffer, originalname, language)
-      : await transcribe(buffer, originalname, language, { durationSeconds });
+    const result = await transcribe(buffer, originalname, language, { durationSeconds });
     req.transcriptionTiming.transcriptionMs = performance.now() - transcriptionStartedAt;
     req.transcriptionTiming.compressionMs = result.timings?.compressionMs;
     req.transcriptionTiming.splitMs = result.timings?.splitMs;
@@ -268,30 +286,13 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
 
     console.log(`[transcribe] 유저 ${req.user.email}: ${creditsNeeded}크레딧 차감 (${newCredits} 남음)`);
 
-    // 4번: 무음 세그먼트 필터링
-    let filteredSegments = filterSilentSegments(result.segments);
-
     // GPT 교정/번역 적용
-    const correctionStartedAt = performance.now();
-    let processedSegments;
-    try {
-      const correctionResult = await processSegmentsWithTiming(filteredSegments, result.language);
-      processedSegments = correctionResult.segments;
-      req.transcriptionTiming.correctionTimings = correctionResult.timings;
-    } catch (gptErr) {
-      console.error('[gpt]', gptErr.message);
-      processedSegments = filteredSegments;
-    }
-    req.transcriptionTiming.correctionMs = performance.now() - correctionStartedAt;
+    const processedResult = await processTranscriptionSegments(result.segments, result.language);
+    const processedSegments = processedResult.segments;
+    req.transcriptionTiming.correctionTimings = processedResult.correctionTimings;
+    req.transcriptionTiming.correctionMs = processedResult.correctionMs;
 
-    // 3번: 쉼표 제거 적용
-    processedSegments = processedSegments.map(seg => ({
-      ...seg,
-      text: removeCommas(seg.text),
-    }));
-
-    // 5번: 줄바꿈으로 텍스트 결합 (기존: join(' ') → 변경: join('\n'))
-    const processedText = processedSegments.map(s => s.text).join('\n');
+    const processedText = joinSegmentText(processedSegments);
 
     // 변환 이력 기록
     const historyStartedAt = performance.now();

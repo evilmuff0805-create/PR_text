@@ -222,6 +222,9 @@ export default function UsagePage() {
                   <tbody>
                     {usageLogs.map((log, i) => {
                       const isCharge = log.action === 'charge';
+                      const isRefund = log.action === 'refund';
+                      const isCreditIncrease = isCharge || isRefund;
+                      const actionLabel = isCharge ? '충전' : isRefund ? '환불' : '변환';
                       return (
                         <tr
                           key={log.id || i}
@@ -239,14 +242,14 @@ export default function UsagePage() {
                             <span style={{
                               display: 'inline-block', padding: '3px 10px', borderRadius: '20px',
                               fontSize: '0.78rem', fontWeight: 600,
-                              background: isCharge ? 'rgba(57,255,20,0.12)' : 'rgba(255,68,68,0.12)',
-                              color: isCharge ? '#39FF14' : '#FF4444',
+                              background: isCreditIncrease ? 'rgba(57,255,20,0.12)' : 'rgba(255,68,68,0.12)',
+                              color: isCreditIncrease ? '#39FF14' : '#FF4444',
                             }}>
-                              {isCharge ? '충전' : '변환'}
+                              {actionLabel}
                             </span>
                           </td>
-                          <td style={{ padding: '14px 16px', fontSize: '0.95rem', fontWeight: 700, color: isCharge ? '#39FF14' : '#FF4444' }}>
-                            {isCharge ? '+' : '-'}{Math.abs(log.amount ?? log.credits_used ?? 0)}분
+                          <td style={{ padding: '14px 16px', fontSize: '0.95rem', fontWeight: 700, color: isCreditIncrease ? '#39FF14' : '#FF4444' }}>
+                            {isCreditIncrease ? '+' : '-'}{Math.abs(log.amount ?? log.credits_used ?? 0)}분
                           </td>
                           <td style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                             {log.description || log.note || '-'}

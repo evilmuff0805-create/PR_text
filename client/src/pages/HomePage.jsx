@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import AuthModal from '../components/AuthModal.jsx';
 
+const pendingJobStorageKey = (userId) => `pendingDiarizationJob:${userId}`;
+
 function getAudioDuration(file) {
   return new Promise((resolve) => {
     const objectUrl = URL.createObjectURL(file);
@@ -88,6 +90,7 @@ export default function HomePage() {
   const [durationSeconds, setDurationSeconds] = useState(null);
   const [isReadingDuration, setIsReadingDuration] = useState(false);
   const [activeDiarize, setActiveDiarize] = useState(false);
+  const [activeJobId, setActiveJobId] = useState(null);
   const [transcriptionStartedAt, setTranscriptionStartedAt] = useState(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
@@ -204,6 +207,14 @@ export default function HomePage() {
         updateCredits(data.creditsRemaining);
       }
 
+      if (responseStatus === 202 && data.jobId) {
+        localStorage.setItem(pendingJobStorageKey(user.id), data.jobId);
+        setActiveJobId(data.jobId);
+        setStatus('queued');
+        setProgress('파일 전송 완료. 다화자 분석 작업을 대기열에 등록했습니다...');
+        return;
+      }
+
       navigate('/result', { state: { text: data.text, segments: data.segments, language: data.language, diarize: data.diarize } });
     } catch (err) {
       setStatus('error');
@@ -212,20 +223,21 @@ export default function HomePage() {
   }
 
   const isLoading = status !== 'idle' && status !== 'error';
+  const shouldWarnBeforeUnload = status === 'uploading' || (status === 'transcribing' && !activeJobId);
 
-  // 변환 진행 중 페이지 이탈 경고
+  // 원본을 전송하는 중에만 이탈을 경고합니다. 대기열 작업은 서버에서 계속됩니다.
   useEffect(() => {
-    if (!isLoading) return;
+    if (!shouldWarnBeforeUnload) return;
     const handleBeforeUnload = (e) => {
       e.preventDefault();
       e.returnValue = '';
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [isLoading]);
+  }, [shouldWarnBeforeUnload]);
 
   useEffect(() => {
-    if (status !== 'transcribing' || !transcriptionStartedAt) return;
+    if ((status !== 'transcribing' && status !== 'queued') || !transcriptionStartedAt) return;
 
     const updateElapsedTime = () => {
       setElapsedSeconds((Date.now() - transcriptionStartedAt) / 1000);
@@ -236,7 +248,78 @@ export default function HomePage() {
     return () => window.clearInterval(intervalId);
   }, [status, transcriptionStartedAt]);
 
-  const isDiarizationProcessing = status === 'transcribing' && activeDiarize;
+  useEffect(() => {
+    if (!user?.id || !token || activeJobId) return;
+
+    const savedJobId = localStorage.getItem(pendingJobStorageKey(user.id));
+    if (!savedJobId) return;
+
+    setActiveJobId(savedJobId);
+    setActiveDiarize(true);
+    setStatus('queued');
+    setProgress('이전 다화자 분석 작업 상태를 확인 중입니다...');
+    setTranscriptionStartedAt(Date.now());
+  }, [user?.id, token, activeJobId]);
+
+  useEffect(() => {
+    if (!activeJobId || !token || !user?.id) return;
+
+    let cancelled = false;
+
+    async function pollJob() {
+      try {
+        const response = await fetch(`/api/transcribe/jobs/${activeJobId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.error || '다화자 작업 상태를 확인하지 못했습니다.');
+        if (cancelled) return;
+
+        if (data.creditsRemaining !== undefined) updateCredits(data.creditsRemaining);
+
+        if (data.status === 'completed') {
+          localStorage.removeItem(pendingJobStorageKey(user.id));
+          setActiveJobId(null);
+          navigate('/result', {
+            state: {
+              text: data.text,
+              segments: data.segments,
+              language: data.language,
+              diarize: true,
+            },
+          });
+          return;
+        }
+
+        if (data.status === 'failed') {
+          localStorage.removeItem(pendingJobStorageKey(user.id));
+          setActiveJobId(null);
+          setStatus('error');
+          setError(data.error || '변환에 실패했지만 예약한 변환 시간은 자동 환불되었습니다.');
+          return;
+        }
+
+        setStatus(data.status === 'running' ? 'transcribing' : 'queued');
+        setProgress(data.status === 'running'
+          ? '화자 분석과 자막 생성을 진행 중입니다...'
+          : '다화자 분석 작업을 대기열에서 기다리고 있습니다...');
+      } catch (err) {
+        if (!cancelled) {
+          setStatus('queued');
+          setProgress('작업 상태를 다시 확인 중입니다...');
+        }
+      }
+    }
+
+    pollJob();
+    const intervalId = window.setInterval(pollJob, 5_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [activeJobId, navigate, token, updateCredits, user?.id]);
+
+  const isDiarizationProcessing = activeDiarize && (status === 'queued' || status === 'transcribing');
   const estimatedDiarizationSeconds = estimateDiarizationSeconds(durationSeconds);
   const estimatedDiarizationLabel = estimatedDiarizationSeconds === null
     ? '파일 길이에 따라 달라집니다'
@@ -429,7 +512,7 @@ export default function HomePage() {
           }}
         >
           <p style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.95rem', margin: 0 }}>
-            화자 분석과 자막 생성을 진행 중입니다
+            {status === 'queued' ? '화자 분석 작업을 대기열에서 기다리고 있습니다' : '화자 분석과 자막 생성을 진행 중입니다'}
           </p>
           <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '6px 0 12px' }}>
             경과 {formatElapsedTime(elapsedSeconds)} · 예상 {estimatedDiarizationLabel}
