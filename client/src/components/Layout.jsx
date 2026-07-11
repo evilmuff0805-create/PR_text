@@ -145,7 +145,15 @@ export default function Layout({ children }) {
           <span style={{ color: 'var(--border-color, #333)' }}>|</span>
           <span>전화번호: 010-4901-1421</span>
           <span style={{ color: 'var(--border-color, #333)' }}>|</span>
+          <span>이메일: codemeet@naver.com</span>
+          <span style={{ color: 'var(--border-color, #333)' }}>|</span>
           <span>통신판매업 신고번호: 제 2026-경기김포-4391 호</span>
+          <div style={{ flexBasis: '100%', height: 0 }} />
+          <NavLink to="/terms" style={{ color: 'inherit', textDecoration: 'none' }}>이용약관</NavLink>
+          <span style={{ color: 'var(--border-color, #333)' }}>|</span>
+          <NavLink to="/privacy" style={{ color: 'inherit', textDecoration: 'none' }}>개인정보처리방침</NavLink>
+          <span style={{ color: 'var(--border-color, #333)' }}>|</span>
+          <NavLink to="/support" style={{ color: 'inherit', textDecoration: 'none' }}>고객센터</NavLink>
         </footer>
       </div>
     </div>

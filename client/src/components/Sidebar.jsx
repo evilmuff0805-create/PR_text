@@ -177,6 +177,13 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
             이용약관
           </NavLink>
           <NavLink
+            to="/privacy"
+            style={{ display: 'block', padding: '8px 12px', fontSize: '0.75rem', color: 'var(--text-muted)', textDecoration: 'none' }}
+            onClick={isMobile ? onClose : undefined}
+          >
+            개인정보처리방침
+          </NavLink>
+          <NavLink
             to="/support"
             style={{ display: 'block', padding: '8px 12px', fontSize: '0.75rem', color: 'var(--text-muted)', textDecoration: 'none' }}
             onClick={isMobile ? onClose : undefined}

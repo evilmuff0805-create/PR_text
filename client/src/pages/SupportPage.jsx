@@ -29,7 +29,8 @@ export default function SupportPage() {
           </p>
           <p>
             <strong style={{ color: 'var(--text-primary)' }}>Q. 업로드한 파일은 저장되나요?</strong><br />
-            아닙니다. 변환 완료 후 즉시 삭제되며, 별도로 저장하지 않습니다.
+            원본 음성 파일은 변환에만 사용하고 서비스 데이터베이스에 영구 저장하지 않습니다. 변환 이력과
+            사용·결제 기록의 보관 기준은 개인정보처리방침에서 확인할 수 있습니다.
           </p>
         </div>
       </div>

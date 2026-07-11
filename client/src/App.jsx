@@ -5,6 +5,7 @@ import ResultPage from './pages/ResultPage.jsx';
 import IntroPage from './pages/IntroPage.jsx';
 import GuidePage from './pages/GuidePage.jsx';
 import TermsPage from './pages/TermsPage.jsx';
+import PrivacyPage from './pages/PrivacyPage.jsx';
 import SupportPage from './pages/SupportPage.jsx';
 import PaymentPage from './pages/PaymentPage.jsx';
 import PaymentSuccessPage from './pages/PaymentSuccessPage.jsx';
@@ -28,6 +29,7 @@ function App() {
         <Route path="/payment/success" element={<PaymentSuccessPage />} />
         <Route path="/payment/fail" element={<PaymentFailPage />} />
         <Route path="/terms" element={<TermsPage />} />
+        <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/support" element={<SupportPage />} />
         <Route path="/usage" element={<UsagePage />} />
         <Route path="/settings" element={<SettingsPage />} />
