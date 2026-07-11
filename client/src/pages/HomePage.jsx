@@ -77,7 +77,7 @@ function uploadTranscription({ formData, token, onProgress, onUploadComplete }) 
 }
 
 export default function HomePage() {
-  const { user, updateCredits, getToken } = useAuth();
+  const { user, token, updateCredits, getToken } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [file, setFile] = useState(null);
   const [language, setLanguage] = useState('');
