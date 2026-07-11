@@ -60,6 +60,7 @@ function summarizeCorrection(timings) {
   if (!timings) return undefined;
   return {
     eligible: timings.eligible,
+    model: timings.model,
     wallMs: roundTiming(timings.wallMs),
     chunkCount: timings.chunkCount,
     batchCount: timings.batchCount,
