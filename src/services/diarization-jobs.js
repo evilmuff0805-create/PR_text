@@ -36,8 +36,13 @@ export function toClientDiarizationJob(job, creditsRemaining) {
   };
 }
 
-function storagePathFor(userId) {
-  return `${userId}/${randomUUID()}`;
+function storagePathFor(userId, storageFilename) {
+  const extension = storageFilename?.toLowerCase().endsWith('.mp3') ? '.mp3' : '';
+  return `${userId}/${randomUUID()}${extension}`;
+}
+
+export function storageFilenameForJob(job) {
+  return job.storage_path?.toLowerCase().endsWith('.mp3') ? 'queued-audio.mp3' : job.filename;
 }
 
 async function removeAudio(storagePath) {
@@ -75,13 +80,14 @@ async function cleanUpFinishedAudio() {
 export async function enqueueDiarizationJob({
   userId,
   filename,
+  storageFilename,
   buffer,
   contentType,
   language,
   durationSeconds,
   creditsNeeded,
 }) {
-  const storagePath = storagePathFor(userId);
+  const storagePath = storagePathFor(userId, storageFilename);
   const { error: uploadError } = await supabaseAdmin.storage
     .from(STORAGE_BUCKET)
     .upload(storagePath, buffer, {
@@ -89,7 +95,13 @@ export async function enqueueDiarizationJob({
       upsert: false,
     });
 
-  if (uploadError) throw new Error(`다화자 작업 원본 저장 실패: ${uploadError.message}`);
+  if (uploadError) {
+    const error = new Error(`다화자 작업 원본 저장 실패: ${uploadError.message}`);
+    if (/exceeded the maximum allowed size/i.test(uploadError.message || '')) {
+      error.code = 'DIARIZATION_STORAGE_LIMIT';
+    }
+    throw error;
+  }
 
   try {
     const { data, error } = await supabaseAdmin.rpc('enqueue_diarization_job', {
@@ -219,7 +231,7 @@ async function processNextDiarizationJob() {
     const buffer = Buffer.from(await audio.arrayBuffer());
     const rawResult = await transcribeWithDiarization(
       buffer,
-      job.filename,
+      storageFilenameForJob(job),
       job.requested_language,
     );
     const processedResult = await processTranscriptionSegments(rawResult.segments, rawResult.language);
