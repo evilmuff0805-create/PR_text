@@ -7,6 +7,7 @@ import paymentRouter from './routes/payment.js';
 import transcribeRouter from './routes/transcribe.js';
 import downloadRouter from './routes/download.js';
 import translateRouter from './routes/translate.js';
+import { requestObservability, apiErrorHandler } from './middleware/observability.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync } from 'fs';
@@ -31,6 +32,7 @@ if (missingEnv.length > 0) {
 const app = express();
 app.set('trust proxy', 1); // Railway 등 리버스 프록시 환경에서 X-Forwarded-For 신뢰
 const PORT = process.env.PORT || 3000;
+app.use(requestObservability);
 
 const allowedOrigins = [
   'http://localhost:5173',
@@ -49,7 +51,15 @@ app.use(express.json({ limit: '50mb' }));
 
 // Rate limit 공통 응답
 const rateLimitHandler = (req, res) => {
-  res.status(429).json({ error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.' });
+  console.warn('[api.rate_limit]', JSON.stringify({
+    requestId: req.requestId,
+    method: req.method,
+    path: req.originalUrl.split('?')[0],
+  }));
+  res.status(429).json({
+    error: '요청이 너무 많습니다. 잠시 후 다시 시도해주세요.',
+    requestId: req.requestId,
+  });
 };
 
 // 일반 API: IP당 분당 30회
@@ -89,7 +99,11 @@ const downloadLimiter = rateLimit({
 
 // Health check
 app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok' });
+  res.json({
+    status: 'ok',
+    uptimeSeconds: Math.floor(process.uptime()),
+    commit: process.env.RAILWAY_GIT_COMMIT_SHA?.slice(0, 7) ?? null,
+  });
 });
 
 app.use('/api/auth/reset-password', resetPasswordLimiter);
@@ -98,6 +112,7 @@ app.use('/api/payment', generalLimiter, paymentRouter);
 app.use('/api/transcribe', transcribeLimiter, transcribeRouter);
 app.use('/api/download', downloadLimiter, downloadRouter);
 app.use('/api/translate', translateLimiter, translateRouter);
+app.use(apiErrorHandler);
 
 // Static files (production)
 if (existsSync(distPath)) {
