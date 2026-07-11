@@ -154,7 +154,7 @@ async function createTranscriptionWithFallback({
 }) {
   let audioBuffer = buffer;
   let audioName = getSafeAudioName(originalname);
-  const timings = { compressionMs: 0, openaiMs: 0, openaiAttempts: [] };
+  const timings = { compressionMs: 0, openaiMs: 0, openaiAttempts: [], preconvertedM4a: false };
 
   async function compressWithTiming(sourceBuffer) {
     const startedAt = performance.now();
@@ -181,7 +181,12 @@ async function createTranscriptionWithFallback({
     }
   }
 
-  if (buffer.length >= WHISPER_LIMIT) {
+  if (getExtension(originalname) === '.m4a') {
+    console.log(`[${logPrefix}] 휴대폰 m4a 호환성을 위해 mp3로 선제 변환합니다. original=${originalname}`);
+    audioBuffer = await compressWithTiming(buffer);
+    audioName = 'converted.mp3';
+    timings.preconvertedM4a = true;
+  } else if (buffer.length >= WHISPER_LIMIT) {
     console.log(`[${logPrefix}] 압축 전: ${(buffer.length / 1024 / 1024).toFixed(2)}MB`);
     audioBuffer = await compressWithTiming(buffer);
     audioName = 'compressed.mp3';
@@ -192,7 +197,7 @@ async function createTranscriptionWithFallback({
     const response = await requestTranscription(audioBuffer, audioName, 'initial');
     return { response, timings };
   } catch (err) {
-    if (!isInvalidFileFormatError(err) || audioName === 'compressed.mp3') {
+    if (!isInvalidFileFormatError(err) || audioName === 'compressed.mp3' || audioName === 'converted.mp3') {
       throw err;
     }
 
