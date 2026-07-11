@@ -30,6 +30,14 @@ function buildEditedSegments(segments, editedText) {
   return nextSegments;
 }
 
+function formatSegmentTime(seconds) {
+  const value = Math.max(0, Number(seconds) || 0);
+  const minutes = Math.floor(value / 60);
+  const wholeSeconds = Math.floor(value % 60);
+  const tenths = Math.floor((value % 1) * 10);
+  return `${String(minutes).padStart(2, '0')}:${String(wholeSeconds).padStart(2, '0')}.${tenths}`;
+}
+
 export default function ResultPage() {
   const { state } = useLocation();
   const navigate = useNavigate();
@@ -51,9 +59,10 @@ export default function ResultPage() {
 
   const { text = '', segments = [], language = '', diarize = false } = resolved || {};
 
-  const [editedText, setEditedText] = useState(text);
+  const [editedSegments, setEditedSegments] = useState(() => buildEditedSegments(segments, text));
+  const [editorMode, setEditorMode] = useState('text');
   const [downloading, setDownloading] = useState(false);
-  const editedSegments = buildEditedSegments(segments, editedText);
+  const editedText = editedSegments.map(segment => segment.text).join('\n');
 
   const DEFAULT_SPEAKER_COLORS = ['#FFFFFF', '#39FF14', '#FFE600', '#00F5FF', '#FF6B35', '#FF4BCB'];
   const speakerIds = [...new Set(segments.filter(s => s.speaker !== undefined).map(s => s.speaker))].sort((a, b) => a - b);
@@ -109,6 +118,16 @@ export default function ResultPage() {
     if (assPosition === 'top') return 'flex-start';
     if (assPosition === 'middle') return 'center';
     return 'flex-end';
+  }
+
+  function updateSegmentText(index, nextText) {
+    setEditedSegments(previous => previous.map((segment, segmentIndex) => (
+      segmentIndex === index ? { ...segment, text: nextText } : segment
+    )));
+  }
+
+  function updateFullText(nextText) {
+    setEditedSegments(buildEditedSegments(segments, nextText));
   }
 
   async function handleDownload(format) {
@@ -296,29 +315,113 @@ export default function ResultPage() {
         </div>
       )}
 
-      <div style={{ marginBottom: '24px' }}>
-        <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>
-          변환 결과 (직접 편집 가능)
-        </label>
-        <textarea
-          value={editedText}
-          onChange={(e) => setEditedText(e.target.value)}
-          style={{
-            width: '100%',
-            minHeight: '300px',
-            background: 'var(--bg-tertiary)',
-            color: 'var(--text-primary)',
-            border: '1px solid var(--border-color)',
-            borderRadius: 'var(--border-radius)',
-            padding: '16px',
-            fontFamily: 'var(--font-family)',
-            fontSize: '0.95rem',
-            lineHeight: '1.6',
-            resize: 'vertical',
-            boxSizing: 'border-box',
-          }}
-        />
-      </div>
+      <section style={{ marginBottom: '24px' }}>
+        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>
+          변환 결과 편집
+        </p>
+        <div
+          aria-label="자막 편집 방식"
+          role="tablist"
+          style={{ display: 'flex', gap: '4px', borderBottom: '1px solid var(--border-color)', marginBottom: '12px' }}
+        >
+          {[
+            { id: 'text', label: '전체 텍스트' },
+            { id: 'segments', label: '구간별 편집' },
+          ].map((mode) => (
+            <button
+              key={mode.id}
+              aria-selected={editorMode === mode.id}
+              onClick={() => setEditorMode(mode.id)}
+              role="tab"
+              style={{
+                background: 'none',
+                border: 'none',
+                borderBottom: `2px solid ${editorMode === mode.id ? 'var(--gradient-start)' : 'transparent'}`,
+                color: editorMode === mode.id ? 'var(--text-primary)' : 'var(--text-muted)',
+                padding: '8px 12px',
+                fontFamily: 'var(--font-family)',
+                fontSize: '0.875rem',
+                fontWeight: 600,
+                cursor: 'pointer',
+              }}
+            >
+              {mode.label}
+            </button>
+          ))}
+        </div>
+
+        {editorMode === 'text' ? (
+          <textarea
+            value={editedText}
+            onChange={(e) => updateFullText(e.target.value)}
+            style={{
+              width: '100%',
+              minHeight: '300px',
+              background: 'var(--bg-tertiary)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: 'var(--border-radius)',
+              padding: '16px',
+              fontFamily: 'var(--font-family)',
+              fontSize: '0.95rem',
+              lineHeight: '1.6',
+              resize: 'vertical',
+              boxSizing: 'border-box',
+            }}
+          />
+        ) : (
+          <div
+            role="tabpanel"
+            style={{
+              borderTop: '1px solid var(--border-color)',
+              borderBottom: '1px solid var(--border-color)',
+              maxHeight: '540px',
+              overflowY: 'auto',
+            }}
+          >
+            {editedSegments.map((segment, index) => (
+              <div
+                key={`${segment.start}-${segment.end}-${index}`}
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: '118px minmax(0, 1fr)',
+                  gap: '12px',
+                  padding: '12px 0',
+                  borderBottom: index === editedSegments.length - 1 ? 'none' : '1px solid var(--border-color)',
+                }}
+              >
+                <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem', lineHeight: '1.5' }}>
+                  <div>{formatSegmentTime(segment.start)} - {formatSegmentTime(segment.end)}</div>
+                  {segment.speaker !== undefined && (
+                    <div style={{ color: speakerColors[String(segment.speaker)] || 'var(--text-secondary)', marginTop: '4px' }}>
+                      인물 {segment.speaker + 1}
+                    </div>
+                  )}
+                </div>
+                <textarea
+                  aria-label={`자막 구간 ${index + 1}`}
+                  value={segment.text}
+                  onChange={(e) => updateSegmentText(index, e.target.value)}
+                  style={{
+                    width: '100%',
+                    minHeight: '64px',
+                    background: 'var(--bg-tertiary)',
+                    color: 'var(--text-primary)',
+                    border: '1px solid var(--border-color)',
+                    borderRadius: 'var(--border-radius)',
+                    padding: '10px 12px',
+                    fontFamily: 'var(--font-family)',
+                    fontSize: '0.9rem',
+                    lineHeight: '1.5',
+                    resize: 'vertical',
+                    boxSizing: 'border-box',
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* 영어 번역 토글 */}
       <div style={{ marginBottom: '24px' }}>
