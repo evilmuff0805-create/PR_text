@@ -63,7 +63,12 @@ function uploadTranscription({ formData, token, onProgress, onUploadComplete }) 
         : (() => {
           try { return JSON.parse(xhr.responseText); } catch { return {}; }
         })();
-      resolve({ status: xhr.status, ok: xhr.status >= 200 && xhr.status < 300, data });
+      resolve({
+        status: xhr.status,
+        ok: xhr.status >= 200 && xhr.status < 300,
+        data,
+        requestId: xhr.getResponseHeader('X-Request-Id'),
+      });
     };
     xhr.send(formData);
   });
@@ -165,7 +170,7 @@ export default function HomePage() {
       if (diarize) formData.append('diarize', 'true');
 
       const token = getToken();
-      const { status: responseStatus, ok, data } = await uploadTranscription({
+      const { status: responseStatus, ok, data, requestId } = await uploadTranscription({
         formData,
         token,
         onProgress: (ratio) => setProgress(`파일 업로드 중... ${Math.min(Math.round(ratio * 100), 100)}%`),
@@ -191,7 +196,8 @@ export default function HomePage() {
       }
 
       if (!ok) {
-        throw new Error(data.error || '변환 요청 실패');
+        const message = data.error || '변환 요청 실패';
+        throw new Error(requestId ? `${message} (오류 코드: ${requestId})` : message);
       }
 
       if (data.creditsRemaining !== undefined) {
