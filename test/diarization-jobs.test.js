@@ -1,0 +1,60 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+process.env.OPENAI_API_KEY ||= 'test-key';
+process.env.SUPABASE_URL ||= 'https://example.supabase.co';
+process.env.SUPABASE_ANON_KEY ||= 'test-key';
+process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'test-key';
+
+const { isDiarizationJobId, toClientDiarizationJob } = await import('../src/services/diarization-jobs.js');
+
+const jobId = 'a8b1dc79-6f44-4a9d-9e7e-0c0f0f6a9de1';
+
+test('accepts only UUID-shaped diarization job ids', () => {
+  assert.equal(isDiarizationJobId(jobId), true);
+  assert.equal(isDiarizationJobId('not-a-job-id'), false);
+  assert.equal(isDiarizationJobId(`${jobId}/../other`), false);
+});
+
+test('hides in-progress diarization result data from the client', () => {
+  const result = toClientDiarizationJob({
+    id: jobId,
+    status: 'running',
+    created_at: '2026-07-11T00:00:00.000Z',
+    started_at: '2026-07-11T00:01:00.000Z',
+    completed_at: null,
+    filename: 'interview.m4a',
+    credits_reserved: 12,
+    credits_refunded: false,
+    result_text: 'not ready',
+    result_segments: [{ text: 'not ready' }],
+    result_language: 'korean',
+  }, 18);
+
+  assert.equal(result.status, 'running');
+  assert.equal(result.creditsRemaining, 18);
+  assert.equal(result.text, undefined);
+  assert.equal(result.segments, undefined);
+});
+
+test('returns completed diarization results and a safe failure message', () => {
+  const completed = toClientDiarizationJob({
+    id: jobId,
+    status: 'completed',
+    created_at: '2026-07-11T00:00:00.000Z',
+    started_at: '2026-07-11T00:01:00.000Z',
+    completed_at: '2026-07-11T00:02:00.000Z',
+    filename: 'interview.m4a',
+    credits_reserved: 12,
+    credits_refunded: false,
+    result_text: '결과',
+    result_segments: [{ text: '결과' }],
+    result_language: 'korean',
+  }, 18);
+  const failed = toClientDiarizationJob({ ...completed, status: 'failed', result_text: null, result_segments: null }, 30);
+
+  assert.equal(completed.text, '결과');
+  assert.equal(completed.segments.length, 1);
+  assert.equal(failed.creditsRemaining, 30);
+  assert.equal(failed.error, '변환에 실패해 예약한 변환 시간이 자동 환불되었습니다.');
+});

@@ -5,9 +5,11 @@ import { rateLimit } from 'express-rate-limit';
 import authRouter from './routes/auth.js';
 import paymentRouter from './routes/payment.js';
 import transcribeRouter from './routes/transcribe.js';
+import transcriptionJobsRouter from './routes/transcription-jobs.js';
 import downloadRouter from './routes/download.js';
 import translateRouter from './routes/translate.js';
 import { requestObservability, apiErrorHandler } from './middleware/observability.js';
+import { startDiarizationJobWorker } from './services/diarization-jobs.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync } from 'fs';
@@ -109,6 +111,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth/reset-password', resetPasswordLimiter);
 app.use('/api/auth', generalLimiter, authRouter);
 app.use('/api/payment', generalLimiter, paymentRouter);
+app.use('/api/transcribe/jobs', generalLimiter, transcriptionJobsRouter);
 app.use('/api/transcribe', transcribeLimiter, transcribeRouter);
 app.use('/api/download', downloadLimiter, downloadRouter);
 app.use('/api/translate', translateLimiter, translateRouter);
@@ -126,4 +129,5 @@ if (existsSync(distPath)) {
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  startDiarizationJobWorker();
 });
