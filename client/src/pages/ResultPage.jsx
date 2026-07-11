@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../contexts/AuthContext.jsx';
 
 function buildEditedSegments(segments, editedText) {
   if (!Array.isArray(segments) || segments.length === 0) return [];
@@ -32,6 +33,7 @@ function buildEditedSegments(segments, editedText) {
 export default function ResultPage() {
   const { state } = useLocation();
   const navigate = useNavigate();
+  const { token } = useAuth();
 
   // location.state가 있으면 sessionStorage에 저장, 없으면 복원
   useEffect(() => {
@@ -129,7 +131,10 @@ export default function ResultPage() {
       }
       const res = await fetch('/api/download', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
         body: JSON.stringify(body),
       });
       if (!res.ok) throw new Error('다운로드 실패');

@@ -1,21 +1,87 @@
 import { Router } from 'express';
 import { generateSRT, generateTXT, generateASS } from '../services/subtitle.js';
+import { authMiddleware } from '../middleware/auth.js';
 
 const router = Router();
+const MAX_SEGMENTS = 5_000;
+const MAX_SEGMENT_TEXT_LENGTH = 10_000;
+const MAX_TOTAL_TEXT_LENGTH = 1_000_000;
+const MAX_SPEAKERS = 20;
+const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
+const ASS_POSITIONS = new Set(['top', 'middle', 'bottom']);
+
+function validateSegments(segments) {
+  if (!Array.isArray(segments) || segments.length === 0) return 'segments가 필요합니다.';
+  if (segments.length > MAX_SEGMENTS) return '자막 세그먼트 수가 너무 많습니다.';
+
+  let totalTextLength = 0;
+  for (const segment of segments) {
+    if (!segment || typeof segment !== 'object') return '자막 세그먼트 형식이 올바르지 않습니다.';
+    if (!Number.isFinite(segment.start) || !Number.isFinite(segment.end) || segment.start < 0 || segment.end < segment.start) {
+      return '자막 시간 정보가 올바르지 않습니다.';
+    }
+    if (typeof segment.text !== 'string' || segment.text.length > MAX_SEGMENT_TEXT_LENGTH) {
+      return '자막 텍스트가 너무 길거나 올바르지 않습니다.';
+    }
+    if (segment.speaker !== undefined && (!Number.isInteger(segment.speaker) || segment.speaker < 0 || segment.speaker >= MAX_SPEAKERS)) {
+      return '화자 정보가 올바르지 않습니다.';
+    }
+
+    totalTextLength += segment.text.length;
+    if (totalTextLength > MAX_TOTAL_TEXT_LENGTH) return '자막 전체 텍스트가 너무 큽니다.';
+  }
+
+  return null;
+}
+
+function validateSpeakerColors(speakerColors) {
+  if (speakerColors === undefined || speakerColors === null) return null;
+  if (typeof speakerColors !== 'object' || Array.isArray(speakerColors)) return '화자 색상 형식이 올바르지 않습니다.';
+
+  const entries = Object.entries(speakerColors);
+  if (entries.length > MAX_SPEAKERS) return '화자 색상 수가 너무 많습니다.';
+  if (entries.some(([speaker, color]) => !/^\d+$/.test(speaker) || !HEX_COLOR.test(color))) {
+    return '화자 색상 값이 올바르지 않습니다.';
+  }
+
+  return null;
+}
+
+function validateAssOptions(assOptions) {
+  if (assOptions === undefined || assOptions === null) return null;
+  if (typeof assOptions !== 'object' || Array.isArray(assOptions)) return 'ASS 설정 형식이 올바르지 않습니다.';
+
+  const { position, fontFamily, fontColor, fontSize } = assOptions;
+  if (position !== undefined && !ASS_POSITIONS.has(position)) return 'ASS 자막 위치가 올바르지 않습니다.';
+  if (fontFamily !== undefined && (typeof fontFamily !== 'string' || fontFamily.length > 100 || /[\r\n,]/.test(fontFamily))) {
+    return 'ASS 폰트명이 올바르지 않습니다.';
+  }
+  if (fontColor !== undefined && (typeof fontColor !== 'string' || !HEX_COLOR.test(fontColor))) return 'ASS 글자 색상이 올바르지 않습니다.';
+  if (fontSize !== undefined && (!Number.isFinite(fontSize) || fontSize < 8 || fontSize > 120)) return 'ASS 글자 크기가 올바르지 않습니다.';
+
+  return null;
+}
+
+export function validateDownloadPayload({ segments, format, assOptions, speakerColors }) {
+  const segmentError = validateSegments(segments);
+  if (segmentError) return segmentError;
+
+  const supportedFormats = ['srt', 'txt', 'ass'];
+  if (!supportedFormats.includes(format)) return `지원하지 않는 형식입니다: ${format}`;
+
+  const speakerColorError = validateSpeakerColors(speakerColors);
+  if (speakerColorError) return speakerColorError;
+
+  return validateAssOptions(assOptions);
+}
 
 // POST /api/download
-router.post('/', (req, res) => {
+router.post('/', authMiddleware, (req, res) => {
   try {
     const { segments, format, assOptions, speakerColors } = req.body;
 
-    if (!segments || !Array.isArray(segments) || segments.length === 0) {
-      return res.status(400).json({ error: 'segments가 필요합니다.' });
-    }
-
-    const supportedFormats = ['srt', 'txt', 'ass'];
-    if (!supportedFormats.includes(format)) {
-      return res.status(400).json({ error: `지원하지 않는 형식입니다: ${format}` });
-    }
+    const validationError = validateDownloadPayload({ segments, format, assOptions, speakerColors });
+    if (validationError) return res.status(400).json({ error: validationError });
 
     const colors = speakerColors && Object.keys(speakerColors).length > 0 ? speakerColors : null;
 

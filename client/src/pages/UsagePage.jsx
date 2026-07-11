@@ -97,7 +97,10 @@ export default function UsagePage() {
 
       const dlRes = await fetch('/api/download', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({ segments, format }),
       });
       if (!dlRes.ok) throw new Error('다운로드 실패');
