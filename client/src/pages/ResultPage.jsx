@@ -38,6 +38,41 @@ function formatSegmentTime(seconds) {
   return `${String(minutes).padStart(2, '0')}:${String(wholeSeconds).padStart(2, '0')}.${tenths}`;
 }
 
+const ASS_PRESETS = [
+  {
+    id: 'youtube',
+    label: 'YouTube 기본',
+    position: 'bottom',
+    fontFamily: 'Pretendard',
+    fontColor: '#FFFFFF',
+    fontSize: 20,
+  },
+  {
+    id: 'highlight',
+    label: '강조형',
+    position: 'bottom',
+    fontFamily: 'Noto Sans KR',
+    fontColor: '#FFFF00',
+    fontSize: 24,
+  },
+  {
+    id: 'caption',
+    label: '상단 설명',
+    position: 'top',
+    fontFamily: 'Pretendard',
+    fontColor: '#FFFFFF',
+    fontSize: 18,
+  },
+  {
+    id: 'interview',
+    label: '중앙 인터뷰',
+    position: 'middle',
+    fontFamily: 'Nanum Gothic',
+    fontColor: '#FFFFFF',
+    fontSize: 22,
+  },
+];
+
 export default function ResultPage() {
   const { state } = useLocation();
   const navigate = useNavigate();
@@ -110,6 +145,13 @@ export default function ResultPage() {
     { value: '#A855F7', label: '보라색' },
   ];
 
+  const activeAssPreset = ASS_PRESETS.find((preset) => (
+    preset.position === assPosition
+    && preset.fontFamily === assFontFamily
+    && preset.fontColor === assFontColor
+    && preset.fontSize === assFontSize
+  ))?.id;
+
   // 미리보기용 샘플 텍스트 (첫 번째 세그먼트 사용)
   const previewText = editedSegments.length > 0 ? editedSegments[0].text : '자막 미리보기 텍스트';
 
@@ -128,6 +170,13 @@ export default function ResultPage() {
 
   function updateFullText(nextText) {
     setEditedSegments(buildEditedSegments(segments, nextText));
+  }
+
+  function applyAssPreset(preset) {
+    setAssPosition(preset.position);
+    setAssFontFamily(preset.fontFamily);
+    setAssFontColor(preset.fontColor);
+    setAssFontSize(preset.fontSize);
   }
 
   async function handleDownload(format) {
@@ -532,6 +581,36 @@ export default function ResultPage() {
             >
               ✕
             </button>
+          </div>
+
+          <div style={{ marginBottom: '20px' }}>
+            <p style={labelStyle}>빠른 스타일</p>
+            <div role="group" aria-label="ASS 자막 프리셋" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
+              {ASS_PRESETS.map((preset) => {
+                const isActive = activeAssPreset === preset.id;
+                return (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    onClick={() => applyAssPreset(preset)}
+                    aria-pressed={isActive}
+                    style={{
+                      background: isActive ? 'var(--gradient-start)' : 'var(--bg-tertiary)',
+                      border: `1px solid ${isActive ? 'var(--gradient-start)' : 'var(--border-color)'}`,
+                      borderRadius: '6px',
+                      color: isActive ? '#FFFFFF' : 'var(--text-primary)',
+                      cursor: 'pointer',
+                      fontFamily: 'var(--font-family)',
+                      fontSize: '0.8rem',
+                      fontWeight: 600,
+                      padding: '8px 10px',
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                );
+              })}
+            </div>
           </div>
 
           {/* 미리보기 창 */}
