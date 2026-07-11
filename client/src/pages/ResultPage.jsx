@@ -1,6 +1,34 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
+function buildEditedSegments(segments, editedText) {
+  if (!Array.isArray(segments) || segments.length === 0) return [];
+
+  const normalizedText = String(editedText ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\n+$/g, '');
+  const lines = normalizedText.split('\n');
+
+  const nextSegments = segments.map((segment, index) => ({
+    ...segment,
+    text: lines[index] ?? '',
+  }));
+
+  if (lines.length > segments.length) {
+    const lastIndex = nextSegments.length - 1;
+    const overflowText = lines.slice(segments.length).join('\n').trim();
+    if (overflowText) {
+      nextSegments[lastIndex] = {
+        ...nextSegments[lastIndex],
+        text: [nextSegments[lastIndex].text, overflowText].filter(Boolean).join('\n'),
+      };
+    }
+  }
+
+  return nextSegments;
+}
+
 export default function ResultPage() {
   const { state } = useLocation();
   const navigate = useNavigate();
@@ -23,6 +51,7 @@ export default function ResultPage() {
 
   const [editedText, setEditedText] = useState(text);
   const [downloading, setDownloading] = useState(false);
+  const editedSegments = buildEditedSegments(segments, editedText);
 
   const DEFAULT_SPEAKER_COLORS = ['#FFFFFF', '#39FF14', '#FFE600', '#00F5FF', '#FF6B35', '#FF4BCB'];
   const speakerIds = [...new Set(segments.filter(s => s.speaker !== undefined).map(s => s.speaker))].sort((a, b) => a - b);
@@ -71,7 +100,7 @@ export default function ResultPage() {
   ];
 
   // 미리보기용 샘플 텍스트 (첫 번째 세그먼트 사용)
-  const previewText = segments.length > 0 ? segments[0].text : '자막 미리보기 텍스트';
+  const previewText = editedSegments.length > 0 ? editedSegments[0].text : '자막 미리보기 텍스트';
 
   // 미리보기에서 자막 위치 계산
   function getPreviewAlign() {
@@ -91,7 +120,7 @@ export default function ResultPage() {
   async function doDownload(format, options) {
     setDownloading(true);
     try {
-      const body = { segments, format };
+      const body = { segments: editedSegments, format };
       if (format === 'ass' && options) {
         body.assOptions = options;
       }
@@ -136,7 +165,7 @@ export default function ResultPage() {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
-        body: JSON.stringify({ segments }),
+        body: JSON.stringify({ segments: editedSegments }),
       });
       if (!res.ok) throw new Error('번역 요청 실패');
       const data = await res.json();
