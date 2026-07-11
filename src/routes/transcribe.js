@@ -61,6 +61,8 @@ function summarizeCorrection(timings) {
   return {
     eligible: timings.eligible,
     model: timings.model,
+    requestedModel: timings.requestedModel,
+    fallbackCount: timings.fallbackCount,
     usage: timings.usage,
     estimatedCostUsd: Number.isFinite(timings.estimatedCostUsd)
       ? Number(timings.estimatedCostUsd.toFixed(8))

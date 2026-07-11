@@ -22,8 +22,11 @@ async function correctChunk(chunk, correct) {
       console.warn(`[gpt chunk] 줄 수 불일치: 원본 ${chunk.length}줄, GPT ${lines.length}줄 -> 원본 유지`);
       return {
         segments: chunk,
-        outcome: 'line_count_mismatch',
-        usage: corrected.usage,
+      outcome: 'line_count_mismatch',
+      model: corrected.model,
+      requestedModel: corrected.requestedModel,
+      fallbackUsed: corrected.fallbackUsed === true,
+      usage: corrected.usage,
         estimatedCostUsd: corrected.estimatedCostUsd,
       };
     }
@@ -34,6 +37,9 @@ async function correctChunk(chunk, correct) {
         text: (lines[index] || segment.text).trim(),
       })),
       outcome: 'success',
+      model: corrected.model,
+      requestedModel: corrected.requestedModel,
+      fallbackUsed: corrected.fallbackUsed === true,
       usage: corrected.usage,
       estimatedCostUsd: corrected.estimatedCostUsd,
     };
@@ -59,6 +65,12 @@ function summarizeEstimatedCost(chunks) {
   const costs = chunks.map(chunk => chunk.estimatedCostUsd).filter(Number.isFinite);
   if (costs.length === 0) return undefined;
   return costs.reduce((total, value) => total + value, 0);
+}
+
+function summarizeActualModel(chunks) {
+  const models = [...new Set(chunks.map(chunk => chunk.model).filter(Boolean))];
+  if (models.length === 0) return undefined;
+  return models.length === 1 ? models[0] : models;
 }
 
 export async function processSegmentsWithTiming(segments, detectedLang, correct) {
@@ -122,7 +134,9 @@ export async function processSegmentsWithTiming(segments, detectedLang, correct)
     segments: corrected,
     timings: {
       eligible: true,
-      model,
+      model: summarizeActualModel(chunkTimings) ?? model,
+      requestedModel: model,
+      fallbackCount: chunkTimings.filter(chunk => chunk.fallbackUsed).length,
       usage: summarizeUsage(chunkTimings),
       estimatedCostUsd: summarizeEstimatedCost(chunkTimings),
       wallMs: performance.now() - startedAt,
