@@ -10,9 +10,26 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 4 })
 const execFileAsync = promisify(execFile);
 
 const WHISPER_LIMIT = 25 * 1024 * 1024; // 25MB
+const OPENAI_SUPPORTED_EXTENSIONS = new Set(['.flac', '.m4a', '.mp3', '.mp4', '.mpeg', '.mpga', '.oga', '.ogg', '.wav', '.webm']);
+
+function getExtension(filename) {
+  const dotIndex = filename.lastIndexOf('.');
+  if (dotIndex === -1) return '';
+  return filename.slice(dotIndex).toLowerCase();
+}
+
+function getSafeAudioName(originalname, fallbackExt = '.mp3') {
+  const ext = getExtension(originalname);
+  const safeExt = OPENAI_SUPPORTED_EXTENSIONS.has(ext) ? ext : fallbackExt;
+  return `audio-${Date.now()}${safeExt}`;
+}
+
+function isInvalidFileFormatError(err) {
+  return err.status === 400 && /invalid file format/i.test(err.message || '');
+}
 
 async function compressAudio(buffer, originalname) {
-  const ext = originalname.slice(originalname.lastIndexOf('.'));
+  const ext = getExtension(originalname) || '.audio';
   const inputPath = join(tmpdir(), `stt-input-${Date.now()}${ext}`);
   const outputPath = join(tmpdir(), `stt-output-${Date.now()}.mp3`);
 
@@ -38,22 +55,40 @@ async function compressAudio(buffer, originalname) {
   }
 }
 
-export async function transcribeWithDiarization(buffer, originalname, language) {
-  try {
-    let audioBuffer = buffer;
-    let audioName = originalname;
+async function createTranscriptionWithFallback({
+  buffer,
+  originalname,
+  params,
+  logPrefix,
+}) {
+  let audioBuffer = buffer;
+  let audioName = getSafeAudioName(originalname);
 
-    if (buffer.length >= WHISPER_LIMIT) {
-      console.log(`[diarize] 압축 전: ${(buffer.length / 1024 / 1024).toFixed(2)}MB`);
-      audioBuffer = await compressAudio(buffer, originalname);
-      audioName = 'compressed.mp3';
-      console.log(`[diarize] 압축 후: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+  if (buffer.length >= WHISPER_LIMIT) {
+    console.log(`[${logPrefix}] 압축 전: ${(buffer.length / 1024 / 1024).toFixed(2)}MB`);
+    audioBuffer = await compressAudio(buffer, originalname);
+    audioName = 'compressed.mp3';
+    console.log(`[${logPrefix}] 압축 후: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
+  }
+
+  try {
+    const file = await toFile(audioBuffer, audioName);
+    return await openai.audio.transcriptions.create({ ...params, file });
+  } catch (err) {
+    if (!isInvalidFileFormatError(err) || audioName === 'compressed.mp3') {
+      throw err;
     }
 
-    const file = await toFile(audioBuffer, audioName);
+    console.warn(`[${logPrefix}] OpenAI 파일 형식 오류. 휴대폰 녹음 파일 호환성을 위해 mp3로 변환 후 재시도합니다. original=${originalname}, upload=${audioName}`);
+    const converted = await compressAudio(buffer, originalname);
+    const file = await toFile(converted, 'converted.mp3');
+    return openai.audio.transcriptions.create({ ...params, file });
+  }
+}
 
+export async function transcribeWithDiarization(buffer, originalname, language) {
+  try {
     const params = {
-      file,
       model: 'gpt-4o-transcribe-diarize',
       response_format: 'diarized_json',
     };
@@ -62,7 +97,12 @@ export async function transcribeWithDiarization(buffer, originalname, language) 
       params.language = language;
     }
 
-    const response = await openai.audio.transcriptions.create(params);
+    const response = await createTranscriptionWithFallback({
+      buffer,
+      originalname,
+      params,
+      logPrefix: 'diarize',
+    });
 
     const rawSegments = response.segments ?? [];
 
@@ -112,20 +152,7 @@ export async function transcribeWithDiarization(buffer, originalname, language) 
  */
 export async function transcribe(buffer, originalname, language) {
   try {
-    let audioBuffer = buffer;
-    let audioName = originalname;
-
-    if (buffer.length >= WHISPER_LIMIT) {
-      console.log(`[whisper] 압축 전: ${(buffer.length / 1024 / 1024).toFixed(2)}MB`);
-      audioBuffer = await compressAudio(buffer, originalname);
-      audioName = 'compressed.mp3';
-      console.log(`[whisper] 압축 후: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
-    }
-
-    const file = await toFile(audioBuffer, audioName);
-
     const params = {
-      file,
       model: 'whisper-1',
       response_format: 'verbose_json',
       timestamp_granularities: ['segment'],
@@ -135,7 +162,12 @@ export async function transcribe(buffer, originalname, language) {
       params.language = language;
     }
 
-    const response = await openai.audio.transcriptions.create(params);
+    const response = await createTranscriptionWithFallback({
+      buffer,
+      originalname,
+      params,
+      logPrefix: 'whisper',
+    });
 
     return {
       text: response.text,

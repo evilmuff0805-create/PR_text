@@ -1,32 +1,32 @@
 import { Router } from 'express';
 import uploadMiddleware from '../middleware/upload.js';
 import { transcribe, transcribeWithDiarization } from '../services/whisper.js';
-import { correctText, translateToKorean } from '../services/gpt.js';
+import { correctText } from '../services/gpt.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 
 const router = Router();
 
-// 세그먼트 텍스트 일괄 교정/번역 헬퍼
+// 세그먼트 텍스트 일괄 교정 헬퍼
+// 방송/유튜브 자막 용도에서는 음성에 없는 말을 추가하거나 번역하면 안 된다.
+// 따라서 전사 후처리는 한국어 맞춤법/띄어쓰기 교정만 수행하고,
+// 다른 언어는 Whisper가 들은 원문 그대로 유지한다.
 async function processSegments(segments, detectedLang) {
   const lang = (detectedLang || '').toLowerCase();
   const CHUNK_SIZE = 30;
-  if (!lang.includes('korean') && lang !== 'ko' &&
-      !lang.includes('japanese') && lang !== 'ja' &&
-      !lang.includes('chinese') && lang !== 'zh') {
+  const shouldCorrectKorean = lang.includes('korean') || lang === 'ko' || lang === 'kor';
+
+  if (!shouldCorrectKorean) {
     return segments;
   }
-  const isTranslate = lang.includes('japanese') || lang === 'ja' ||
-                      lang.includes('chinese') || lang === 'zh';
-  const langName = (lang.includes('japanese') || lang === 'ja') ? '일본어' : '중국어';
+
   const result = [];
   for (let i = 0; i < segments.length; i += CHUNK_SIZE) {
     const chunk = segments.slice(i, i + CHUNK_SIZE);
     const allText = chunk.map(s => s.text).join('\n');
     let processed;
     try {
-      processed = isTranslate ? await translateToKorean(allText, langName)
-                              : await correctText(allText, 'ko');
+      processed = await correctText(allText, 'ko');
     } catch (err) {
       console.error('[gpt chunk]', i, err.message);
       result.push(...chunk);
