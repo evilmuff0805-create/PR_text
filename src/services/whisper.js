@@ -7,12 +7,17 @@ import { join } from 'path';
 import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import { performance } from 'perf_hooks';
+import { buildAudioChunkPlan, mapWithConcurrency, mergeChunkSegments } from './audio-chunks.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 4 });
 const execFileAsync = promisify(execFile);
 
 const WHISPER_LIMIT = 25 * 1024 * 1024; // 25MB
 const OPENAI_SUPPORTED_EXTENSIONS = new Set(['.flac', '.m4a', '.mp3', '.mp4', '.mpeg', '.mpga', '.oga', '.ogg', '.wav', '.webm']);
+const PARALLEL_TRANSCRIBE_MIN_SECONDS = 6 * 60;
+const PARALLEL_TRANSCRIBE_CHUNK_SECONDS = 3 * 60;
+const PARALLEL_TRANSCRIBE_CONCURRENCY = 2;
+const PARALLEL_TRANSCRIBE_ENABLED = process.env.PARALLEL_TRANSCRIBE_ENABLED !== 'false';
 
 function getExtension(filename) {
   const dotIndex = filename.lastIndexOf('.');
@@ -84,6 +89,63 @@ async function compressAudio(buffer, originalname) {
   }
 }
 
+function parseSilenceEnds(stderr) {
+  return [...stderr.matchAll(/silence_end:\s*([0-9.]+)/g)]
+    .map(match => Number.parseFloat(match[1]))
+    .filter(Number.isFinite);
+}
+
+async function prepareParallelChunks(buffer, originalname, durationSeconds) {
+  const extension = getExtension(originalname) || '.audio';
+  const inputPath = createTempPath('stt-parallel-input', extension);
+  const outputPaths = [];
+
+  try {
+    await writeFile(inputPath, buffer);
+    const { stderr } = await execFileAsync('ffmpeg', [
+      '-hide_banner',
+      '-i', inputPath,
+      '-af', 'silencedetect=noise=-35dB:d=0.35',
+      '-f', 'null',
+      '-',
+    ], { timeout: 120_000, maxBuffer: 4 * 1024 * 1024 });
+
+    const chunkPlan = buildAudioChunkPlan({
+      durationSeconds,
+      silenceEnds: parseSilenceEnds(stderr),
+      targetSeconds: PARALLEL_TRANSCRIBE_CHUNK_SECONDS,
+    });
+    const chunks = [];
+
+    for (const chunk of chunkPlan) {
+      const outputPath = createTempPath(`stt-parallel-${chunk.index}`, '.mp3');
+      outputPaths.push(outputPath);
+      await execFileAsync('ffmpeg', [
+        '-ss', chunk.inputStart.toFixed(3),
+        '-i', inputPath,
+        '-t', (chunk.inputEnd - chunk.inputStart).toFixed(3),
+        '-vn',
+        '-ac', '1',
+        '-ar', '16000',
+        '-b:a', '32k',
+        '-y',
+        outputPath,
+      ], { timeout: 120_000 });
+
+      const chunkBuffer = await readFile(outputPath);
+      if (chunkBuffer.length === 0) throw new Error('분할된 오디오가 비어 있습니다.');
+      chunks.push({ ...chunk, buffer: chunkBuffer });
+    }
+
+    return chunks;
+  } finally {
+    try { await unlink(inputPath); } catch {}
+    await Promise.all(outputPaths.map(async (path) => {
+      try { await unlink(path); } catch {}
+    }));
+  }
+}
+
 async function createTranscriptionWithFallback({
   buffer,
   originalname,
@@ -133,6 +195,50 @@ async function createTranscriptionWithFallback({
     const response = await requestTranscription(converted, 'converted.mp3');
     return { response, timings };
   }
+}
+
+async function transcribeLongAudioInParallel({ buffer, originalname, params, durationSeconds }) {
+  const splitStartedAt = performance.now();
+  let chunks;
+  try {
+    chunks = await prepareParallelChunks(buffer, originalname, durationSeconds);
+  } catch (err) {
+    console.warn(`[whisper] 병렬 분할 준비 실패. 기존 단일 전사로 진행합니다: ${err.message}`);
+    return null;
+  }
+  const splitMs = performance.now() - splitStartedAt;
+
+  if (chunks.length < 2) return null;
+
+  const openaiStartedAt = performance.now();
+  const chunkResults = await mapWithConcurrency(
+    chunks,
+    PARALLEL_TRANSCRIBE_CONCURRENCY,
+    async (chunk) => {
+      const { response, timings } = await createTranscriptionWithFallback({
+        buffer: chunk.buffer,
+        originalname: `chunk-${chunk.index}.mp3`,
+        params,
+        logPrefix: `whisper chunk ${chunk.index + 1}/${chunks.length}`,
+      });
+      return { chunk, response, timings };
+    }
+  );
+  const openaiMs = performance.now() - openaiStartedAt;
+  const segments = mergeChunkSegments(chunkResults);
+
+  return {
+    text: segments.map(segment => segment.text).join(' '),
+    segments,
+    language: chunkResults.find(result => result.response.language)?.response.language ?? 'unknown',
+    timings: {
+      compressionMs: chunkResults.reduce((total, result) => total + result.timings.compressionMs, 0),
+      splitMs,
+      openaiMs,
+      openaiAggregateMs: chunkResults.reduce((total, result) => total + result.timings.openaiMs, 0),
+      chunkCount: chunks.length,
+    },
+  };
 }
 
 export async function transcribeWithDiarization(buffer, originalname, language) {
@@ -202,7 +308,7 @@ export async function transcribeWithDiarization(buffer, originalname, language) 
  * @param {string} [language] - ISO-639-1 언어 코드 (없으면 자동 감지)
  * @returns {{ text: string, segments: object[], language: string }}
  */
-export async function transcribe(buffer, originalname, language) {
+export async function transcribe(buffer, originalname, language, { durationSeconds } = {}) {
   try {
     const params = {
       model: 'whisper-1',
@@ -212,6 +318,21 @@ export async function transcribe(buffer, originalname, language) {
 
     if (language) {
       params.language = language;
+    }
+
+    if (PARALLEL_TRANSCRIBE_ENABLED && Number.isFinite(durationSeconds) && durationSeconds >= PARALLEL_TRANSCRIBE_MIN_SECONDS) {
+      const parallelResult = await transcribeLongAudioInParallel({
+        buffer,
+        originalname,
+        params,
+        durationSeconds,
+      });
+      if (parallelResult) {
+        return {
+          ...parallelResult,
+          language: parallelResult.language === 'unknown' ? (language ?? 'unknown') : parallelResult.language,
+        };
+      }
     }
 
     const { response, timings } = await createTranscriptionWithFallback({

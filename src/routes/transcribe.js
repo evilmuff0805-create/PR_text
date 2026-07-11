@@ -47,6 +47,7 @@ function completeTiming(req, res, outcome) {
     auth: timing.authMs,
     upload: timing.uploadMs,
     probe: timing.probeMs,
+    split: timing.splitMs,
     compress: timing.compressionMs,
     openai: timing.openaiMs,
     correction: timing.correctionMs,
@@ -62,6 +63,10 @@ function completeTiming(req, res, outcome) {
   console.log('[transcribe.timing]', JSON.stringify({
     requestId: timing.requestId,
     outcome,
+    chunkCount: timing.chunkCount ?? 1,
+    language: timing.language,
+    segmentCount: timing.segmentCount,
+    openaiAggregateMs: Number.isFinite(timing.openaiAggregateMs) ? roundTiming(timing.openaiAggregateMs) : undefined,
     ...Object.fromEntries(
       Object.entries(fields)
         .filter(([, value]) => Number.isFinite(value))
@@ -128,10 +133,15 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
     const transcriptionStartedAt = performance.now();
     const result = diarize
       ? await transcribeWithDiarization(buffer, originalname, language)
-      : await transcribe(buffer, originalname, language);
+      : await transcribe(buffer, originalname, language, { durationSeconds });
     req.transcriptionTiming.transcriptionMs = performance.now() - transcriptionStartedAt;
     req.transcriptionTiming.compressionMs = result.timings?.compressionMs;
+    req.transcriptionTiming.splitMs = result.timings?.splitMs;
     req.transcriptionTiming.openaiMs = result.timings?.openaiMs;
+    req.transcriptionTiming.openaiAggregateMs = result.timings?.openaiAggregateMs;
+    req.transcriptionTiming.chunkCount = result.timings?.chunkCount;
+    req.transcriptionTiming.language = result.language;
+    req.transcriptionTiming.segmentCount = result.segments.length;
 
     // 오디오 길이 → 크레딧 필요량 (1분당 1크레딧, 최소 1)
     const lastSegment = result.segments[result.segments.length - 1];
