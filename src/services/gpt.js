@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { estimateCorrectionCostUsd, normalizeTokenUsage } from './correction-pricing.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const DEFAULT_CORRECTION_MODEL = 'gpt-4o';
@@ -21,9 +22,15 @@ async function withRetry(fn, retries = 2) {
 }
 
 export async function correctText(text, language) {
+  const result = await correctTextWithUsage(text, language);
+  return result.text;
+}
+
+export async function correctTextWithUsage(text, language, options = {}) {
+  const model = options.model || getCorrectionModel();
   try {
     const response = await withRetry(() => openai.chat.completions.create({
-      model: getCorrectionModel(),
+      model,
       temperature: 0.3,
       messages: [
         {
@@ -33,7 +40,16 @@ export async function correctText(text, language) {
         { role: 'user', content: text },
       ],
     }));
-    return response.choices[0].message.content.trim();
+    const output = response.choices[0]?.message?.content?.trim();
+    if (!output) throw new Error('GPT 교정 결과가 비어 있습니다.');
+
+    const usage = normalizeTokenUsage(response.usage);
+    return {
+      text: output,
+      model,
+      usage,
+      estimatedCostUsd: estimateCorrectionCostUsd(model, usage),
+    };
   } catch (err) {
     throw new Error(`GPT API 오류: ${err.message}`);
   }
