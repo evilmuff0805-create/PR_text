@@ -1,7 +1,7 @@
 import { performance } from 'perf_hooks';
 
 const CHUNK_SIZE = 30;
-const DEFAULT_CONCURRENCY = 2;
+const DEFAULT_CONCURRENCY = 4;
 
 function getCorrectionConcurrency() {
   const configured = Number.parseInt(process.env.GPT_CORRECTION_CONCURRENCY ?? '', 10);
