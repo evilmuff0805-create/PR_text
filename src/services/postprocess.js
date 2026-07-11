@@ -22,11 +22,11 @@ async function correctChunk(chunk, correct) {
       console.warn(`[gpt chunk] 줄 수 불일치: 원본 ${chunk.length}줄, GPT ${lines.length}줄 -> 원본 유지`);
       return {
         segments: chunk,
-      outcome: 'line_count_mismatch',
-      model: corrected.model,
-      requestedModel: corrected.requestedModel,
-      fallbackUsed: corrected.fallbackUsed === true,
-      usage: corrected.usage,
+        outcome: 'line_count_mismatch',
+        model: corrected.model,
+        requestedModel: corrected.requestedModel,
+        fallbackUsed: corrected.fallbackUsed === true,
+        usage: corrected.usage,
         estimatedCostUsd: corrected.estimatedCostUsd,
       };
     }
@@ -73,16 +73,26 @@ function summarizeActualModel(chunks) {
   return models.length === 1 ? models[0] : models;
 }
 
+function hasMostlyKoreanText(segments) {
+  const text = segments.map(segment => segment.text || '').join('');
+  const hangulCount = (text.match(/[가-힣]/g) || []).length;
+  const letterCount = (text.match(/[A-Za-z가-힣]/g) || []).length;
+  return hangulCount >= 4 && hangulCount / Math.max(letterCount, 1) >= 0.5;
+}
+
 export async function processSegmentsWithTiming(segments, detectedLang, correct) {
   const startedAt = performance.now();
   const language = (detectedLang || '').toLowerCase();
-  const shouldCorrectKorean = language.includes('korean') || language === 'ko' || language === 'kor';
+  const detectedKorean = language.includes('korean') || language === 'ko' || language === 'kor';
+  const inferredKorean = language === 'unknown' && hasMostlyKoreanText(segments);
+  const shouldCorrectKorean = detectedKorean || inferredKorean;
 
   if (!shouldCorrectKorean) {
     return {
       segments,
       timings: {
         eligible: false,
+        languageDecision: language || 'unknown',
         wallMs: performance.now() - startedAt,
         chunkCount: 0,
         batchCount: 0,
@@ -134,6 +144,7 @@ export async function processSegmentsWithTiming(segments, detectedLang, correct)
     segments: corrected,
     timings: {
       eligible: true,
+      languageDecision: detectedKorean ? 'detected_korean' : 'inferred_from_hangul_segments',
       model: summarizeActualModel(chunkTimings) ?? model,
       requestedModel: model,
       fallbackCount: chunkTimings.filter(chunk => chunk.fallbackUsed).length,
