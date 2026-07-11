@@ -6,7 +6,8 @@ process.env.SUPABASE_URL ||= 'https://example.supabase.co';
 process.env.SUPABASE_ANON_KEY ||= 'test-key';
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'test-key';
 
-const { isDiarizationJobId, toClientDiarizationJob } = await import('../src/services/diarization-jobs.js');
+const { isDiarizationJobId, storageFilenameForJob, toClientDiarizationJob } = await import('../src/services/diarization-jobs.js');
+const { shouldCompressDiarizationAudioForStorage } = await import('../src/services/whisper.js');
 
 const jobId = 'a8b1dc79-6f44-4a9d-9e7e-0c0f0f6a9de1';
 
@@ -57,4 +58,14 @@ test('returns completed diarization results and a safe failure message', () => {
   assert.equal(completed.segments.length, 1);
   assert.equal(failed.creditsRemaining, 30);
   assert.equal(failed.error, '변환에 실패해 예약한 변환 시간이 자동 환불되었습니다.');
+});
+
+test('converts only large diarization files before temporary storage', () => {
+  assert.equal(shouldCompressDiarizationAudioForStorage(45 * 1024 * 1024), false);
+  assert.equal(shouldCompressDiarizationAudioForStorage(45 * 1024 * 1024 + 1), true);
+});
+
+test('uses the stored mp3 extension for converted diarization jobs', () => {
+  assert.equal(storageFilenameForJob({ storage_path: 'user/job.mp3', filename: 'interview.mp4' }), 'queued-audio.mp3');
+  assert.equal(storageFilenameForJob({ storage_path: 'user/job', filename: 'interview.m4a' }), 'interview.m4a');
 });
