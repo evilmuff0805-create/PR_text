@@ -10,6 +10,7 @@ export default function PaymentSuccessPage() {
   const [message, setMessage] = useState('결제 승인 중...');
   const [countdown, setCountdown] = useState(5);
   const timerRef = useRef(null);
+  const confirmRef = useRef(null);
 
   useEffect(() => {
     const paymentKey = searchParams.get('paymentKey');
@@ -23,6 +24,8 @@ export default function PaymentSuccessPage() {
     }
 
     const confirm = async () => {
+      setStatus('processing');
+      setMessage('결제 승인 중...');
       try {
         const token = getToken();
         const res = await fetch('/api/payment/confirm', {
@@ -37,12 +40,15 @@ export default function PaymentSuccessPage() {
         const data = await res.json();
 
         if (!res.ok) {
-          throw new Error(data.error || '결제 승인 실패');
+          const error = new Error(data.error || '결제 승인 실패');
+          error.retryable = data.retryable === true;
+          throw error;
         }
 
         updateCredits(data.credits);
         setStatus('success');
-        setMessage(`${data.charged}분이 충전되었습니다! (총 ${data.credits}분)`);
+        const prefix = data.alreadyPaid ? '이미 반영된 결제입니다.' : `${data.charged}분이 충전되었습니다!`;
+        setMessage(`${prefix} (총 ${data.credits}분)`);
 
         let count = 5;
         timerRef.current = setInterval(() => {
@@ -54,11 +60,12 @@ export default function PaymentSuccessPage() {
           }
         }, 1000);
       } catch (err) {
-        setStatus('error');
+        setStatus(err.retryable ? 'retry' : 'error');
         setMessage(err.message || '결제 처리 중 오류가 발생했습니다.');
       }
     };
 
+    confirmRef.current = confirm;
     confirm();
     return () => clearInterval(timerRef.current);
   }, []);
@@ -93,6 +100,16 @@ export default function PaymentSuccessPage() {
             <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>{message}</p>
             <button className="gradient-btn" onClick={() => navigate('/payment')} style={{ padding: '12px 32px' }}>
               다시 시도
+            </button>
+          </>
+        )}
+        {status === 'retry' && (
+          <>
+            <p style={{ fontSize: '3rem', marginBottom: '16px' }}>!</p>
+            <h2 style={{ color: '#f59e0b', marginBottom: '12px' }}>결제 확인이 필요해요</h2>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>{message}</p>
+            <button className="gradient-btn" onClick={() => confirmRef.current?.()} style={{ padding: '12px 32px' }}>
+              결제 다시 확인
             </button>
           </>
         )}
