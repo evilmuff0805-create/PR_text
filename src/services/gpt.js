@@ -14,6 +14,26 @@ export function shouldFallbackToGpt4o(error, model) {
   return model === DEFAULT_CORRECTION_MODEL && [400, 403, 404].includes(error?.status);
 }
 
+export function buildCorrectionRequest(text, model) {
+  const request = {
+    model,
+    messages: [
+      {
+        role: 'system',
+        content: `당신은 한국어 말자막 맞춤법 교정 전문가입니다.\n\n가장 중요한 원칙:\n- 이 텍스트는 방송/유튜브 자막으로 사용됩니다.\n- 오디오에 없는 내용을 추가하거나, 화자가 말한 표현을 더 자연스럽게 바꾸면 안 됩니다.\n- 의미, 어투, 구어체, 사투리, 반복, 말버릇, 비격식 표현을 그대로 보존하세요.\n\n규칙:\n1. 입력은 여러 줄로 구성되어 있습니다. 각 줄은 독립된 자막 세그먼트입니다.\n2. 반드시 입력과 동일한 줄 수를 유지하세요.\n3. 맞춤법과 띄어쓰기만 교정하세요.\n4. 단어를 다른 단어로 바꾸지 마세요. 말한 그대로 유지하세요.\n5. 구어체, 사투리, 비격식 표현을 격식체로 바꾸지 마세요.\n6. 문장 구조를 변경하지 마세요.\n7. 줄을 합치거나, 분리하거나, 순서를 바꾸지 마세요.\n8. 단어, 감탄사, 추임새, 반복어를 추가하거나 삭제하지 마세요.\n9. 빈 줄이 있으면 빈 줄 그대로 유지하세요.\n10. 교정된 텍스트만 출력하세요. 설명이나 번호를 붙이지 마세요.\n\n화자가 실제로 한 말을 절대 바꾸지 말고, 오직 명백한 맞춤법 오류와 띄어쓰기만 수정하세요.`,
+      },
+      { role: 'user', content: text },
+    ],
+  };
+
+  // Luna uses its model-default sampling configuration.
+  if (model !== DEFAULT_CORRECTION_MODEL) {
+    request.temperature = 0.3;
+  }
+
+  return request;
+}
+
 async function withRetry(fn, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
@@ -32,17 +52,7 @@ export async function correctText(text, language) {
 }
 
 async function requestCorrection(text, model) {
-  return withRetry(() => openai.chat.completions.create({
-      model,
-      temperature: 0.3,
-      messages: [
-        {
-          role: 'system',
-          content: `당신은 한국어 말자막 맞춤법 교정 전문가입니다.\n\n가장 중요한 원칙:\n- 이 텍스트는 방송/유튜브 자막으로 사용됩니다.\n- 오디오에 없는 내용을 추가하거나, 화자가 말한 표현을 더 자연스럽게 바꾸면 안 됩니다.\n- 의미, 어투, 구어체, 사투리, 반복, 말버릇, 비격식 표현을 그대로 보존하세요.\n\n규칙:\n1. 입력은 여러 줄로 구성되어 있습니다. 각 줄은 독립된 자막 세그먼트입니다.\n2. 반드시 입력과 동일한 줄 수를 유지하세요.\n3. 맞춤법과 띄어쓰기만 교정하세요.\n4. 단어를 다른 단어로 바꾸지 마세요. 말한 그대로 유지하세요.\n5. 구어체, 사투리, 비격식 표현을 격식체로 바꾸지 마세요.\n6. 문장 구조를 변경하지 마세요.\n7. 줄을 합치거나, 분리하거나, 순서를 바꾸지 마세요.\n8. 단어, 감탄사, 추임새, 반복어를 추가하거나 삭제하지 마세요.\n9. 빈 줄이 있으면 빈 줄 그대로 유지하세요.\n10. 교정된 텍스트만 출력하세요. 설명이나 번호를 붙이지 마세요.\n\n화자가 실제로 한 말을 절대 바꾸지 말고, 오직 명백한 맞춤법 오류와 띄어쓰기만 수정하세요.`,
-        },
-        { role: 'user', content: text },
-      ],
-    }));
+  return withRetry(() => openai.chat.completions.create(buildCorrectionRequest(text, model)));
 }
 
 export async function correctTextWithUsage(text, language, options = {}) {
@@ -59,7 +69,10 @@ export async function correctTextWithUsage(text, language, options = {}) {
 
       fallbackUsed = true;
       model = CORRECTION_FALLBACK_MODEL;
-      console.warn(`[gpt] ${requestedModel} 접근 불가로 ${model}를 사용합니다. status=${error.status}`);
+      const message = String(error.message || '').replace(/\s+/g, ' ').slice(0, 500);
+      console.warn(
+        `[gpt] ${requestedModel} 요청 실패로 ${model}를 사용합니다. status=${error.status} code=${error.code || '-'} message=${message || '-'}`,
+      );
       response = await requestCorrection(text, model);
     }
 
