@@ -91,6 +91,8 @@ export async function transcribeWithDiarization(buffer, originalname, language) 
     const params = {
       model: 'gpt-4o-transcribe-diarize',
       response_format: 'diarized_json',
+      // The diarization API requires chunking for audio longer than 30 seconds.
+      chunking_strategy: 'auto',
     };
 
     if (language) {
