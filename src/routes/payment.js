@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { randomUUID } from 'node:crypto';
 import { authMiddleware } from '../middleware/auth.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 
@@ -10,6 +11,21 @@ const PLANS = {
   creator: { credits: 1000, price: 34900, name: '크리에이터 1000분' },
 };
 
+function isValidPaymentKey(paymentKey) {
+  return typeof paymentKey === 'string' && paymentKey.length > 0 && paymentKey.length <= 200;
+}
+
+async function getCurrentCredits(userId) {
+  const { data: profile, error } = await supabaseAdmin
+    .from('profiles')
+    .select('credits')
+    .eq('id', userId)
+    .single();
+
+  if (error) throw error;
+  return profile.credits;
+}
+
 // 결제 요청 생성
 router.post('/create', authMiddleware, async (req, res) => {
   const { planId } = req.body;
@@ -19,7 +35,22 @@ router.post('/create', authMiddleware, async (req, res) => {
     return res.status(400).json({ error: '유효하지 않은 플랜입니다.' });
   }
 
-  const orderId = `order_${planId}_${req.user.id.slice(0, 8)}_${Date.now()}`;
+  const orderId = `order_${randomUUID()}`;
+  const { error: orderError } = await supabaseAdmin
+    .from('payment_orders')
+    .insert({
+      order_id: orderId,
+      user_id: req.user.id,
+      plan_id: planId,
+      plan_name: plan.name,
+      amount: plan.price,
+      credits: plan.credits,
+    });
+
+  if (orderError) {
+    console.error('[payment] 주문 생성 실패:', orderError.message);
+    return res.status(500).json({ error: '결제 주문을 준비하지 못했습니다. 잠시 후 다시 시도해주세요.' });
+  }
 
   res.json({
     orderId,
@@ -35,31 +66,38 @@ router.post('/create', authMiddleware, async (req, res) => {
 router.post('/confirm', authMiddleware, async (req, res) => {
   const { paymentKey, orderId, amount } = req.body;
 
-  // orderId에서 planId 파싱 (신규 포맷: order_${planId}_${userId}_${ts})
-  // 구버전 포맷(order_${userId}_${ts}) fallback: amount로 플랜 역방향 검색
-  const orderParts = orderId.split('_');
-  const parsedPlanId = orderParts.length >= 4 ? orderParts[1] : null;
-  let planEntry = parsedPlanId ? Object.entries(PLANS).find(([id]) => id === parsedPlanId) : null;
-  if (!planEntry) {
-    planEntry = Object.entries(PLANS).find(([, p]) => p.price === amount);
-  }
-  if (!planEntry) {
-    return res.status(400).json({ error: '결제 금액이 유효하지 않습니다.' });
-  }
-
-  const [planId, plan] = planEntry;
-
   try {
-    // 중복 결제 방지: orderId가 이미 처리됐는지 확인
-    const { data: existing } = await supabaseAdmin
-      .from('usage_logs')
-      .select('id')
+    if (!isValidPaymentKey(paymentKey) || typeof orderId !== 'string' || !Number.isInteger(amount)) {
+      return res.status(400).json({ error: '결제 정보가 올바르지 않습니다.' });
+    }
+
+    const { data: order, error: orderError } = await supabaseAdmin
+      .from('payment_orders')
+      .select('order_id, user_id, amount, credits, status, payment_key, idempotency_key')
       .eq('order_id', orderId)
       .maybeSingle();
 
-    if (existing) {
-      console.warn(`[payment] 중복 결제 시도 — orderId: ${orderId}, user: ${req.user.email}`);
-      return res.status(400).json({ error: '이미 처리된 결제입니다.' });
+    if (orderError) throw orderError;
+    if (!order || order.user_id !== req.user.id) {
+      return res.status(404).json({ error: '결제 주문을 찾을 수 없습니다. 결제 페이지에서 다시 시도해주세요.' });
+    }
+    if (amount !== order.amount) {
+      return res.status(400).json({ error: '결제 금액이 주문 정보와 일치하지 않습니다.' });
+    }
+
+    if (order.status === 'paid') {
+      if (order.payment_key !== paymentKey) {
+        return res.status(400).json({ error: '이미 다른 결제 정보로 처리된 주문입니다.' });
+      }
+
+      const credits = await getCurrentCredits(req.user.id);
+      return res.json({
+        success: true,
+        credits,
+        charged: order.credits,
+        alreadyPaid: true,
+        message: '이미 완료된 결제입니다.',
+      });
     }
 
     // 토스페이먼츠 결제 승인 API 호출
@@ -71,54 +109,55 @@ router.post('/confirm', authMiddleware, async (req, res) => {
       headers: {
         'Authorization': `Basic ${basicAuth}`,
         'Content-Type': 'application/json',
+        'Idempotency-Key': order.idempotency_key,
       },
-      body: JSON.stringify({ paymentKey, orderId, amount }),
+      body: JSON.stringify({ paymentKey, orderId, amount: order.amount }),
     });
 
     const tossData = await tossRes.json();
 
     if (!tossRes.ok) {
       console.error('[payment] 토스 승인 실패:', tossData);
-      return res.status(400).json({ error: tossData.message || '결제 승인에 실패했습니다.' });
+      const retryable = tossRes.status >= 500;
+      return res.status(retryable ? 502 : 400).json({
+        error: tossData.message || '결제 승인에 실패했습니다.',
+        retryable,
+      });
     }
 
-    // 크레딧 충전
-    const { data: profile } = await supabaseAdmin
-      .from('profiles')
-      .select('credits')
-      .eq('id', req.user.id)
-      .single();
-
-    const currentCredits = profile?.credits ?? 0;
-    const newCredits = currentCredits + plan.credits;
-
-    await supabaseAdmin
-      .from('profiles')
-      .update({ credits: newCredits, updated_at: new Date().toISOString() })
-      .eq('id', req.user.id);
-
-    // 충전 내역 기록
-    await supabaseAdmin
-      .from('usage_logs')
-      .insert({
-        user_id: req.user.id,
-        action: 'charge',
-        credits_used: -plan.credits,
-        order_id: orderId,
-        description: `${plan.name} 결제 (${plan.price.toLocaleString()}원)`,
+    if (tossData.orderId !== orderId || tossData.totalAmount !== order.amount || tossData.status !== 'DONE') {
+      console.error('[payment] 토스 응답 검증 실패:', { orderId, tossOrderId: tossData.orderId, tossAmount: tossData.totalAmount, status: tossData.status });
+      return res.status(502).json({
+        error: '결제 승인 결과를 검증하지 못했습니다. 결제를 다시 진행하지 말고 잠시 후 다시 확인해주세요.',
+        retryable: true,
       });
+    }
 
-    console.log(`[payment] 유저 ${req.user.email}: ${plan.credits}크레딧 충전 (${newCredits} 보유)`);
+    const { data: completed, error: completeError } = await supabaseAdmin.rpc('complete_payment_order', {
+      p_order_id: orderId,
+      p_user_id: req.user.id,
+      p_payment_key: paymentKey,
+    });
+
+    if (completeError) throw completeError;
+    const result = Array.isArray(completed) ? completed[0] : completed;
+    if (!result) throw new Error('결제 완료 결과를 받지 못했습니다.');
+
+    console.log(`[payment] 유저 ${req.user.email}: ${result.charged}크레딧 충전 (${result.credits} 보유)`);
 
     res.json({
       success: true,
-      credits: newCredits,
-      charged: plan.credits,
-      message: `${plan.credits}분이 충전되었습니다.`,
+      credits: result.credits,
+      charged: result.charged,
+      alreadyPaid: result.already_paid,
+      message: `${result.charged}분이 충전되었습니다.`,
     });
   } catch (err) {
     console.error('[payment] 오류:', err.message);
-    res.status(500).json({ error: '결제 처리 중 오류가 발생했습니다.' });
+    res.status(500).json({
+      error: '결제 처리 확인 중 오류가 발생했습니다. 결제를 다시 진행하지 말고 다시 확인해주세요.',
+      retryable: true,
+    });
   }
 });
 
