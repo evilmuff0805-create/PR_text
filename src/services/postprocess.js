@@ -13,11 +13,19 @@ async function correctChunk(chunk, correct) {
   const allText = chunk.map(segment => segment.text).join('\n');
 
   try {
-    const processed = await correct(allText, 'ko');
+    const corrected = await correct(allText, 'ko');
+    const processed = typeof corrected === 'string' ? corrected : corrected.text;
+    if (typeof processed !== 'string') throw new Error('GPT 교정 결과 형식이 올바르지 않습니다.');
+
     const lines = processed.split('\n');
     if (lines.length !== chunk.length) {
       console.warn(`[gpt chunk] 줄 수 불일치: 원본 ${chunk.length}줄, GPT ${lines.length}줄 -> 원본 유지`);
-      return { segments: chunk, outcome: 'line_count_mismatch' };
+      return {
+        segments: chunk,
+        outcome: 'line_count_mismatch',
+        usage: corrected.usage,
+        estimatedCostUsd: corrected.estimatedCostUsd,
+      };
     }
 
     return {
@@ -26,11 +34,31 @@ async function correctChunk(chunk, correct) {
         text: (lines[index] || segment.text).trim(),
       })),
       outcome: 'success',
+      usage: corrected.usage,
+      estimatedCostUsd: corrected.estimatedCostUsd,
     };
   } catch (err) {
     console.error('[gpt chunk]', err.message);
     return { segments: chunk, outcome: 'fallback' };
   }
+}
+
+function summarizeUsage(chunks) {
+  const usage = chunks.map(chunk => chunk.usage).filter(Boolean);
+  if (usage.length === 0) return undefined;
+
+  return usage.reduce((total, value) => ({
+    promptTokens: total.promptTokens + (value.promptTokens || 0),
+    cachedTokens: total.cachedTokens + (value.cachedTokens || 0),
+    completionTokens: total.completionTokens + (value.completionTokens || 0),
+    totalTokens: total.totalTokens + (value.totalTokens || 0),
+  }), { promptTokens: 0, cachedTokens: 0, completionTokens: 0, totalTokens: 0 });
+}
+
+function summarizeEstimatedCost(chunks) {
+  const costs = chunks.map(chunk => chunk.estimatedCostUsd).filter(Number.isFinite);
+  if (costs.length === 0) return undefined;
+  return costs.reduce((total, value) => total + value, 0);
 }
 
 export async function processSegmentsWithTiming(segments, detectedLang, correct) {
@@ -52,7 +80,7 @@ export async function processSegmentsWithTiming(segments, detectedLang, correct)
   }
 
   const gpt = correct ? null : await import('./gpt.js');
-  const corrector = correct ?? gpt.correctText;
+  const corrector = correct ?? gpt.correctTextWithUsage;
   const model = correct ? 'custom' : gpt.getCorrectionModel();
 
   const chunks = [];
@@ -95,6 +123,8 @@ export async function processSegmentsWithTiming(segments, detectedLang, correct)
     timings: {
       eligible: true,
       model,
+      usage: summarizeUsage(chunkTimings),
+      estimatedCostUsd: summarizeEstimatedCost(chunkTimings),
       wallMs: performance.now() - startedAt,
       chunkCount: chunks.length,
       batchCount: batchTimings.length,

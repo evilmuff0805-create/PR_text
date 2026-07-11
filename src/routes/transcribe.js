@@ -61,6 +61,10 @@ function summarizeCorrection(timings) {
   return {
     eligible: timings.eligible,
     model: timings.model,
+    usage: timings.usage,
+    estimatedCostUsd: Number.isFinite(timings.estimatedCostUsd)
+      ? Number(timings.estimatedCostUsd.toFixed(8))
+      : undefined,
     wallMs: roundTiming(timings.wallMs),
     chunkCount: timings.chunkCount,
     batchCount: timings.batchCount,
