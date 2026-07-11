@@ -51,7 +51,9 @@ export async function processSegmentsWithTiming(segments, detectedLang, correct)
     };
   }
 
-  const corrector = correct ?? (await import('./gpt.js')).correctText;
+  const gpt = correct ? null : await import('./gpt.js');
+  const corrector = correct ?? gpt.correctText;
+  const model = correct ? 'custom' : gpt.getCorrectionModel();
 
   const chunks = [];
   for (let index = 0; index < segments.length; index += CHUNK_SIZE) {
@@ -92,6 +94,7 @@ export async function processSegmentsWithTiming(segments, detectedLang, correct)
     segments: corrected,
     timings: {
       eligible: true,
+      model,
       wallMs: performance.now() - startedAt,
       chunkCount: chunks.length,
       batchCount: batchTimings.length,

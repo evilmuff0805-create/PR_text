@@ -1,6 +1,12 @@
 import OpenAI from 'openai';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const DEFAULT_CORRECTION_MODEL = 'gpt-4o';
+
+export function getCorrectionModel() {
+  const configured = process.env.GPT_CORRECTION_MODEL?.trim();
+  return configured || DEFAULT_CORRECTION_MODEL;
+}
 
 async function withRetry(fn, retries = 2) {
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -17,7 +23,7 @@ async function withRetry(fn, retries = 2) {
 export async function correctText(text, language) {
   try {
     const response = await withRetry(() => openai.chat.completions.create({
-      model: 'gpt-4o',
+      model: getCorrectionModel(),
       temperature: 0.3,
       messages: [
         {
