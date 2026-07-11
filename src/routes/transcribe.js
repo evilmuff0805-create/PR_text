@@ -60,6 +60,7 @@ function summarizeCorrection(timings) {
   if (!timings) return undefined;
   return {
     eligible: timings.eligible,
+    languageDecision: timings.languageDecision,
     model: timings.model,
     requestedModel: timings.requestedModel,
     fallbackCount: timings.fallbackCount,
