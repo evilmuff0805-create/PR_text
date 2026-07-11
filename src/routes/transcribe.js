@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import uploadMiddleware from '../middleware/upload.js';
 import { probeAudioDuration, transcribe, transcribeWithDiarization } from '../services/whisper.js';
-import { processSegments } from '../services/postprocess.js';
+import { processSegmentsWithTiming } from '../services/postprocess.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { randomUUID } from 'crypto';
@@ -13,6 +13,7 @@ function createTiming(req, res, next) {
   req.transcriptionTiming = {
     requestId: randomUUID(),
     startedAt: performance.now(),
+    wallStartedAt: Date.now(),
   };
   next();
 }
@@ -37,21 +38,65 @@ function roundTiming(value) {
   return Number(value.toFixed(1));
 }
 
+function summarizeParallelChunks(chunks) {
+  if (!Array.isArray(chunks)) return undefined;
+  return chunks.map((chunk) => ({
+    index: chunk.index,
+    ownedStartSeconds: roundTiming(chunk.ownedStartSeconds),
+    ownedEndSeconds: roundTiming(chunk.ownedEndSeconds),
+    inputStartSeconds: roundTiming(chunk.inputStartSeconds),
+    inputEndSeconds: roundTiming(chunk.inputEndSeconds),
+    compressionMs: roundTiming(chunk.compressionMs),
+    openaiMs: roundTiming(chunk.openaiMs),
+    openaiAttempts: chunk.openaiAttempts.map((attempt) => ({
+      phase: attempt.phase,
+      outcome: attempt.outcome,
+      durationMs: roundTiming(attempt.durationMs),
+    })),
+  }));
+}
+
+function summarizeCorrection(timings) {
+  if (!timings) return undefined;
+  return {
+    eligible: timings.eligible,
+    wallMs: roundTiming(timings.wallMs),
+    chunkCount: timings.chunkCount,
+    batchCount: timings.batchCount,
+    concurrency: timings.concurrency,
+    batches: timings.batches?.map((batch) => ({
+      ...batch,
+      durationMs: roundTiming(batch.durationMs),
+    })),
+    chunks: timings.chunks.map((chunk) => ({
+      index: chunk.index,
+      segmentCount: chunk.segmentCount,
+      outcome: chunk.outcome,
+      durationMs: roundTiming(chunk.durationMs),
+    })),
+  };
+}
+
 function completeTiming(req, res, outcome) {
   const timing = req.transcriptionTiming;
   if (!timing) return;
 
+  const completedAt = Date.now();
   const totalMs = performance.now() - timing.startedAt;
+  const totalWallMs = completedAt - timing.wallStartedAt;
   const fields = {
     total: totalMs,
+    wall: totalWallMs,
     auth: timing.authMs,
     upload: timing.uploadMs,
     probe: timing.probeMs,
     split: timing.splitMs,
     compress: timing.compressionMs,
     openai: timing.openaiMs,
+    transcription: timing.transcriptionMs,
     correction: timing.correctionMs,
     credit: timing.creditMs,
+    usageLog: timing.usageLogMs,
     history: timing.historyMs,
   };
   const serverTiming = Object.entries(fields)
@@ -60,13 +105,32 @@ function completeTiming(req, res, outcome) {
     .join(', ');
 
   if (serverTiming) res.setHeader('Server-Timing', serverTiming);
+  const stageNamesExceedingTotal = Object.entries(fields)
+    .filter(([name, value]) => name !== 'total' && name !== 'wall' && Number.isFinite(value) && value > totalWallMs + 1_000)
+    .map(([name]) => name);
+  const monotonicWallDeltaMs = Math.abs(totalMs - totalWallMs);
+
   console.log('[transcribe.timing]', JSON.stringify({
     requestId: timing.requestId,
     outcome,
+    wallStartedAt: new Date(timing.wallStartedAt).toISOString(),
+    wallCompletedAt: new Date(completedAt).toISOString(),
     chunkCount: timing.chunkCount ?? 1,
     language: timing.language,
     segmentCount: timing.segmentCount,
     openaiAggregateMs: Number.isFinite(timing.openaiAggregateMs) ? roundTiming(timing.openaiAggregateMs) : undefined,
+    openaiAttempts: timing.openaiAttempts?.map((attempt) => ({
+      phase: attempt.phase,
+      outcome: attempt.outcome,
+      durationMs: roundTiming(attempt.durationMs),
+    })),
+    parallelChunks: summarizeParallelChunks(timing.parallelChunkTimings),
+    correction: summarizeCorrection(timing.correctionTimings),
+    timingMismatch: {
+      detected: monotonicWallDeltaMs > 1_000 || stageNamesExceedingTotal.length > 0,
+      monotonicWallDeltaMs: roundTiming(monotonicWallDeltaMs),
+      stagesExceedingTotal: stageNamesExceedingTotal,
+    },
     ...Object.fromEntries(
       Object.entries(fields)
         .filter(([, value]) => Number.isFinite(value))
@@ -139,6 +203,8 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
     req.transcriptionTiming.splitMs = result.timings?.splitMs;
     req.transcriptionTiming.openaiMs = result.timings?.openaiMs;
     req.transcriptionTiming.openaiAggregateMs = result.timings?.openaiAggregateMs;
+    req.transcriptionTiming.openaiAttempts = result.timings?.openaiAttempts;
+    req.transcriptionTiming.parallelChunkTimings = result.timings?.chunkTimings;
     req.transcriptionTiming.chunkCount = result.timings?.chunkCount;
     req.transcriptionTiming.language = result.language;
     req.transcriptionTiming.segmentCount = result.segments.length;
@@ -199,7 +265,9 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
     const correctionStartedAt = performance.now();
     let processedSegments;
     try {
-      processedSegments = await processSegments(filteredSegments, result.language);
+      const correctionResult = await processSegmentsWithTiming(filteredSegments, result.language);
+      processedSegments = correctionResult.segments;
+      req.transcriptionTiming.correctionTimings = correctionResult.timings;
     } catch (gptErr) {
       console.error('[gpt]', gptErr.message);
       processedSegments = filteredSegments;

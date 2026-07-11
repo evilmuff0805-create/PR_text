@@ -154,7 +154,7 @@ async function createTranscriptionWithFallback({
 }) {
   let audioBuffer = buffer;
   let audioName = getSafeAudioName(originalname);
-  const timings = { compressionMs: 0, openaiMs: 0 };
+  const timings = { compressionMs: 0, openaiMs: 0, openaiAttempts: [] };
 
   async function compressWithTiming(sourceBuffer) {
     const startedAt = performance.now();
@@ -165,13 +165,19 @@ async function createTranscriptionWithFallback({
     }
   }
 
-  async function requestTranscription(sourceBuffer, sourceName) {
+  async function requestTranscription(sourceBuffer, sourceName, phase) {
     const startedAt = performance.now();
+    let outcome = 'success';
     try {
       const file = await toFile(sourceBuffer, sourceName);
       return await openai.audio.transcriptions.create({ ...params, file });
+    } catch (err) {
+      outcome = 'error';
+      throw err;
     } finally {
-      timings.openaiMs += performance.now() - startedAt;
+      const durationMs = performance.now() - startedAt;
+      timings.openaiMs += durationMs;
+      timings.openaiAttempts.push({ phase, outcome, durationMs });
     }
   }
 
@@ -183,7 +189,7 @@ async function createTranscriptionWithFallback({
   }
 
   try {
-    const response = await requestTranscription(audioBuffer, audioName);
+    const response = await requestTranscription(audioBuffer, audioName, 'initial');
     return { response, timings };
   } catch (err) {
     if (!isInvalidFileFormatError(err) || audioName === 'compressed.mp3') {
@@ -192,7 +198,7 @@ async function createTranscriptionWithFallback({
 
     console.warn(`[${logPrefix}] OpenAI 파일 형식 오류. 휴대폰 녹음 파일 호환성을 위해 mp3로 변환 후 재시도합니다. original=${originalname}, upload=${audioName}`);
     const converted = await compressWithTiming(buffer);
-    const response = await requestTranscription(converted, 'converted.mp3');
+    const response = await requestTranscription(converted, 'converted.mp3', 'format_fallback');
     return { response, timings };
   }
 }
@@ -237,6 +243,16 @@ async function transcribeLongAudioInParallel({ buffer, originalname, params, dur
       openaiMs,
       openaiAggregateMs: chunkResults.reduce((total, result) => total + result.timings.openaiMs, 0),
       chunkCount: chunks.length,
+      chunkTimings: chunkResults.map(({ chunk, timings }) => ({
+        index: chunk.index,
+        ownedStartSeconds: chunk.ownedStart,
+        ownedEndSeconds: chunk.ownedEnd,
+        inputStartSeconds: chunk.inputStart,
+        inputEndSeconds: chunk.inputEnd,
+        compressionMs: timings.compressionMs,
+        openaiMs: timings.openaiMs,
+        openaiAttempts: timings.openaiAttempts,
+      })),
     },
   };
 }
