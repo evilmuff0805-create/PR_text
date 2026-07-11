@@ -13,6 +13,9 @@ const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 4 })
 const execFileAsync = promisify(execFile);
 
 const WHISPER_LIMIT = 25 * 1024 * 1024; // 25MB
+// The production job bucket accepts files up to 50MB. Leave headroom so a
+// large video never fails after the user has already uploaded it to Railway.
+const DIARIZATION_STORAGE_SAFE_LIMIT = 45 * 1024 * 1024;
 const OPENAI_SUPPORTED_EXTENSIONS = new Set(['.flac', '.m4a', '.mp3', '.mp4', '.mpeg', '.mpga', '.oga', '.ogg', '.wav', '.webm']);
 const PARALLEL_TRANSCRIBE_MIN_SECONDS = 6 * 60;
 const PARALLEL_TRANSCRIBE_CHUNK_SECONDS = 3 * 60;
@@ -87,6 +90,36 @@ async function compressAudio(buffer, originalname) {
     try { await unlink(inputPath); } catch {}
     try { await unlink(outputPath); } catch {}
   }
+}
+
+export function shouldCompressDiarizationAudioForStorage(byteLength) {
+  return byteLength > DIARIZATION_STORAGE_SAFE_LIMIT;
+}
+
+export async function prepareDiarizationAudioForStorage({ buffer, originalname, contentType }) {
+  if (!shouldCompressDiarizationAudioForStorage(buffer.length)) {
+    return {
+      buffer,
+      filename: originalname,
+      contentType,
+      converted: false,
+    };
+  }
+
+  console.log(`[diarization] 대기열 저장 전 오디오만 mp3로 변환합니다. original=${originalname}, inputBytes=${buffer.length}`);
+  const compressed = await compressAudio(buffer, originalname);
+  if (shouldCompressDiarizationAudioForStorage(compressed.length)) {
+    const error = new Error('다화자 변환용 오디오 파일이 저장 가능한 크기를 초과했습니다. 20분 이하 파일로 다시 시도해주세요.');
+    error.code = 'DIARIZATION_STORAGE_LIMIT';
+    throw error;
+  }
+
+  return {
+    buffer: compressed,
+    filename: 'queued-audio.mp3',
+    contentType: 'audio/mpeg',
+    converted: true,
+  };
 }
 
 function parseSilenceEnds(stderr) {
