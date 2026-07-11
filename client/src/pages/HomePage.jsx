@@ -33,6 +33,18 @@ function getAudioDuration(file) {
   });
 }
 
+function formatElapsedTime(totalSeconds) {
+  const seconds = Math.max(0, Math.floor(totalSeconds));
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return minutes > 0 ? `${minutes}분 ${remainingSeconds}초` : `${remainingSeconds}초`;
+}
+
+function estimateDiarizationSeconds(durationSeconds) {
+  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return null;
+  return Math.max(60, Math.round(durationSeconds * 0.35));
+}
+
 function uploadTranscription({ formData, token, onProgress, onUploadComplete }) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -68,7 +80,11 @@ export default function HomePage() {
   const [isDragOver, setIsDragOver] = useState(false);
   const [diarize, setDiarize] = useState(false);
   const [estimatedCredits, setEstimatedCredits] = useState(null);
+  const [durationSeconds, setDurationSeconds] = useState(null);
   const [isReadingDuration, setIsReadingDuration] = useState(false);
+  const [activeDiarize, setActiveDiarize] = useState(false);
+  const [transcriptionStartedAt, setTranscriptionStartedAt] = useState(null);
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   const fileInputRef = useRef(null);
   const fileSelectionRef = useRef(0);
@@ -78,6 +94,7 @@ export default function HomePage() {
     const selectionId = ++fileSelectionRef.current;
     setFile(selected);
     setEstimatedCredits(null);
+    setDurationSeconds(null);
     setIsReadingDuration(true);
 
     const duration = await getAudioDuration(selected);
@@ -85,6 +102,7 @@ export default function HomePage() {
 
     setIsReadingDuration(false);
     if (duration !== null) {
+      setDurationSeconds(duration);
       setEstimatedCredits(Math.max(Math.ceil(duration / 60), 1));
     }
   }
@@ -115,6 +133,7 @@ export default function HomePage() {
     fileSelectionRef.current += 1;
     setFile(null);
     setEstimatedCredits(null);
+    setDurationSeconds(null);
     setIsReadingDuration(false);
     fileInputRef.current.value = '';
   }
@@ -133,6 +152,9 @@ export default function HomePage() {
     }
 
     setError('');
+    setActiveDiarize(diarize);
+    setTranscriptionStartedAt(null);
+    setElapsedSeconds(0);
     setStatus('uploading');
     setProgress('파일 업로드 중...');
 
@@ -149,6 +171,7 @@ export default function HomePage() {
         onProgress: (ratio) => setProgress(`파일 업로드 중... ${Math.min(Math.round(ratio * 100), 100)}%`),
         onUploadComplete: () => {
           setStatus('transcribing');
+          setTranscriptionStartedAt(Date.now());
           setProgress(diarize
             ? '파일 전송 완료. 화자 분석과 자막 생성을 진행 중입니다...'
             : '파일 전송 완료. 음성 전사와 맞춤법 교정을 진행 중입니다...');
@@ -194,6 +217,27 @@ export default function HomePage() {
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
   }, [isLoading]);
+
+  useEffect(() => {
+    if (status !== 'transcribing' || !transcriptionStartedAt) return;
+
+    const updateElapsedTime = () => {
+      setElapsedSeconds((Date.now() - transcriptionStartedAt) / 1000);
+    };
+
+    updateElapsedTime();
+    const intervalId = window.setInterval(updateElapsedTime, 1_000);
+    return () => window.clearInterval(intervalId);
+  }, [status, transcriptionStartedAt]);
+
+  const isDiarizationProcessing = status === 'transcribing' && activeDiarize;
+  const estimatedDiarizationSeconds = estimateDiarizationSeconds(durationSeconds);
+  const estimatedDiarizationLabel = estimatedDiarizationSeconds === null
+    ? '파일 길이에 따라 달라집니다'
+    : `약 ${Math.ceil(estimatedDiarizationSeconds / 60)}분`;
+  const estimatedProgress = estimatedDiarizationSeconds === null
+    ? 0.12
+    : Math.min(0.92, Math.max(0.12, elapsedSeconds / estimatedDiarizationSeconds));
 
   return (
     <div style={{ maxWidth: '640px', margin: '0 auto', padding: '40px 20px' }}>
@@ -366,6 +410,50 @@ export default function HomePage() {
         <p style={{ marginTop: '16px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
           {progress}
         </p>
+      )}
+
+      {isDiarizationProcessing && (
+        <section
+          aria-live="polite"
+          style={{
+            marginTop: '16px',
+            padding: '16px 0',
+            borderTop: '1px solid var(--border-color)',
+            borderBottom: '1px solid var(--border-color)',
+          }}
+        >
+          <p style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.95rem', margin: 0 }}>
+            화자 분석과 자막 생성을 진행 중입니다
+          </p>
+          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '6px 0 12px' }}>
+            경과 {formatElapsedTime(elapsedSeconds)} · 예상 {estimatedDiarizationLabel}
+          </p>
+          <div
+            aria-label="다화자 전사 예상 진행 상태"
+            aria-valuemax={100}
+            aria-valuemin={0}
+            aria-valuenow={Math.round(estimatedProgress * 100)}
+            role="progressbar"
+            style={{
+              height: '6px',
+              overflow: 'hidden',
+              background: 'var(--bg-tertiary)',
+              borderRadius: '3px',
+            }}
+          >
+            <div
+              style={{
+                width: `${Math.round(estimatedProgress * 100)}%`,
+                height: '100%',
+                background: 'var(--gradient)',
+                transition: 'width 1s linear',
+              }}
+            />
+          </div>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', lineHeight: '1.5', margin: '10px 0 0' }}>
+            실제 완료 시점은 파일 길이와 화자 수에 따라 달라집니다.
+          </p>
+        </section>
       )}
 
       {/* 에러 메시지 */}
