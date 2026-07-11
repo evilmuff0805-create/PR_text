@@ -2,11 +2,16 @@ import OpenAI from 'openai';
 import { estimateCorrectionCostUsd, normalizeTokenUsage } from './correction-pricing.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const DEFAULT_CORRECTION_MODEL = 'gpt-4o';
+const DEFAULT_CORRECTION_MODEL = 'gpt-5.6-luna';
+const CORRECTION_FALLBACK_MODEL = 'gpt-4o';
 
 export function getCorrectionModel() {
   const configured = process.env.GPT_CORRECTION_MODEL?.trim();
   return configured || DEFAULT_CORRECTION_MODEL;
+}
+
+export function shouldFallbackToGpt4o(error, model) {
+  return model === DEFAULT_CORRECTION_MODEL && [400, 403, 404].includes(error?.status);
 }
 
 async function withRetry(fn, retries = 2) {
@@ -26,10 +31,8 @@ export async function correctText(text, language) {
   return result.text;
 }
 
-export async function correctTextWithUsage(text, language, options = {}) {
-  const model = options.model || getCorrectionModel();
-  try {
-    const response = await withRetry(() => openai.chat.completions.create({
+async function requestCorrection(text, model) {
+  return withRetry(() => openai.chat.completions.create({
       model,
       temperature: 0.3,
       messages: [
@@ -40,6 +43,26 @@ export async function correctTextWithUsage(text, language, options = {}) {
         { role: 'user', content: text },
       ],
     }));
+}
+
+export async function correctTextWithUsage(text, language, options = {}) {
+  const requestedModel = options.model || getCorrectionModel();
+  let model = requestedModel;
+  let fallbackUsed = false;
+
+  try {
+    let response;
+    try {
+      response = await requestCorrection(text, model);
+    } catch (error) {
+      if (!shouldFallbackToGpt4o(error, model)) throw error;
+
+      fallbackUsed = true;
+      model = CORRECTION_FALLBACK_MODEL;
+      console.warn(`[gpt] ${requestedModel} 접근 불가로 ${model}를 사용합니다. status=${error.status}`);
+      response = await requestCorrection(text, model);
+    }
+
     const output = response.choices[0]?.message?.content?.trim();
     if (!output) throw new Error('GPT 교정 결과가 비어 있습니다.');
 
@@ -47,6 +70,8 @@ export async function correctTextWithUsage(text, language, options = {}) {
     return {
       text: output,
       model,
+      requestedModel,
+      fallbackUsed,
       usage,
       estimatedCostUsd: estimateCorrectionCostUsd(model, usage),
     };
