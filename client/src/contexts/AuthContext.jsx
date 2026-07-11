@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect } from 'react';
+import { createContext, useCallback, useContext, useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 const AuthContext = createContext(null);
@@ -112,11 +112,14 @@ export function AuthProvider({ children }) {
     }
   };
 
-  const updateCredits = (newCredits) => {
-    setUser((prev) => prev ? { ...prev, credits: newCredits } : prev);
-  };
+  const updateCredits = useCallback((newCredits) => {
+    setUser((prev) => {
+      if (!prev || prev.credits === newCredits) return prev;
+      return { ...prev, credits: newCredits };
+    });
+  }, []);
 
-  const getToken = () => token;
+  const getToken = useCallback(() => token, [token]);
 
   if (loading) return null; // 초기 인증 확인 중에는 아무것도 렌더하지 않음
 
