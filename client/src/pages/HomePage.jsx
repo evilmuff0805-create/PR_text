@@ -3,6 +3,60 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import AuthModal from '../components/AuthModal.jsx';
 
+function getAudioDuration(file) {
+  return new Promise((resolve) => {
+    const objectUrl = URL.createObjectURL(file);
+    const audio = document.createElement('audio');
+    const cleanup = () => {
+      URL.revokeObjectURL(objectUrl);
+      audio.removeAttribute('src');
+      audio.load();
+    };
+    const timeoutId = window.setTimeout(() => {
+      cleanup();
+      resolve(null);
+    }, 10_000);
+
+    audio.preload = 'metadata';
+    audio.onloadedmetadata = () => {
+      window.clearTimeout(timeoutId);
+      const duration = Number.isFinite(audio.duration) && audio.duration > 0 ? audio.duration : null;
+      cleanup();
+      resolve(duration);
+    };
+    audio.onerror = () => {
+      window.clearTimeout(timeoutId);
+      cleanup();
+      resolve(null);
+    };
+    audio.src = objectUrl;
+  });
+}
+
+function uploadTranscription({ formData, token, onProgress, onUploadComplete }) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/transcribe');
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+    xhr.responseType = 'json';
+
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable) onProgress(event.loaded / event.total);
+    };
+    xhr.upload.onload = onUploadComplete;
+    xhr.onerror = () => reject(new Error('서버 연결 중 오류가 발생했습니다.'));
+    xhr.onload = () => {
+      const data = xhr.response && typeof xhr.response === 'object'
+        ? xhr.response
+        : (() => {
+          try { return JSON.parse(xhr.responseText); } catch { return {}; }
+        })();
+      resolve({ status: xhr.status, ok: xhr.status >= 200 && xhr.status < 300, data });
+    };
+    xhr.send(formData);
+  });
+}
+
 export default function HomePage() {
   const { user, updateCredits, getToken } = useAuth();
   const [showAuthModal, setShowAuthModal] = useState(false);
@@ -13,9 +67,27 @@ export default function HomePage() {
   const [error, setError] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
   const [diarize, setDiarize] = useState(false);
+  const [estimatedCredits, setEstimatedCredits] = useState(null);
+  const [isReadingDuration, setIsReadingDuration] = useState(false);
 
   const fileInputRef = useRef(null);
+  const fileSelectionRef = useRef(0);
   const navigate = useNavigate();
+
+  async function selectFile(selected) {
+    const selectionId = ++fileSelectionRef.current;
+    setFile(selected);
+    setEstimatedCredits(null);
+    setIsReadingDuration(true);
+
+    const duration = await getAudioDuration(selected);
+    if (selectionId !== fileSelectionRef.current) return;
+
+    setIsReadingDuration(false);
+    if (duration !== null) {
+      setEstimatedCredits(Math.max(Math.ceil(duration / 60), 1));
+    }
+  }
 
   function handleDragOver(e) {
     e.preventDefault();
@@ -30,17 +102,20 @@ export default function HomePage() {
     e.preventDefault();
     setIsDragOver(false);
     const dropped = e.dataTransfer.files[0];
-    if (dropped) setFile(dropped);
+    if (dropped) selectFile(dropped);
   }
 
   function handleFileChange(e) {
     const selected = e.target.files[0];
-    if (selected) setFile(selected);
+    if (selected) selectFile(selected);
   }
 
   function handleRemoveFile(e) {
     e.stopPropagation();
+    fileSelectionRef.current += 1;
     setFile(null);
+    setEstimatedCredits(null);
+    setIsReadingDuration(false);
     fileInputRef.current.value = '';
   }
 
@@ -49,6 +124,11 @@ export default function HomePage() {
 
     if (!user) {
       setError('로그인이 필요합니다. 좌측 사이드바에서 로그인해주세요.');
+      return;
+    }
+
+    if (estimatedCredits !== null && user.credits < estimatedCredits) {
+      setError(`변환 가능 시간이 부족합니다. 필요: ${estimatedCredits}분, 보유: ${user.credits}분. 결제 페이지에서 충전해주세요.`);
       return;
     }
 
@@ -63,34 +143,33 @@ export default function HomePage() {
       if (diarize) formData.append('diarize', 'true');
 
       const token = getToken();
-      const res = await fetch('/api/transcribe', {
-        method: 'POST',
-        headers: token ? { 'Authorization': `Bearer ${token}` } : {},
-        body: formData,
+      const { status: responseStatus, ok, data } = await uploadTranscription({
+        formData,
+        token,
+        onProgress: (ratio) => setProgress(`파일 업로드 중... ${Math.min(Math.round(ratio * 100), 100)}%`),
+        onUploadComplete: () => {
+          setStatus('transcribing');
+          setProgress(diarize
+            ? '파일 전송 완료. 화자 분석과 자막 생성을 진행 중입니다...'
+            : '파일 전송 완료. 음성 전사와 맞춤법 교정을 진행 중입니다...');
+        },
       });
 
-      if (res.status === 401) {
+      if (responseStatus === 401) {
         setStatus('error');
         setError('로그인이 필요합니다. 좌측 사이드바에서 로그인해주세요.');
         return;
       }
 
-      if (res.status === 402) {
-        const data = await res.json();
+      if (responseStatus === 402) {
         setStatus('error');
         setError(`변환 가능 시간이 부족합니다. 필요: ${data.creditsNeeded}분, 보유: ${data.creditsHave}분. 결제 페이지에서 충전해주세요.`);
         return;
       }
 
-      if (!res.ok) {
-        const data = await res.json();
+      if (!ok) {
         throw new Error(data.error || '변환 요청 실패');
       }
-
-      setStatus('transcribing');
-      setProgress(diarize ? '화자 분석 중... (일반 변환보다 시간이 더 소요됩니다)' : '음성 변환 완료');
-
-      const data = await res.json();
 
       if (data.creditsRemaining !== undefined) {
         updateCredits(data.creditsRemaining);
@@ -163,6 +242,15 @@ export default function HomePage() {
             <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '16px' }}>
               {(file.size / 1024 / 1024).toFixed(2)} MB
             </p>
+            {isReadingDuration ? (
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '12px' }}>
+                예상 사용 시간을 확인 중입니다...
+              </p>
+            ) : estimatedCredits !== null ? (
+              <p style={{ color: user && user.credits < estimatedCredits ? '#FF6B6B' : 'var(--gradient-start)', fontSize: '0.8rem', marginBottom: '12px' }}>
+                예상 사용 시간: {estimatedCredits}분 · 보유: {user ? user.credits : 0}분
+              </p>
+            ) : null}
             <button
               onClick={handleRemoveFile}
               style={{

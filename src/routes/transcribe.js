@@ -1,48 +1,73 @@
 import { Router } from 'express';
 import uploadMiddleware from '../middleware/upload.js';
-import { transcribe, transcribeWithDiarization } from '../services/whisper.js';
-import { correctText } from '../services/gpt.js';
+import { probeAudioDuration, transcribe, transcribeWithDiarization } from '../services/whisper.js';
+import { processSegments } from '../services/postprocess.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { supabaseAdmin } from '../lib/supabase.js';
+import { randomUUID } from 'crypto';
+import { performance } from 'perf_hooks';
 
 const router = Router();
 
-// 세그먼트 텍스트 일괄 교정 헬퍼
-// 방송/유튜브 자막 용도에서는 음성에 없는 말을 추가하거나 번역하면 안 된다.
-// 따라서 전사 후처리는 한국어 맞춤법/띄어쓰기 교정만 수행하고,
-// 다른 언어는 Whisper가 들은 원문 그대로 유지한다.
-async function processSegments(segments, detectedLang) {
-  const lang = (detectedLang || '').toLowerCase();
-  const CHUNK_SIZE = 30;
-  const shouldCorrectKorean = lang.includes('korean') || lang === 'ko' || lang === 'kor';
+function createTiming(req, res, next) {
+  req.transcriptionTiming = {
+    requestId: randomUUID(),
+    startedAt: performance.now(),
+  };
+  next();
+}
 
-  if (!shouldCorrectKorean) {
-    return segments;
-  }
+function timedAuth(req, res, next) {
+  const startedAt = performance.now();
+  Promise.resolve(authMiddleware(req, res, (err) => {
+    req.transcriptionTiming.authMs = performance.now() - startedAt;
+    next(err);
+  })).catch(next);
+}
 
-  const result = [];
-  for (let i = 0; i < segments.length; i += CHUNK_SIZE) {
-    const chunk = segments.slice(i, i + CHUNK_SIZE);
-    const allText = chunk.map(s => s.text).join('\n');
-    let processed;
-    try {
-      processed = await correctText(allText, 'ko');
-    } catch (err) {
-      console.error('[gpt chunk]', i, err.message);
-      result.push(...chunk);
-      continue;
-    }
-    const lines = processed.split('\n');
-    if (lines.length !== chunk.length) {
-      console.warn(`[gpt chunk ${i}] 줄 수 불일치: 원본 ${chunk.length}줄, GPT ${lines.length}줄 → 원본 유지`);
-      result.push(...chunk);
-      continue;
-    }
-    for (let j = 0; j < chunk.length; j++) {
-      result.push({ ...chunk[j], text: (lines[j] || chunk[j].text).trim() });
-    }
-  }
-  return result;
+function timedUpload(req, res, next) {
+  const startedAt = performance.now();
+  uploadMiddleware(req, res, (err) => {
+    req.transcriptionTiming.uploadMs = performance.now() - startedAt;
+    next(err);
+  });
+}
+
+function roundTiming(value) {
+  return Number(value.toFixed(1));
+}
+
+function completeTiming(req, res, outcome) {
+  const timing = req.transcriptionTiming;
+  if (!timing) return;
+
+  const totalMs = performance.now() - timing.startedAt;
+  const fields = {
+    total: totalMs,
+    auth: timing.authMs,
+    upload: timing.uploadMs,
+    probe: timing.probeMs,
+    compress: timing.compressionMs,
+    openai: timing.openaiMs,
+    correction: timing.correctionMs,
+    credit: timing.creditMs,
+    history: timing.historyMs,
+  };
+  const serverTiming = Object.entries(fields)
+    .filter(([, value]) => Number.isFinite(value))
+    .map(([name, value]) => `${name};dur=${roundTiming(value)}`)
+    .join(', ');
+
+  if (serverTiming) res.setHeader('Server-Timing', serverTiming);
+  console.log('[transcribe.timing]', JSON.stringify({
+    requestId: timing.requestId,
+    outcome,
+    ...Object.fromEntries(
+      Object.entries(fields)
+        .filter(([, value]) => Number.isFinite(value))
+        .map(([name, value]) => [`${name}Ms`, roundTiming(value)])
+    ),
+  }));
 }
 
 // 무음 세그먼트 필터링 (텍스트가 비어있거나 의미없는 내용만 있는 경우)
@@ -66,7 +91,7 @@ function removeCommas(text) {
 }
 
 // POST /api/transcribe
-router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
+router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
   try {
     if (!req.file) return res.status(400).json({ error: '오디오 파일이 필요합니다.' });
 
@@ -78,13 +103,39 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
     const { buffer, originalname } = req.file;
     const language = req.body.language || null;
     const diarize = req.body.diarize === 'true' || req.body.diarize === true;
+    const probeStartedAt = performance.now();
+    let durationSeconds = null;
+    try {
+      durationSeconds = await probeAudioDuration(buffer, originalname);
+    } catch (probeErr) {
+      console.warn(`[transcribe.duration] 길이 사전 확인 실패: ${probeErr.message}`);
+    } finally {
+      req.transcriptionTiming.probeMs = performance.now() - probeStartedAt;
+    }
+
+    if (durationSeconds !== null) {
+      const creditsNeeded = Math.max(Math.ceil(durationSeconds / 60), 1);
+      if (req.user.credits < creditsNeeded) {
+        completeTiming(req, res, 'insufficient_credits_before_transcription');
+        return res.status(402).json({
+          error: `변환 가능 시간이 부족합니다. 필요: ${creditsNeeded}분, 보유: ${req.user.credits}분`,
+          creditsNeeded,
+          creditsHave: req.user.credits,
+        });
+      }
+    }
+
+    const transcriptionStartedAt = performance.now();
     const result = diarize
       ? await transcribeWithDiarization(buffer, originalname, language)
       : await transcribe(buffer, originalname, language);
+    req.transcriptionTiming.transcriptionMs = performance.now() - transcriptionStartedAt;
+    req.transcriptionTiming.compressionMs = result.timings?.compressionMs;
+    req.transcriptionTiming.openaiMs = result.timings?.openaiMs;
 
     // 오디오 길이 → 크레딧 필요량 (1분당 1크레딧, 최소 1)
     const lastSegment = result.segments[result.segments.length - 1];
-    const totalSeconds = lastSegment ? lastSegment.end : 0;
+    const totalSeconds = durationSeconds ?? (lastSegment ? lastSegment.end : 0);
     const audioMinutes = Math.ceil(totalSeconds / 60);
     const creditsNeeded = Math.max(audioMinutes, 1);
 
@@ -94,17 +145,21 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
     //   WHERE id = p_user_id AND credits >= p_credits
     //   RETURNING credits
     // 크레딧 부족 또는 동시 요청으로 조건 불충족 시 null 반환
+    const creditStartedAt = performance.now();
     const { data: deducted, error: deductErr } = await supabaseAdmin.rpc('deduct_credits', {
       p_user_id: req.user.id,
       p_credits: creditsNeeded,
     });
+    req.transcriptionTiming.creditMs = performance.now() - creditStartedAt;
 
     if (deductErr) {
       console.error(`[transcribe] 크레딧 차감 DB 오류 — user_id: ${req.user.id}, creditsNeeded: ${creditsNeeded}`, deductErr.message);
+      completeTiming(req, res, 'credit_error');
       return res.status(500).json({ error: '변환 시간 처리 중 오류가 발생했습니다.' });
     }
 
     if (deducted === null || deducted === undefined) {
+      completeTiming(req, res, 'insufficient_credits_after_transcription');
       return res.status(402).json({
         error: `변환 가능 시간이 부족합니다. 필요: ${creditsNeeded}분, 보유: ${req.user.credits}분`,
         creditsNeeded,
@@ -115,6 +170,7 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
     const newCredits = deducted;
 
     // 사용 로그 기록
+    const usageLogStartedAt = performance.now();
     await supabaseAdmin.from('usage_logs').insert({
       user_id: req.user.id,
       action: 'transcribe',
@@ -122,6 +178,7 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
       audio_minutes: parseFloat((totalSeconds / 60).toFixed(1)),
       description: `${originalname} (${(totalSeconds / 60).toFixed(1)}분)`,
     });
+    req.transcriptionTiming.usageLogMs = performance.now() - usageLogStartedAt;
 
     console.log(`[transcribe] 유저 ${req.user.email}: ${creditsNeeded}크레딧 차감 (${newCredits} 남음)`);
 
@@ -129,6 +186,7 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
     let filteredSegments = filterSilentSegments(result.segments);
 
     // GPT 교정/번역 적용
+    const correctionStartedAt = performance.now();
     let processedSegments;
     try {
       processedSegments = await processSegments(filteredSegments, result.language);
@@ -136,6 +194,7 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
       console.error('[gpt]', gptErr.message);
       processedSegments = filteredSegments;
     }
+    req.transcriptionTiming.correctionMs = performance.now() - correctionStartedAt;
 
     // 3번: 쉼표 제거 적용
     processedSegments = processedSegments.map(seg => ({
@@ -147,6 +206,7 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
     const processedText = processedSegments.map(s => s.text).join('\n');
 
     // 변환 이력 기록
+    const historyStartedAt = performance.now();
     const { error: logErr } = await supabaseAdmin.from('transcription_logs').insert({
       user_id: req.user.id,
       filename: originalname,
@@ -156,8 +216,10 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
       text_preview: processedText.slice(0, 200),
       segments: processedSegments,
     });
+    req.transcriptionTiming.historyMs = performance.now() - historyStartedAt;
     if (logErr) console.error('[transcription_logs] 기록 실패:', logErr.message);
 
+    completeTiming(req, res, 'success');
     res.json({
       text: processedText,
       segments: processedSegments,
@@ -168,6 +230,7 @@ router.post('/', authMiddleware, uploadMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error('[transcribe]', err.message);
+    completeTiming(req, res, 'error');
     if (err.code === 'CONNECTION') return res.status(503).json({ error: err.message, retryable: true });
     if (err.code === 'QUOTA') return res.status(503).json({ error: err.message });
     if (err.code === 'RATELIMIT') return res.status(429).json({ error: err.message });
