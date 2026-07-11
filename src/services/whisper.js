@@ -5,6 +5,8 @@ import { promisify } from 'util';
 import { writeFile, unlink, readFile } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
+import { randomUUID } from 'crypto';
+import { performance } from 'perf_hooks';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 4 });
 const execFileAsync = promisify(execFile);
@@ -28,10 +30,37 @@ function isInvalidFileFormatError(err) {
   return err.status === 400 && /invalid file format/i.test(err.message || '');
 }
 
+function createTempPath(prefix, extension) {
+  return join(tmpdir(), `${prefix}-${randomUUID()}${extension}`);
+}
+
+export async function probeAudioDuration(buffer, originalname) {
+  const extension = getExtension(originalname) || '.audio';
+  const inputPath = createTempPath('stt-probe', extension);
+
+  try {
+    await writeFile(inputPath, buffer);
+    const { stdout } = await execFileAsync('ffprobe', [
+      '-v', 'error',
+      '-show_entries', 'format=duration',
+      '-of', 'default=noprint_wrappers=1:nokey=1',
+      inputPath,
+    ], { timeout: 30_000 });
+
+    const duration = Number.parseFloat(stdout.trim());
+    if (!Number.isFinite(duration) || duration <= 0) {
+      throw new Error('오디오 길이를 읽을 수 없습니다.');
+    }
+    return duration;
+  } finally {
+    try { await unlink(inputPath); } catch {}
+  }
+}
+
 async function compressAudio(buffer, originalname) {
   const ext = getExtension(originalname) || '.audio';
-  const inputPath = join(tmpdir(), `stt-input-${Date.now()}${ext}`);
-  const outputPath = join(tmpdir(), `stt-output-${Date.now()}.mp3`);
+  const inputPath = createTempPath('stt-input', ext);
+  const outputPath = createTempPath('stt-output', '.mp3');
 
   try {
     await writeFile(inputPath, buffer);
@@ -63,26 +92,46 @@ async function createTranscriptionWithFallback({
 }) {
   let audioBuffer = buffer;
   let audioName = getSafeAudioName(originalname);
+  const timings = { compressionMs: 0, openaiMs: 0 };
+
+  async function compressWithTiming(sourceBuffer) {
+    const startedAt = performance.now();
+    try {
+      return await compressAudio(sourceBuffer, originalname);
+    } finally {
+      timings.compressionMs += performance.now() - startedAt;
+    }
+  }
+
+  async function requestTranscription(sourceBuffer, sourceName) {
+    const startedAt = performance.now();
+    try {
+      const file = await toFile(sourceBuffer, sourceName);
+      return await openai.audio.transcriptions.create({ ...params, file });
+    } finally {
+      timings.openaiMs += performance.now() - startedAt;
+    }
+  }
 
   if (buffer.length >= WHISPER_LIMIT) {
     console.log(`[${logPrefix}] 압축 전: ${(buffer.length / 1024 / 1024).toFixed(2)}MB`);
-    audioBuffer = await compressAudio(buffer, originalname);
+    audioBuffer = await compressWithTiming(buffer);
     audioName = 'compressed.mp3';
     console.log(`[${logPrefix}] 압축 후: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
   }
 
   try {
-    const file = await toFile(audioBuffer, audioName);
-    return await openai.audio.transcriptions.create({ ...params, file });
+    const response = await requestTranscription(audioBuffer, audioName);
+    return { response, timings };
   } catch (err) {
     if (!isInvalidFileFormatError(err) || audioName === 'compressed.mp3') {
       throw err;
     }
 
     console.warn(`[${logPrefix}] OpenAI 파일 형식 오류. 휴대폰 녹음 파일 호환성을 위해 mp3로 변환 후 재시도합니다. original=${originalname}, upload=${audioName}`);
-    const converted = await compressAudio(buffer, originalname);
-    const file = await toFile(converted, 'converted.mp3');
-    return openai.audio.transcriptions.create({ ...params, file });
+    const converted = await compressWithTiming(buffer);
+    const response = await requestTranscription(converted, 'converted.mp3');
+    return { response, timings };
   }
 }
 
@@ -99,7 +148,7 @@ export async function transcribeWithDiarization(buffer, originalname, language) 
       params.language = language;
     }
 
-    const response = await createTranscriptionWithFallback({
+    const { response, timings } = await createTranscriptionWithFallback({
       buffer,
       originalname,
       params,
@@ -126,6 +175,7 @@ export async function transcribeWithDiarization(buffer, originalname, language) 
       text: response.text,
       segments,
       language: response.language ?? language ?? 'unknown',
+      timings,
     };
   } catch (err) {
     if (err.message.includes('최대 20분')) throw err;
@@ -164,7 +214,7 @@ export async function transcribe(buffer, originalname, language) {
       params.language = language;
     }
 
-    const response = await createTranscriptionWithFallback({
+    const { response, timings } = await createTranscriptionWithFallback({
       buffer,
       originalname,
       params,
@@ -175,6 +225,7 @@ export async function transcribe(buffer, originalname, language) {
       text: response.text,
       segments: response.segments ?? [],
       language: response.language ?? language ?? 'unknown',
+      timings,
     };
   } catch (err) {
     if (err instanceof OpenAI.APIConnectionError) {
