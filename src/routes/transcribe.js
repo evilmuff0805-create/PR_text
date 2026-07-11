@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import uploadMiddleware from '../middleware/upload.js';
-import { probeAudioDuration, transcribe } from '../services/whisper.js';
+import { prepareDiarizationAudioForStorage, probeAudioDuration, transcribe } from '../services/whisper.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { randomUUID } from 'crypto';
@@ -192,12 +192,31 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
         });
       }
 
+      if (durationSeconds > 20 * 60) {
+        completeTiming(req, res, 'diarization_duration_limit');
+        return res.status(400).json({
+          error: '다화자 분리 모드는 최대 20분 음성만 지원합니다. 파일을 분할 후 다시 시도해주세요.',
+        });
+      }
+
       const creditsNeeded = Math.max(Math.ceil(durationSeconds / 60), 1);
+      const compressionStartedAt = performance.now();
+      let queuedAudio;
+      try {
+        queuedAudio = await prepareDiarizationAudioForStorage({
+          buffer,
+          originalname,
+          contentType: req.file.mimetype,
+        });
+      } finally {
+        req.transcriptionTiming.compressionMs = performance.now() - compressionStartedAt;
+      }
       const queued = await enqueueDiarizationJob({
         userId: req.user.id,
         filename: originalname,
-        buffer,
-        contentType: req.file.mimetype,
+        storageFilename: queuedAudio.filename,
+        buffer: queuedAudio.buffer,
+        contentType: queuedAudio.contentType,
         language,
         durationSeconds,
         creditsNeeded,
@@ -325,6 +344,7 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
     if (err.code === 'RATELIMIT') return res.status(429).json({ error: err.message });
     if (err.message.includes('지원하지 않는 파일')) return res.status(415).json({ error: err.message });
     if (err.message.includes('최대 20분')) return res.status(400).json({ error: err.message });
+    if (err.code === 'DIARIZATION_STORAGE_LIMIT') return res.status(413).json({ error: err.message });
     if (err.message.includes('Whisper API') || err.message.includes('Diarize API')) return res.status(502).json({ error: err.message });
     res.status(500).json({ error: '변환 중 오류가 발생했습니다.' });
   }
