@@ -6,6 +6,7 @@
     "dev:server": "node --watch src/server.js",
     "dev:client": "vite --config client/vite.config.js",
     "build": "vite build --config client/vite.config.js",
+    "test": "node --test",
     "start": "node src/server.js"
   },
   "dependencies": {
