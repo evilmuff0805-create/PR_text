@@ -124,6 +124,7 @@ function completeTiming(req, res, outcome) {
       outcome: attempt.outcome,
       durationMs: roundTiming(attempt.durationMs),
     })),
+    preconvertedM4a: timing.preconvertedM4a,
     parallelChunks: summarizeParallelChunks(timing.parallelChunkTimings),
     correction: summarizeCorrection(timing.correctionTimings),
     timingMismatch: {
@@ -204,6 +205,7 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
     req.transcriptionTiming.openaiMs = result.timings?.openaiMs;
     req.transcriptionTiming.openaiAggregateMs = result.timings?.openaiAggregateMs;
     req.transcriptionTiming.openaiAttempts = result.timings?.openaiAttempts;
+    req.transcriptionTiming.preconvertedM4a = result.timings?.preconvertedM4a;
     req.transcriptionTiming.parallelChunkTimings = result.timings?.chunkTimings;
     req.transcriptionTiming.chunkCount = result.timings?.chunkCount;
     req.transcriptionTiming.language = result.language;
