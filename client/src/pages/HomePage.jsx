@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import AuthModal from '../components/AuthModal.jsx';
+import { validateUploadFile } from '../utils/upload-validation.js';
 
 const pendingJobStorageKey = (userId) => `pendingDiarizationJob:${userId}`;
 
@@ -99,11 +100,26 @@ export default function HomePage() {
   const navigate = useNavigate();
 
   async function selectFile(selected) {
+    const validationError = validateUploadFile(selected);
+    if (validationError) {
+      fileSelectionRef.current += 1;
+      setFile(null);
+      setEstimatedCredits(null);
+      setDurationSeconds(null);
+      setIsReadingDuration(false);
+      setStatus('error');
+      setError(validationError);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
     const selectionId = ++fileSelectionRef.current;
     setFile(selected);
     setEstimatedCredits(null);
     setDurationSeconds(null);
     setIsReadingDuration(true);
+    setStatus('idle');
+    setError('');
 
     const duration = await getAudioDuration(selected);
     if (selectionId !== fileSelectionRef.current) return;
@@ -144,10 +160,19 @@ export default function HomePage() {
     setDurationSeconds(null);
     setIsReadingDuration(false);
     fileInputRef.current.value = '';
+    setStatus('idle');
+    setError('');
   }
 
   async function handleSubmit() {
     if (!file) return;
+
+    const validationError = validateUploadFile(file);
+    if (validationError) {
+      setStatus('error');
+      setError(validationError);
+      return;
+    }
 
     if (!user) {
       setError('로그인이 필요합니다. 좌측 사이드바에서 로그인해주세요.');
@@ -362,7 +387,7 @@ export default function HomePage() {
         <input
           ref={fileInputRef}
           type="file"
-          accept="audio/*"
+          accept=".mp3,.wav,.m4a,.webm,.mp4,.mpeg,.mpga,.ogg,.flac"
           style={{ display: 'none' }}
           onChange={handleFileChange}
         />
