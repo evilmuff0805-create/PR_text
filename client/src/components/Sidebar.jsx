@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useState } from 'react';
 import AuthModal from './AuthModal.jsx';
@@ -53,19 +53,26 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
         transition: 'transform 0.25s ease',
       }}>
         <div style={{ padding: '0 20px', marginBottom: '20px' }}>
-          <h1 style={{
-            fontSize: '1.1rem',
-            fontWeight: 700,
-            background: 'var(--gradient)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            lineHeight: 1.3,
-          }}>
-            프리뷰<br />자막 머신
-          </h1>
-          <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
-            with editor
-          </p>
+          <Link
+            to="/"
+            aria-label="프리뷰 자막으로 이동"
+            onClick={isMobile ? onClose : undefined}
+            style={{ display: 'block', color: 'inherit', textDecoration: 'none' }}
+          >
+            <h1 style={{
+              fontSize: '1.1rem',
+              fontWeight: 700,
+              background: 'var(--gradient)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              lineHeight: 1.3,
+            }}>
+              프리뷰<br />자막 머신
+            </h1>
+            <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+              with editor
+            </p>
+          </Link>
         </div>
 
         <div style={{
