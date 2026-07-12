@@ -6,7 +6,12 @@ process.env.SUPABASE_URL ||= 'https://example.supabase.co';
 process.env.SUPABASE_ANON_KEY ||= 'test-key';
 process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'test-key';
 
-const { isDiarizationJobId, storageFilenameForJob, toClientDiarizationJob } = await import('../src/services/diarization-jobs.js');
+const {
+  createDiarizationJobTimingLog,
+  isDiarizationJobId,
+  storageFilenameForJob,
+  toClientDiarizationJob,
+} = await import('../src/services/diarization-jobs.js');
 const { shouldCompressDiarizationAudioForStorage } = await import('../src/services/whisper.js');
 
 const jobId = 'a8b1dc79-6f44-4a9d-9e7e-0c0f0f6a9de1';
@@ -68,4 +73,47 @@ test('converts only large diarization files before temporary storage', () => {
 test('uses the stored mp3 extension for converted diarization jobs', () => {
   assert.equal(storageFilenameForJob({ storage_path: 'user/job.mp3', filename: 'interview.mp4' }), 'queued-audio.mp3');
   assert.equal(storageFilenameForJob({ storage_path: 'user/job', filename: 'interview.m4a' }), 'interview.m4a');
+});
+
+test('summarizes diarization timings without treating nested persistence stages as mismatches', () => {
+  const timing = createDiarizationJobTimingLog({
+    job: { id: jobId, attempt_count: 2 },
+    outcome: 'success',
+    startedAt: 100,
+    completedAt: 1_100,
+    wallStartedAt: 1_000,
+    wallCompletedAt: 2_000,
+    timings: {
+      claimMs: 30,
+      storageDownloadMs: 80,
+      transcriptionMs: 600,
+      processingMs: 120,
+      persistenceMs: 100,
+      historyMs: 70,
+      completionMs: 30,
+      cleanupMs: 40,
+    },
+    rawTimings: {
+      compressionMs: 50,
+      openaiMs: 500,
+      preconvertedM4a: true,
+      openaiAttempts: [{ phase: 'initial', outcome: 'success', durationMs: 500 }],
+    },
+    correctionTimings: {
+      eligible: true,
+      estimatedCostUsd: 0.012345678,
+      wallMs: 100,
+      chunks: [],
+    },
+    segmentCount: 12,
+    language: 'ko',
+    creditsRefunded: false,
+  });
+
+  assert.equal(timing.jobId, jobId);
+  assert.equal(timing.attempt, 2);
+  assert.equal(timing.storageDownloadMs, 80);
+  assert.equal(timing.openaiMs, 500);
+  assert.equal(timing.correction.estimatedCostUsd, 0.01234568);
+  assert.equal(timing.timingMismatch.detected, false);
 });
