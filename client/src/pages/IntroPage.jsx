@@ -11,7 +11,7 @@ export default function IntroPage() {
         프리뷰 자막 머신
       </h2>
       <div className="card" style={{ marginBottom: '20px' }}>
-        <h3 style={{ fontSize: '1.1rem', marginBottom: '12px', color: 'var(--text-primary)' }}>프리뷰 자막 머신 V.1.0</h3>
+        <h3 style={{ fontSize: '1.1rem', marginBottom: '12px', color: 'var(--text-primary)' }}>프리뷰 자막 머신 V.1.1</h3>
         <p style={{ color: '#39FF14', fontWeight: 700, marginBottom: '12px' }}>
           💰 사용한 만큼만 변환 시간(분) 차감! 충전한 시간은 만료되지 않습니다.
         </p>
