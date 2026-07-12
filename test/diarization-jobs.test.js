@@ -29,6 +29,7 @@ test('hides in-progress diarization result data from the client', () => {
     created_at: '2026-07-11T00:00:00.000Z',
     started_at: '2026-07-11T00:01:00.000Z',
     completed_at: null,
+    updated_at: '2026-07-11T00:01:30.000Z',
     filename: 'interview.m4a',
     credits_reserved: 12,
     credits_refunded: false,
@@ -39,6 +40,7 @@ test('hides in-progress diarization result data from the client', () => {
 
   assert.equal(result.status, 'running');
   assert.equal(result.creditsRemaining, 18);
+  assert.equal(result.updatedAt, '2026-07-11T00:01:30.000Z');
   assert.equal(result.text, undefined);
   assert.equal(result.segments, undefined);
 });
