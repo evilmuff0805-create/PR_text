@@ -94,6 +94,7 @@ export default function HomePage() {
   const [activeJobId, setActiveJobId] = useState(null);
   const [transcriptionStartedAt, setTranscriptionStartedAt] = useState(null);
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
+  const [isCancellingJob, setIsCancellingJob] = useState(false);
 
   const fileInputRef = useRef(null);
   const fileSelectionRef = useRef(0);
@@ -244,6 +245,31 @@ export default function HomePage() {
     } catch (err) {
       setStatus('error');
       setError(err.message || '오류가 발생했습니다.');
+    }
+  }
+
+  async function handleCancelDiarizationJob() {
+    if (!activeJobId || !token || !user?.id || isCancellingJob) return;
+    if (!window.confirm('진행 중인 다화자 작업을 취소하고 예약한 변환 시간을 환불할까요?')) return;
+
+    setIsCancellingJob(true);
+    try {
+      const response = await fetch(`/api/transcribe/jobs/${activeJobId}`, {
+        method: 'DELETE',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || '작업을 취소하지 못했습니다.');
+
+      if (data.creditsRemaining !== undefined) updateCredits(data.creditsRemaining);
+      localStorage.removeItem(pendingJobStorageKey(user.id));
+      setActiveJobId(null);
+      setStatus('error');
+      setError('작업을 취소하고 예약한 변환 시간을 환불했습니다.');
+    } catch (err) {
+      setProgress(err.message || '작업 취소 중 오류가 발생했습니다.');
+    } finally {
+      setIsCancellingJob(false);
     }
   }
 
@@ -567,6 +593,25 @@ export default function HomePage() {
           <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', lineHeight: '1.5', margin: '10px 0 0' }}>
             실제 완료 시점은 파일 길이와 화자 수에 따라 달라집니다.
           </p>
+          <button
+            type="button"
+            onClick={handleCancelDiarizationJob}
+            disabled={isCancellingJob}
+            style={{
+              marginTop: '14px',
+              padding: '8px 12px',
+              border: '1px solid #FF6666',
+              borderRadius: 'var(--border-radius)',
+              background: 'transparent',
+              color: '#FF8888',
+              fontFamily: 'var(--font-family)',
+              fontSize: '0.82rem',
+              cursor: isCancellingJob ? 'wait' : 'pointer',
+              opacity: isCancellingJob ? 0.6 : 1,
+            }}
+          >
+            {isCancellingJob ? '취소 처리 중...' : '작업 취소'}
+          </button>
         </section>
       )}
 
@@ -618,3 +663,4 @@ export default function HomePage() {
     </div>
   );
 }
+
