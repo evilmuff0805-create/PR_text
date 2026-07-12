@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { performance } from 'perf_hooks';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { transcribeWithDiarization } from './whisper.js';
 import { joinSegmentText, processTranscriptionSegments } from './transcription-processing.js';
@@ -43,6 +44,109 @@ function storagePathFor(userId, storageFilename) {
 
 export function storageFilenameForJob(job) {
   return job.storage_path?.toLowerCase().endsWith('.mp3') ? 'queued-audio.mp3' : job.filename;
+}
+
+function roundTiming(value) {
+  return Number(value.toFixed(1));
+}
+
+function summarizeCorrection(timings) {
+  if (!timings) return undefined;
+
+  return {
+    eligible: timings.eligible,
+    languageDecision: timings.languageDecision,
+    model: timings.model,
+    requestedModel: timings.requestedModel,
+    fallbackCount: timings.fallbackCount,
+    usage: timings.usage,
+    estimatedCostUsd: Number.isFinite(timings.estimatedCostUsd)
+      ? Number(timings.estimatedCostUsd.toFixed(8))
+      : undefined,
+    wallMs: Number.isFinite(timings.wallMs) ? roundTiming(timings.wallMs) : undefined,
+    chunkCount: timings.chunkCount,
+    batchCount: timings.batchCount,
+    concurrency: timings.concurrency,
+    batches: timings.batches?.map((batch) => ({
+      ...batch,
+      durationMs: roundTiming(batch.durationMs),
+    })),
+    chunks: timings.chunks?.map((chunk) => ({
+      index: chunk.index,
+      segmentCount: chunk.segmentCount,
+      outcome: chunk.outcome,
+      durationMs: roundTiming(chunk.durationMs),
+    })),
+  };
+}
+
+export function createDiarizationJobTimingLog({
+  job,
+  outcome,
+  startedAt,
+  wallStartedAt,
+  completedAt = performance.now(),
+  wallCompletedAt = Date.now(),
+  timings,
+  rawTimings,
+  correctionTimings,
+  segmentCount,
+  language,
+  error,
+  creditsRefunded,
+}) {
+  const totalMs = completedAt - startedAt;
+  const wallMs = wallCompletedAt - wallStartedAt;
+  const fields = {
+    claim: timings.claimMs,
+    storageDownload: timings.storageDownloadMs,
+    transcription: timings.transcriptionMs,
+    processing: timings.processingMs,
+    persistence: timings.persistenceMs,
+    history: timings.historyMs,
+    completion: timings.completionMs,
+    cleanup: timings.cleanupMs,
+    refund: timings.refundMs,
+  };
+  const stageNamesExceedingTotal = Object.entries(fields)
+    .filter(([name, value]) => !['history', 'completion'].includes(name) && Number.isFinite(value) && value > wallMs + 1_000)
+    .map(([name]) => name);
+  const monotonicWallDeltaMs = Math.abs(totalMs - wallMs);
+
+  return {
+    jobId: job.id,
+    outcome,
+    attempt: job.attempt_count,
+    wallStartedAt: new Date(wallStartedAt).toISOString(),
+    wallCompletedAt: new Date(wallCompletedAt).toISOString(),
+    segmentCount,
+    language,
+    preconvertedM4a: rawTimings?.preconvertedM4a,
+    openaiAttempts: rawTimings?.openaiAttempts?.map((attempt) => ({
+      phase: attempt.phase,
+      outcome: attempt.outcome,
+      durationMs: roundTiming(attempt.durationMs),
+    })),
+    correction: summarizeCorrection(correctionTimings),
+    creditsRefunded,
+    error: error?.message,
+    timingMismatch: {
+      detected: monotonicWallDeltaMs > 1_000 || stageNamesExceedingTotal.length > 0,
+      monotonicWallDeltaMs: roundTiming(monotonicWallDeltaMs),
+      stagesExceedingTotal: stageNamesExceedingTotal,
+    },
+    totalMs: roundTiming(totalMs),
+    wallMs: roundTiming(wallMs),
+    ...Object.fromEntries(
+      Object.entries({
+        ...fields,
+        compression: rawTimings?.compressionMs,
+        openai: rawTimings?.openaiMs,
+      })
+        .filter(([, value]) => Number.isFinite(value))
+        .map(([name, value]) => [`${name}Ms`, roundTiming(value)])
+    ),
+  };
 }
 
 async function removeAudio(storagePath) {
@@ -163,6 +267,7 @@ async function claimNextDiarizationJob(workerToken) {
 }
 
 async function storeCompletedJob(job, workerToken, result) {
+  const historyStartedAt = performance.now();
   const { data: transcriptionLog, error: logError } = await supabaseAdmin
     .from('transcription_logs')
     .insert({
@@ -179,6 +284,7 @@ async function storeCompletedJob(job, workerToken, result) {
 
   if (logError) throw new Error(`다화자 작업 이력 기록 실패: ${logError.message}`);
 
+  const completionStartedAt = performance.now();
   const { data: completed, error } = await supabaseAdmin.rpc('complete_diarization_job', {
     p_job_id: job.id,
     p_worker_token: workerToken,
@@ -190,6 +296,11 @@ async function storeCompletedJob(job, workerToken, result) {
 
   if (error) throw new Error(`다화자 작업 완료 기록 실패: ${error.message}`);
   if (!completed) throw new Error('다화자 작업 lease가 만료되어 결과를 저장하지 못했습니다.');
+
+  return {
+    historyMs: completionStartedAt - historyStartedAt,
+    completionMs: performance.now() - completionStartedAt,
+  };
 }
 
 async function refundFailedJob(job, workerToken, error) {
@@ -218,44 +329,86 @@ async function processNextDiarizationJob() {
 
   const workerToken = randomUUID();
   let job;
+  const startedAt = performance.now();
+  const wallStartedAt = Date.now();
+  const timings = {};
+  let rawResult;
+  let processedResult;
+  let result;
   try {
+    const claimStartedAt = performance.now();
     job = await claimNextDiarizationJob(workerToken);
+    timings.claimMs = performance.now() - claimStartedAt;
     if (!job) return;
 
     console.log(`[diarization.job] 시작: job=${job.id} attempt=${job.attempt_count}`);
+    const storageDownloadStartedAt = performance.now();
     const { data: audio, error: downloadError } = await supabaseAdmin.storage
       .from(STORAGE_BUCKET)
       .download(job.storage_path);
     if (downloadError) throw new Error(`다화자 작업 원본 다운로드 실패: ${downloadError.message}`);
 
     const buffer = Buffer.from(await audio.arrayBuffer());
-    const rawResult = await transcribeWithDiarization(
+    timings.storageDownloadMs = performance.now() - storageDownloadStartedAt;
+    const transcriptionStartedAt = performance.now();
+    rawResult = await transcribeWithDiarization(
       buffer,
       storageFilenameForJob(job),
       job.requested_language,
     );
-    const processedResult = await processTranscriptionSegments(rawResult.segments, rawResult.language);
-    const result = {
+    timings.transcriptionMs = performance.now() - transcriptionStartedAt;
+    const processingStartedAt = performance.now();
+    processedResult = await processTranscriptionSegments(rawResult.segments, rawResult.language);
+    result = {
       text: joinSegmentText(processedResult.segments),
       segments: processedResult.segments,
       language: rawResult.language,
     };
+    timings.processingMs = performance.now() - processingStartedAt;
 
-    await storeCompletedJob(job, workerToken, result);
+    const persistenceStartedAt = performance.now();
+    const persistenceTimings = await storeCompletedJob(job, workerToken, result);
+    timings.persistenceMs = performance.now() - persistenceStartedAt;
+    Object.assign(timings, persistenceTimings);
+    const cleanupStartedAt = performance.now();
     await removeJobAudio(job);
-    console.log('[diarization.job]', JSON.stringify({
-      jobId: job.id,
+    timings.cleanupMs = performance.now() - cleanupStartedAt;
+    console.log('[diarization.job.timing]', JSON.stringify(createDiarizationJobTimingLog({
+      job,
       outcome: 'success',
+      startedAt,
+      wallStartedAt,
+      timings,
+      rawTimings: rawResult.timings,
+      correctionTimings: processedResult.correctionTimings,
       segmentCount: result.segments.length,
       language: result.language,
-      correctionMs: Number(processedResult.correctionMs.toFixed(1)),
-      correction: processedResult.correctionTimings,
-    }));
+      creditsRefunded: false,
+    })));
   } catch (error) {
     console.error(`[diarization.job] 실패: job=${job?.id || '-'} ${error.message}`);
     if (job) {
+      const refundStartedAt = performance.now();
       const failed = await refundFailedJob(job, workerToken, error);
-      if (failed) await removeJobAudio(job);
+      timings.refundMs = performance.now() - refundStartedAt;
+      if (failed) {
+        const cleanupStartedAt = performance.now();
+        await removeJobAudio(job);
+        timings.cleanupMs = performance.now() - cleanupStartedAt;
+      }
+      console.log('[diarization.job.timing]', JSON.stringify(createDiarizationJobTimingLog({
+        job,
+        outcome: 'error',
+        startedAt,
+        wallStartedAt,
+        timings,
+        rawTimings: rawResult?.timings,
+        correctionTimings: processedResult?.correctionTimings,
+        segmentCount: result?.segments.length,
+        language: result?.language,
+        error,
+        creditsRefunded: failed,
+      })));
     }
   } finally {
     workerBusy = false;
