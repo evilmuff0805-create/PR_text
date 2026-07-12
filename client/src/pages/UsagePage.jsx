@@ -211,12 +211,19 @@ export default function UsagePage() {
                 overflow: 'hidden',
                 marginBottom: '12px',
               }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+                  <colgroup>
+                    <col style={{ width: '22%' }} />
+                    <col style={{ width: '84px' }} />
+                    <col style={{ width: '112px' }} />
+                    <col />
+                  </colgroup>
                   <thead>
                     <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      {['날짜', '구분', '시간 변동(분)', '설명'].map((h) => (
-                        <th key={h} style={thStyle}>{h}</th>
-                      ))}
+                      <th style={thStyle}>날짜</th>
+                      <th style={{ ...thStyle, whiteSpace: 'nowrap' }}>구분</th>
+                      <th style={thStyle}>시간 변동(분)</th>
+                      <th style={thStyle}>설명</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -238,10 +245,11 @@ export default function UsagePage() {
                           <td style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
                             {formatDate(log.created_at)}
                           </td>
-                          <td style={{ padding: '14px 16px' }}>
+                          <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
                             <span style={{
-                              display: 'inline-block', padding: '3px 10px', borderRadius: '20px',
+                              display: 'inline-block', minWidth: '42px', padding: '3px 10px', borderRadius: '20px',
                               fontSize: '0.78rem', fontWeight: 600,
+                              textAlign: 'center', whiteSpace: 'nowrap', wordBreak: 'keep-all',
                               background: isCreditIncrease ? 'rgba(57,255,20,0.12)' : 'rgba(255,68,68,0.12)',
                               color: isCreditIncrease ? '#39FF14' : '#FF4444',
                             }}>
