@@ -37,7 +37,10 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
         />
       )}
 
-      <aside style={{
+      <aside
+        aria-hidden={isMobile && !isOpen}
+        inert={isMobile && !isOpen ? '' : undefined}
+        style={{
         width: '220px',
         minHeight: '100vh',
         background: 'var(--bg-secondary)',
@@ -51,7 +54,8 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
         zIndex: 200,
         transform: isMobile && !isOpen ? 'translateX(-100%)' : 'translateX(0)',
         transition: 'transform 0.25s ease',
-      }}>
+        }}
+      >
         <div style={{ padding: '0 20px', marginBottom: '20px' }}>
           <Link
             to="/"

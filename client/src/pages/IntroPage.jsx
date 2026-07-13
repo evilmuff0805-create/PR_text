@@ -1,4 +1,89 @@
 import { useEffect } from 'react';
+import { Link } from 'react-router-dom';
+
+const featureRows = [
+  {
+    index: '01',
+    title: '원문을 먼저 지킵니다',
+    description: '한국어 맞춤법과 띄어쓰기를 다듬되, 말투와 문맥을 임의로 바꾸거나 다른 언어로 번역하지 않습니다.',
+  },
+  {
+    index: '02',
+    title: '편집 가능한 결과를 만듭니다',
+    description: '전체 텍스트와 구간별 자막을 바로 확인하고 수정한 뒤, 편집한 내용 그대로 파일에 반영할 수 있습니다.',
+  },
+  {
+    index: '03',
+    title: '작업에 맞는 파일로 끝냅니다',
+    description: 'SRT, TXT, ASS를 지원해 영상 편집, 원고 정리, 스타일 자막 작업까지 하나의 흐름으로 이어집니다.',
+  },
+];
+
+const workflow = [
+  ['01', '파일 선택', '휴대폰 녹음과 영상 파일을 올리고 예상 차감 시간을 확인합니다.'],
+  ['02', '변환·정리', '음성을 구간별 텍스트로 만들고 필요한 맞춤법을 정리합니다.'],
+  ['03', '편집·다운로드', '결과를 직접 손본 뒤 원하는 자막 형식으로 내려받습니다.'],
+];
+
+function ProductPreview() {
+  return (
+    <div className="product-stage" aria-label="프리뷰 자막 머신 편집 화면 예시">
+      <div className="product-stage__topbar">
+        <div className="product-stage__file">
+          <span className="status-dot" aria-hidden="true" />
+          <span>인터뷰_초안.m4a</span>
+        </div>
+        <span className="product-stage__status">변환 완료</span>
+      </div>
+
+      <div className="product-stage__meta">
+        <div>
+          <small>감지 언어</small>
+          <strong>한국어</strong>
+        </div>
+        <div>
+          <small>구간</small>
+          <strong>48개</strong>
+        </div>
+        <div>
+          <small>길이</small>
+          <strong>04:32</strong>
+        </div>
+      </div>
+
+      <div className="editor-preview">
+        <div className="editor-preview__rail" aria-hidden="true">
+          <span>00:00</span>
+          <span>00:08</span>
+          <span>00:15</span>
+        </div>
+        <div className="editor-preview__transcript">
+          <div className="transcript-row is-active">
+            <span className="speaker speaker--one">화자 1</span>
+            <p>오늘은 첫 장면의 분위기부터 같이 맞춰볼게요.</p>
+          </div>
+          <div className="transcript-row">
+            <span className="speaker speaker--two">화자 2</span>
+            <p>좋아요. 원래 말한 느낌은 그대로 남겨주세요.</p>
+          </div>
+          <div className="transcript-row">
+            <span className="speaker speaker--one">화자 1</span>
+            <p>맞춤법만 정리하고 자막 길이를 확인하겠습니다.</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="product-stage__footer">
+        <span>자동 저장됨</span>
+        <div className="format-pills" aria-label="다운로드 지원 형식">
+          <span>SRT</span>
+          <span>TXT</span>
+          <span>ASS</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function IntroPage() {
   useEffect(() => {
@@ -6,81 +91,119 @@ export default function IntroPage() {
   }, []);
 
   return (
-    <div>
-      <h2 className="gradient-text" style={{ fontSize: '1.8rem', marginBottom: '24px' }}>
-        프리뷰 자막 머신
-      </h2>
-      <div className="card" style={{ marginBottom: '20px' }}>
-        <h3 style={{ fontSize: '1.1rem', marginBottom: '12px', color: 'var(--text-primary)' }}>프리뷰 자막 머신 V.1.1</h3>
-        <p style={{ color: '#39FF14', fontWeight: 700, marginBottom: '12px' }}>
-          💰 사용한 만큼만 변환 시간(분) 차감! 충전한 시간은 만료되지 않습니다.
-        </p>
-        <p style={{ color: 'var(--text-secondary)', lineHeight: 1.8 }}>
-          음성 파일을 업로드하면 자동으로 텍스트로 변환하고, 맞춤법을 교정한 뒤, SRT/TXT/ASS 자막 파일로 다운로드할 수 있는 서비스입니다. 95% 이상의 정확도를 보여주는 깔끔한 자막을 제공합니다.
-        </p>
-        <div style={{
-          marginTop: '16px',
-          background: 'rgba(99, 102, 241, 0.15)',
-          border: '1px solid rgba(99, 102, 241, 0.4)',
-          borderRadius: '10px',
-          padding: '20px',
-          color: '#ccc',
-          fontWeight: 400,
-          lineHeight: 1.8,
-        }}>
-          <span style={{ color: '#A855F7', fontWeight: 600 }}>🎬 SRT 자막 파일을 영상 편집 프로그램에 불러오면, 오디오 싱크에 맞춰 자동으로 자막이 삽입됩니다. 별도의 타이밍 작업 없이 바로 사용할 수 있습니다.</span>
+    <div className="intro-page">
+      <section className="landing-hero" aria-labelledby="landing-title">
+        <div className="landing-hero__copy">
+          <p className="eyebrow">음성·영상 자막 변환기 <span>V.1.1</span></p>
+          <h1 id="landing-title">프리뷰 자막 머신</h1>
+          <p className="landing-hero__statement">
+            말한 그대로,<br />
+            편집 가능한 자막으로.
+          </p>
+          <p className="landing-hero__description">
+            휴대폰 녹음부터 인터뷰 영상까지. 원문의 말투와 문맥을 지키면서
+            바로 편집하고 내려받을 수 있는 텍스트와 자막 파일을 만듭니다.
+          </p>
+
+          <div className="landing-hero__actions">
+            <Link className="button button--primary" to="/">변환 시작하기</Link>
+            <Link className="button button--secondary" to="/guide">사용법 보기</Link>
+          </div>
+
+          <dl className="hero-facts">
+            <div>
+              <dt>지원 파일</dt>
+              <dd>m4a · mp4 · mp3 · wav</dd>
+            </div>
+            <div>
+              <dt>결과 형식</dt>
+              <dd>SRT · TXT · ASS</dd>
+            </div>
+            <div>
+              <dt>작업 방식</dt>
+              <dd>원문 보존 · 직접 편집</dd>
+            </div>
+          </dl>
         </div>
-        <div style={{
-          marginTop: '16px',
-          background: 'rgba(99, 102, 241, 0.15)',
-          border: '1px solid rgba(99, 102, 241, 0.4)',
-          borderRadius: '12px',
-          padding: '20px',
-          color: '#ccc',
-          fontWeight: 400,
-          lineHeight: 1.8,
-        }}>
-          <strong style={{ color: '#A855F7', fontWeight: 600 }}>🎞️ Premiere Pro에서 내 자막 디자인 그대로 적용하기</strong>
-          <p style={{ fontWeight: 400, margin: '8px 0 0' }}>
-            다운로드한 SRT 파일을 Premiere Pro에 불러오면 캡션 트랙이 자동 생성됩니다. Essential Graphics 패널에서 기존에 사용하던 자막 스타일(폰트, 색상, 배경)을 하나만 설정하면, 전체 자막에 일괄 적용할 수 있습니다.
-          </p>
-          <p style={{ fontWeight: 400, margin: '4px 0 0' }}>
-            타이밍 작업은 이미 끝나 있으니, 디자인만 입히면 완성입니다.
-          </p>
-          <p style={{ fontSize: '0.75rem', color: '#999', fontWeight: 400, margin: '8px 0 0' }}>
-            ※ 캡션 스타일 일괄 적용은 Premiere Pro 2021 이후 버전에서 지원됩니다.
-          </p>
+
+        <ProductPreview />
+      </section>
+
+      <section id="features" className="landing-section feature-section" aria-labelledby="feature-title">
+        <div className="section-heading">
+          <p className="eyebrow">편집 작업을 위한 기준</p>
+          <h2 id="feature-title">원문은 지키고,<br />손이 가는 과정은 줄입니다.</h2>
+          <p>빠르게 만드는 것만큼, 결과를 다시 다룰 수 있는지가 중요하니까요.</p>
         </div>
-        <div style={{
-          marginTop: '16px',
-          background: 'rgba(99, 102, 241, 0.15)',
-          border: '1px solid rgba(99, 102, 241, 0.4)',
-          borderRadius: '12px',
-          padding: '20px',
-          color: '#ccc',
-          fontWeight: 400,
-          lineHeight: 1.8,
-        }}>
-          <strong style={{ color: '#A855F7', fontWeight: 600 }}>🎨 ASS 자막 – 스타일까지 포함된 자막 파일</strong>
-          <p style={{ fontWeight: 400, margin: '8px 0 0' }}>
-            폰트, 크기, 색상, 외곽선, 그림자, 위치를 파일 자체에 지정하여 다운로드 즉시 스타일이 적용됩니다. 사이트 내 실시간 미리보기로 원하는 디자인을 확인한 뒤 다운로드할 수 있습니다.
-          </p>
-          <p style={{ fontWeight: 400, margin: '4px 0 0' }}>
-            DaVinci Resolve에서 바로 import 가능하며, VLC·PotPlayer 등 영상 플레이어에서도 스타일 그대로 재생됩니다. 편집 프로그램 없이 완성된 자막이 필요할 때 적합합니다.
-          </p>
+
+        <div className="feature-list">
+          {featureRows.map((feature) => (
+            <article className="feature-row" key={feature.index}>
+              <span className="feature-row__index">{feature.index}</span>
+              <h3>{feature.title}</h3>
+              <p>{feature.description}</p>
+            </article>
+          ))}
         </div>
-      </div>
-      <div className="card" style={{ marginBottom: '20px' }}>
-        <h3 style={{ fontSize: '1.1rem', marginBottom: '12px', color: 'var(--text-primary)' }}>지원 기능</h3>
-        <p style={{ color: 'var(--text-secondary)', lineHeight: 1.8 }}>
-          • 한국어 음성 → 텍스트 변환 + 맞춤법 교정<br />
-          • 영어/일본어/중국어 음성 → 원문 언어 텍스트 변환 (자동 번역 없음)<br />
-          • 최대 150MB 오디오 파일 지원 (약 109분)<br />
-          • SRT, TXT, ASS 자막 포맷 다운로드<br />
-          • 변환 결과 직접 편집 가능<br />
-          • 사용 내역에서 변환 시간 사용 내역 확인 및 이전 변환 텍스트 재다운로드 가능
-        </p>
-      </div>
+      </section>
+
+      <section id="workflow" className="workflow-band" aria-labelledby="workflow-title">
+        <div className="landing-section workflow-section">
+          <div className="section-heading section-heading--compact">
+            <p className="eyebrow">하나의 작업 흐름</p>
+            <h2 id="workflow-title">올리고, 확인하고, 내려받기</h2>
+          </div>
+
+          <ol className="workflow-list">
+            {workflow.map(([index, title, description]) => (
+              <li key={index}>
+                <span>{index}</span>
+                <div>
+                  <h3>{title}</h3>
+                  <p>{description}</p>
+                </div>
+              </li>
+            ))}
+          </ol>
+        </div>
+      </section>
+
+      <section id="formats" className="landing-section format-section" aria-labelledby="format-title">
+        <div className="section-heading section-heading--compact">
+          <p className="eyebrow">작업별 결과 형식</p>
+          <h2 id="format-title">필요한 다음 단계에 맞춰 받으세요.</h2>
+        </div>
+
+        <div className="format-table" role="table" aria-label="자막 결과 형식">
+          <div className="format-row" role="row">
+            <strong role="cell">SRT</strong>
+            <span role="cell">Premiere Pro, YouTube 등 편집·업로드용 표준 자막</span>
+            <span role="cell">타임코드 포함</span>
+          </div>
+          <div className="format-row" role="row">
+            <strong role="cell">TXT</strong>
+            <span role="cell">원고 정리, 검토, 공유를 위한 전체 텍스트</span>
+            <span role="cell">편집 내용 반영</span>
+          </div>
+          <div className="format-row" role="row">
+            <strong role="cell">ASS</strong>
+            <span role="cell">폰트, 위치, 화자 색상까지 지정하는 스타일 자막</span>
+            <span role="cell">스타일 포함</span>
+          </div>
+        </div>
+      </section>
+
+      <section className="closing-band" aria-labelledby="closing-title">
+        <div>
+          <p className="eyebrow">충전한 시간은 만료되지 않습니다</p>
+          <h2 id="closing-title">필요한 만큼 변환하고,<br />결과는 원하는 만큼 다듬으세요.</h2>
+        </div>
+        <div className="closing-band__actions">
+          <Link className="button button--primary" to="/">첫 파일 변환하기</Link>
+          <Link className="text-link" to="/payment">요금 확인</Link>
+        </div>
+      </section>
     </div>
   );
 }
+
