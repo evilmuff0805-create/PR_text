@@ -27,7 +27,7 @@ export default function Header() {
       zIndex: 99,
     }}>
       <nav style={{ display: 'flex', gap: '4px', marginLeft: '24px' }}>
-        <NavLink to="/intro" style={({ isActive }) => linkStyle(isActive)}>
+        <NavLink to="/" style={({ isActive }) => linkStyle(isActive)}>
           소개
         </NavLink>
         <NavLink to="/guide" style={({ isActive }) => linkStyle(isActive)}>
