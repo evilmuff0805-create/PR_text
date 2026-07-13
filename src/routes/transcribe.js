@@ -305,7 +305,7 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
 
     console.log(`[transcribe] 유저 ${req.user.email}: ${creditsNeeded}크레딧 차감 (${newCredits} 남음)`);
 
-    // GPT 교정/번역 적용
+    // 한국어 맞춤법·띄어쓰기 교정 적용
     const processedResult = await processTranscriptionSegments(result.segments, result.language);
     const processedSegments = processedResult.segments;
     req.transcriptionTiming.correctionTimings = processedResult.correctionTimings;

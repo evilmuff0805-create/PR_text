@@ -15,7 +15,7 @@ export default function GuidePage() {
         <h3 style={{ fontSize: '1.1rem', marginBottom: '12px', color: 'var(--text-primary)' }}>Step 2. 언어 선택</h3>
         <p style={{ color: 'var(--text-secondary)', lineHeight: 1.8 }}>
           자동 감지를 사용하거나, 한국어/영어/일본어/중국어 중 선택할 수 있습니다.
-          일본어·중국어를 선택하면 한국어 번역 자막이 생성됩니다.
+          선택한 언어의 원문 텍스트를 생성하며, 자동 번역은 하지 않습니다.
         </p>
       </div>
       <div className="card" style={{ marginBottom: '20px' }}>
