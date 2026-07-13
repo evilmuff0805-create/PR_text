@@ -1,4 +1,3 @@
-import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 
 const featureRows = [
@@ -86,10 +85,6 @@ function ProductPreview() {
 }
 
 export default function IntroPage() {
-  useEffect(() => {
-    localStorage.setItem('visited', 'true');
-  }, []);
-
   return (
     <div className="intro-page">
       <section className="landing-hero" aria-labelledby="landing-title">
@@ -106,7 +101,7 @@ export default function IntroPage() {
           </p>
 
           <div className="landing-hero__actions">
-            <Link className="button button--primary" to="/">변환 시작하기</Link>
+            <Link className="button button--primary" to="/transcribe">변환 시작하기</Link>
             <Link className="button button--secondary" to="/guide">사용법 보기</Link>
           </div>
 
@@ -199,7 +194,7 @@ export default function IntroPage() {
           <h2 id="closing-title">필요한 만큼 변환하고,<br />결과는 원하는 만큼 다듬으세요.</h2>
         </div>
         <div className="closing-band__actions">
-          <Link className="button button--primary" to="/">첫 파일 변환하기</Link>
+          <Link className="button button--primary" to="/transcribe">첫 파일 변환하기</Link>
           <Link className="text-link" to="/payment">요금 확인</Link>
         </div>
       </section>

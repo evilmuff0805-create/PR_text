@@ -58,7 +58,7 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
       >
         <div style={{ padding: '0 20px', marginBottom: '20px' }}>
           <Link
-            to="/"
+            to="/transcribe"
             aria-label="프리뷰 자막으로 이동"
             onClick={isMobile ? onClose : undefined}
             style={{ display: 'block', color: 'inherit', textDecoration: 'none' }}
@@ -114,7 +114,7 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
         </div>
 
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '0 12px' }}>
-          <NavLink to="/" style={navLinkStyle} onClick={isMobile ? onClose : undefined}>
+          <NavLink to="/transcribe" style={navLinkStyle} onClick={isMobile ? onClose : undefined}>
             🎬 프리뷰_자막
           </NavLink>
           <NavLink to="/usage" style={navLinkStyle} onClick={isMobile ? onClose : undefined}>

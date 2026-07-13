@@ -84,7 +84,7 @@ export default function ResultPage() {
       sessionStorage.setItem('lastResult', JSON.stringify(state));
     } else {
       const saved = sessionStorage.getItem('lastResult');
-      if (!saved) navigate('/');
+      if (!saved) navigate('/transcribe');
     }
   }, [state, navigate]);
 
@@ -749,7 +749,7 @@ export default function ResultPage() {
 
       <button
         className="gradient-btn"
-        onClick={() => navigate('/')}
+        onClick={() => navigate('/transcribe')}
         style={{ width: '100%', marginTop: '16px' }}
       >
         새 파일 변환

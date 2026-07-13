@@ -56,7 +56,7 @@ export default function PaymentSuccessPage() {
           setCountdown(count);
           if (count <= 0) {
             clearInterval(timerRef.current);
-            navigate('/');
+            navigate('/transcribe');
           }
         }, 1000);
       } catch (err) {
@@ -88,7 +88,7 @@ export default function PaymentSuccessPage() {
             <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '24px' }}>
               {countdown}초 후 자동으로 이동합니다...
             </p>
-            <button className="gradient-btn" onClick={() => { clearInterval(timerRef.current); navigate('/'); }} style={{ padding: '12px 32px' }}>
+            <button className="gradient-btn" onClick={() => { clearInterval(timerRef.current); navigate('/transcribe'); }} style={{ padding: '12px 32px' }}>
               자막 변환하러 가기
             </button>
           </>
