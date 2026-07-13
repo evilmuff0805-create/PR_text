@@ -208,4 +208,3 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
     </>
   );
 }
-
