@@ -380,34 +380,23 @@ export default function HomePage() {
     : Math.min(0.92, Math.max(0.12, elapsedSeconds / estimatedDiarizationSeconds));
 
   return (
-    <div style={{ maxWidth: '640px', margin: '0 auto', padding: '40px 20px' }}>
-      <h1 className="gradient-text" style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '8px' }}>
-        프리뷰 자막 머신
-      </h1>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: '32px' }}>
-        음성 파일을 업로드하면 텍스트와 자막 파일로 변환해 드립니다.
-      </p>
+    <div className="upload-workspace">
+      <header className="workspace-heading">
+        <p className="workspace-kicker">NEW TRANSCRIPTION</p>
+        <h1 className="workspace-title">새 자막 만들기</h1>
+        <p className="workspace-description">
+          음성이나 영상 파일을 올리면 편집 가능한 텍스트와 자막으로 변환합니다.
+        </p>
+      </header>
 
       {/* 드래그앤드롭 영역 */}
       <div
-        className="card"
-        onClick={() => {
-          if (!user) {
-            setError('로그인이 필요합니다.');
-            setShowAuthModal(true);
-            return;
-          }
-          fileInputRef.current.click();
-        }}
+        className="card upload-dropzone"
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
         style={{
-          border: `2px dashed ${isDragOver ? 'var(--gradient-start)' : 'var(--border-color)'}`,
-          textAlign: 'center',
-          padding: '60px 24px',
-          cursor: 'pointer',
-          transition: 'border-color 0.2s',
+          borderColor: isDragOver ? 'var(--gradient-start)' : 'var(--border-color)',
         }}
       >
         <input
@@ -419,8 +408,8 @@ export default function HomePage() {
         />
 
         {file ? (
-          <div>
-            <p style={{ color: 'var(--text-primary)', fontWeight: 600, marginBottom: '8px' }}>
+          <div className="selected-file">
+            <p className="selected-file__name">
               {file.name}
             </p>
             <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '16px' }}>
@@ -451,26 +440,35 @@ export default function HomePage() {
             </button>
           </div>
         ) : (
-          <div>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>
-              오디오 파일을 드래그하거나 클릭하여 업로드
-            </p>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem' }}>
-              mp3, wav, m4a, webm, mp4 · 최대 150MB · 대용량 파일은 자동 압축 후 변환 (영상 파일은 오디오만 추출)
-            </p>
-            <p style={{ color: '#999', fontSize: '0.8rem', marginTop: '6px' }}>
-              변환 시간은 음성 1분당 1분씩 차감됩니다
-            </p>
-          </div>
+          <button
+            className="upload-dropzone__button"
+            type="button"
+            onClick={() => {
+              if (!user) {
+                setError('로그인이 필요합니다.');
+                setShowAuthModal(true);
+                return;
+              }
+              fileInputRef.current.click();
+            }}
+          >
+            <span className="upload-mark" aria-hidden="true">↑</span>
+            <span className="upload-title">파일을 끌어놓거나 눌러서 선택</span>
+            <span className="upload-support">
+              mp3, wav, m4a, webm, mp4 · 최대 150MB · 영상은 오디오만 추출합니다
+            </span>
+            <span className="upload-credit-rule">음성 1분당 변환 시간 1분을 사용합니다</span>
+          </button>
         )}
       </div>
 
-      {/* 언어 선택 */}
-      <div style={{ marginTop: '16px' }}>
-        <label style={{ display: 'block', color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>
+      <section className="conversion-options" aria-label="변환 옵션">
+      <div className="conversion-options__field">
+        <label htmlFor="transcription-language">
           언어 선택
         </label>
         <select
+          id="transcription-language"
           value={language}
           onChange={(e) => setLanguage(e.target.value)}
           style={{
@@ -493,27 +491,11 @@ export default function HomePage() {
         </select>
       </div>
 
-      {/* 다화자 분리 옵션 */}
-      <div
-        onClick={() => setDiarize(v => !v)}
-        style={{
-          marginTop: '16px',
-          padding: '14px 16px',
-          background: diarize ? 'rgba(57, 255, 20, 0.08)' : 'var(--bg-tertiary)',
-          border: `1px solid ${diarize ? 'var(--gradient-start)' : 'var(--border-color)'}`,
-          borderRadius: 'var(--border-radius)',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'flex-start',
-          gap: '12px',
-          transition: 'all 0.2s',
-        }}
-      >
+      <label className={diarize ? 'speaker-toggle is-active' : 'speaker-toggle'}>
         <input
           type="checkbox"
           checked={diarize}
-          onChange={() => {}}
-          style={{ marginTop: '2px', accentColor: 'var(--gradient-start)', cursor: 'pointer', flexShrink: 0 }}
+          onChange={(event) => setDiarize(event.target.checked)}
         />
         <div>
           <p style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.95rem', margin: 0, marginBottom: '4px' }}>
@@ -528,16 +510,15 @@ export default function HomePage() {
             </p>
           )}
         </div>
-      </div>
+      </label>
+      </section>
 
       {/* 변환 버튼 */}
       <button
-        className="gradient-btn"
+        className="gradient-btn conversion-submit"
         onClick={handleSubmit}
         disabled={!file || isLoading}
         style={{
-          width: '100%',
-          marginTop: '20px',
           opacity: !file || isLoading ? 0.5 : 1,
           cursor: !file || isLoading ? 'not-allowed' : 'pointer',
         }}
@@ -624,8 +605,8 @@ export default function HomePage() {
               onClick={() => navigate('/payment')}
               style={{
                 marginTop: '12px',
-                background: 'linear-gradient(135deg, #A855F7, #6366F1)',
-                color: '#FFFFFF',
+                background: 'var(--accent)',
+                color: '#071009',
                 border: 'none',
                 borderRadius: 'var(--border-radius)',
                 padding: '10px 24px',
@@ -635,7 +616,7 @@ export default function HomePage() {
                 cursor: 'pointer',
               }}
             >
-              💎 변환 시간 충전하기
+              변환 시간 충전하기
             </button>
           )}
           {error.includes('연결') && (
@@ -654,7 +635,7 @@ export default function HomePage() {
                 cursor: 'pointer',
               }}
             >
-              🔄 다시 시도
+              다시 시도
             </button>
           )}
         </div>
@@ -663,4 +644,4 @@ export default function HomePage() {
     </div>
   );
 }
-
+
