@@ -13,17 +13,14 @@ import PaymentFailPage from './pages/PaymentFailPage.jsx';
 import UsagePage from './pages/UsagePage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 
-function HomeOrIntro() {
-  return localStorage.getItem('visited') ? <HomePage /> : <Navigate to="/intro" replace />;
-}
-
 function App() {
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={<HomeOrIntro />} />
+        <Route path="/" element={<IntroPage />} />
+        <Route path="/transcribe" element={<HomePage />} />
         <Route path="/result" element={<ResultPage />} />
-        <Route path="/intro" element={<IntroPage />} />
+        <Route path="/intro" element={<Navigate to="/" replace />} />
         <Route path="/guide" element={<GuidePage />} />
         <Route path="/payment" element={<PaymentPage />} />
         <Route path="/payment/success" element={<PaymentSuccessPage />} />
