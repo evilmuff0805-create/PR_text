@@ -33,7 +33,7 @@ function LandingHeader() {
   return (
     <header className="landing-header">
       <div className="landing-header__inner">
-        <Link className="landing-brand" to="/intro" aria-label="프리뷰 자막 머신 소개">
+        <Link className="landing-brand" to="/" aria-label="프리뷰 자막 머신 소개">
           <span className="landing-brand__mark" aria-hidden="true">P</span>
           <span>
             <strong>프리뷰 자막 머신</strong>
@@ -49,7 +49,7 @@ function LandingHeader() {
           <Link to="/payment">요금</Link>
         </nav>
 
-        <Link className="button button--primary landing-header__cta" to="/">
+        <Link className="button button--primary landing-header__cta" to="/transcribe">
           변환 시작
         </Link>
       </div>
@@ -59,7 +59,7 @@ function LandingHeader() {
 
 export default function Layout({ children }) {
   const location = useLocation();
-  const isLanding = location.pathname === '/intro';
+  const isLanding = location.pathname === '/' || location.pathname === '/intro';
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
@@ -106,13 +106,13 @@ export default function Layout({ children }) {
             >
               <span aria-hidden="true">☰</span>
             </button>
-            <Link className="mobile-brand" to="/">
+            <Link className="mobile-brand" to="/transcribe">
               프리뷰 자막 머신
             </Link>
           </div>
           <nav className="mobile-tabs" aria-label="주요 페이지">
             {[
-              { to: '/intro', label: '소개' },
+              { to: '/', label: '소개' },
               { to: '/guide', label: '사용법' },
               { to: '/payment', label: '결제' },
             ].map(({ to, label }) => (
