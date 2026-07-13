@@ -1,7 +1,8 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
 const LIMIT = 20;
+const DOWNLOAD_FORMATS = ['srt', 'txt', 'ass'];
 
 export default function UsagePage() {
   const { user, token } = useAuth();
@@ -19,13 +20,19 @@ export default function UsagePage() {
   const [error, setError] = useState(null);
   const [downloadingId, setDownloadingId] = useState(null);
 
-  // 초기 로드
   useEffect(() => {
-    if (!token) { setLoading(false); return; }
+    if (!token) {
+      setLoading(false);
+      return;
+    }
+
     fetch(`/api/auth/usage-logs?page=1&limit=${LIMIT}&type=all`, {
       headers: { Authorization: `Bearer ${token}` },
     })
-      .then((r) => { if (!r.ok) throw new Error(`서버 오류 (${r.status})`); return r.json(); })
+      .then((r) => {
+        if (!r.ok) throw new Error(`서버 오류 (${r.status})`);
+        return r.json();
+      })
       .then((data) => {
         if (data.error) throw new Error(data.error);
         setUsageLogs(data.usageLogs || []);
@@ -78,8 +85,11 @@ export default function UsagePage() {
   const formatDate = (iso) => {
     const d = new Date(iso);
     return d.toLocaleDateString('ko-KR', {
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
     });
   };
 
@@ -127,257 +137,189 @@ export default function UsagePage() {
     return `${m}:${String(sec).padStart(2, '0')}`;
   };
 
-  const thStyle = {
-    padding: '14px 16px',
-    textAlign: 'left',
-    fontSize: '0.8rem',
-    fontWeight: 600,
-    color: 'var(--text-muted)',
-    textTransform: 'uppercase',
-    letterSpacing: '0.05em',
-  };
-
-  const loadMoreBtnStyle = {
-    display: 'block',
-    width: '100%',
-    padding: '12px',
-    marginTop: '12px',
-    background: 'var(--bg-tertiary)',
-    border: '1px solid var(--border-color)',
-    borderRadius: '8px',
-    color: 'var(--text-secondary)',
-    fontSize: '0.9rem',
-    fontWeight: 600,
-    cursor: 'pointer',
-  };
-
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '40px 24px' }}>
-      {/* 상단 변환 시간 표시 */}
-      <div style={{
-        background: 'var(--bg-secondary)',
-        border: '1px solid var(--border-color)',
-        borderRadius: '12px',
-        padding: '24px',
-        marginBottom: '32px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: '16px',
-      }}>
-        <span style={{
-          display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-          width: '48px', height: '48px', borderRadius: '50%',
-          background: 'var(--gradient)', color: '#000', fontSize: '1.2rem', fontWeight: 700,
-        }}>⏱</span>
+    <div className="usage-page">
+      <header className="usage-heading">
+        <p className="workspace-kicker">ACCOUNT ACTIVITY</p>
+        <h1 className="workspace-title">사용 내역</h1>
+        <p className="workspace-description">변환 시간의 사용 기록과 완료된 자막 파일을 확인합니다.</p>
+      </header>
+
+      <section className="usage-credit-summary" aria-label="현재 보유 변환 시간">
+        <span className="usage-credit-summary__icon" aria-hidden="true">⏱</span>
         <div>
-          <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '4px' }}>현재 보유 변환 시간</p>
-          <p style={{ fontSize: '2rem', fontWeight: 700, color: 'var(--text-primary)' }}>
-            {user ? `${user.credits}분` : '-'}
-          </p>
+          <p>현재 보유 변환 시간</p>
+          <strong>{user ? `${user.credits}분` : '-'}</strong>
         </div>
-      </div>
+      </section>
 
-      {loading && (
-        <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0' }}>불러오는 중...</p>
-      )}
+      {loading && <p className="usage-state">불러오는 중...</p>}
 
-      {!loading && error && (
-        <p style={{ color: '#FF4444', textAlign: 'center', padding: '40px 0' }}>{error}</p>
-      )}
+      {!loading && error && <p className="usage-state usage-state--error">{error}</p>}
 
       {!loading && !error && !token && (
-        <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0' }}>
-          로그인 후 사용 내역을 확인할 수 있습니다.
-        </p>
+        <p className="usage-state">로그인 후 사용 내역을 확인할 수 있습니다.</p>
       )}
 
-      {/* 변환 시간 사용 내역 */}
       {!loading && !error && token && (
-        <>
-          <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '16px' }}>
-            사용 내역
-          </h2>
+        <div className="usage-sections">
+          <section className="usage-section" aria-labelledby="usage-ledger-title">
+            <div className="usage-section__heading">
+              <div>
+                <p className="usage-section__kicker">CREDIT LEDGER</p>
+                <h2 id="usage-ledger-title">시간 변동 내역</h2>
+              </div>
+              <span>{usageTotal}건</span>
+            </div>
 
-          {usageLogs.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0' }}>
-              사용 내역이 없습니다.
-            </p>
-          ) : (
-            <>
-              <div style={{
-                background: 'var(--bg-secondary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '12px',
-                overflow: 'hidden',
-                marginBottom: '12px',
-              }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-                  <colgroup>
-                    <col style={{ width: '22%' }} />
-                    <col style={{ width: '84px' }} />
-                    <col style={{ width: '112px' }} />
-                    <col />
-                  </colgroup>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      <th style={thStyle}>날짜</th>
-                      <th style={{ ...thStyle, whiteSpace: 'nowrap' }}>구분</th>
-                      <th style={thStyle}>시간 변동(분)</th>
-                      <th style={thStyle}>설명</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {usageLogs.map((log, i) => {
-                      const isCharge = log.action === 'charge';
-                      const isRefund = log.action === 'refund';
-                      const isCreditIncrease = isCharge || isRefund;
-                      const actionLabel = isCharge ? '충전' : isRefund ? '환불' : '변환';
-                      return (
-                        <tr
-                          key={log.id || i}
-                          style={{
-                            borderBottom: i < usageLogs.length - 1 ? '1px solid var(--border-color)' : 'none',
-                            transition: 'background 0.15s',
-                          }}
-                          onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-tertiary)'}
-                          onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                        >
-                          <td style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                            {formatDate(log.created_at)}
+            {usageLogs.length === 0 ? (
+              <p className="usage-state usage-state--panel">사용 내역이 없습니다.</p>
+            ) : (
+              <>
+                <div className="usage-table-shell usage-table-shell--ledger">
+                  <table className="usage-table usage-table--ledger">
+                    <thead>
+                      <tr>
+                        <th>날짜</th>
+                        <th>구분</th>
+                        <th>시간 변동</th>
+                        <th>설명</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {usageLogs.map((log, i) => {
+                        const isCharge = log.action === 'charge';
+                        const isRefund = log.action === 'refund';
+                        const isCreditIncrease = isCharge || isRefund;
+                        const actionLabel = isCharge ? '충전' : isRefund ? '환불' : '변환';
+                        return (
+                          <tr key={log.id || i}>
+                            <td className="usage-table__date">
+                              <span className="usage-mobile-label">날짜</span>
+                              <time dateTime={log.created_at}>{formatDate(log.created_at)}</time>
+                            </td>
+                            <td className="usage-table__action">
+                              <span className="usage-mobile-label">구분</span>
+                              <span className={`usage-badge ${isCreditIncrease ? 'is-positive' : 'is-negative'}`}>
+                                {actionLabel}
+                              </span>
+                            </td>
+                            <td className={`usage-table__amount ${isCreditIncrease ? 'is-positive' : 'is-negative'}`}>
+                              <span className="usage-mobile-label">시간 변동</span>
+                              <strong>{isCreditIncrease ? '+' : '-'}{Math.abs(log.amount ?? log.credits_used ?? 0)}분</strong>
+                            </td>
+                            <td className="usage-table__description">
+                              <span className="usage-mobile-label">설명</span>
+                              <span>{log.description || log.note || '-'}</span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {usageLogs.length < usageTotal && (
+                  <button
+                    className="usage-load-more"
+                    onClick={loadMoreUsage}
+                    disabled={loadingMoreUsage}
+                  >
+                    {loadingMoreUsage ? '불러오는 중...' : `더 보기 (${usageLogs.length} / ${usageTotal})`}
+                  </button>
+                )}
+              </>
+            )}
+          </section>
+
+          <section className="usage-section" aria-labelledby="transcription-history-title">
+            <div className="usage-section__heading">
+              <div>
+                <p className="usage-section__kicker">TRANSCRIPTION HISTORY</p>
+                <h2 id="transcription-history-title">변환 이력</h2>
+              </div>
+              <span>{transcriptionTotal}건</span>
+            </div>
+
+            {transcriptionLogs.length === 0 ? (
+              <p className="usage-state usage-state--panel">변환 이력이 없습니다.</p>
+            ) : (
+              <>
+                <div className="usage-table-shell usage-table-shell--history">
+                  <table className="usage-table usage-table--history">
+                    <thead>
+                      <tr>
+                        <th>날짜</th>
+                        <th>파일명</th>
+                        <th>길이</th>
+                        <th>언어</th>
+                        <th>세그먼트</th>
+                        <th>다운로드</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {transcriptionLogs.map((log, i) => (
+                        <tr key={log.id || i}>
+                          <td className="usage-table__date">
+                            <span className="usage-mobile-label">날짜</span>
+                            <time dateTime={log.created_at}>{formatDate(log.created_at)}</time>
                           </td>
-                          <td style={{ padding: '14px 16px', whiteSpace: 'nowrap' }}>
-                            <span style={{
-                              display: 'inline-block', minWidth: '42px', padding: '3px 10px', borderRadius: '20px',
-                              fontSize: '0.78rem', fontWeight: 600,
-                              textAlign: 'center', whiteSpace: 'nowrap', wordBreak: 'keep-all',
-                              background: isCreditIncrease ? 'rgba(57,255,20,0.12)' : 'rgba(255,68,68,0.12)',
-                              color: isCreditIncrease ? '#39FF14' : '#FF4444',
-                            }}>
-                              {actionLabel}
-                            </span>
+                          <td className="usage-table__filename">
+                            <span className="usage-mobile-label">파일명</span>
+                            <span title={log.filename || undefined}>{log.filename || '-'}</span>
                           </td>
-                          <td style={{ padding: '14px 16px', fontSize: '0.95rem', fontWeight: 700, color: isCreditIncrease ? '#39FF14' : '#FF4444' }}>
-                            {isCreditIncrease ? '+' : '-'}{Math.abs(log.amount ?? log.credits_used ?? 0)}분
+                          <td className="usage-table__duration">
+                            <span className="usage-mobile-label">길이</span>
+                            <span>{formatDuration(log.duration_seconds)}</span>
                           </td>
-                          <td style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                            {log.description || log.note || '-'}
+                          <td className="usage-table__language">
+                            <span className="usage-mobile-label">언어</span>
+                            <span className="usage-language-badge">{log.language || '-'}</span>
+                          </td>
+                          <td className="usage-table__segments">
+                            <span className="usage-mobile-label">세그먼트</span>
+                            <span>{log.segments_count ?? '-'}</span>
+                          </td>
+                          <td className="usage-table__downloads">
+                            <span className="usage-mobile-label">다운로드</span>
+                            <div className="usage-downloads">
+                              {DOWNLOAD_FORMATS.map((format) => {
+                                const key = `${log.id}_${format}`;
+                                const busy = downloadingId === key;
+                                return (
+                                  <button
+                                    key={format}
+                                    type="button"
+                                    onClick={() => handleDownload(log.id, format)}
+                                    disabled={downloadingId !== null}
+                                    className={busy ? 'is-busy' : ''}
+                                    aria-label={`${log.filename || '자막'} ${format.toUpperCase()} 다운로드`}
+                                  >
+                                    {busy ? '...' : format.toUpperCase()}
+                                  </button>
+                                );
+                              })}
+                            </div>
                           </td>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              {usageLogs.length < usageTotal && (
-                <button onClick={loadMoreUsage} disabled={loadingMoreUsage} style={loadMoreBtnStyle}>
-                  {loadingMoreUsage ? '불러오는 중...' : `더 보기 (${usageLogs.length} / ${usageTotal})`}
-                </button>
-              )}
-            </>
-          )}
-
-          {/* 변환 이력 섹션 */}
-          <h2 style={{ fontSize: '1.2rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '16px', marginTop: '48px' }}>
-            변환 이력
-          </h2>
-
-          {transcriptionLogs.length === 0 ? (
-            <p style={{ color: 'var(--text-muted)', textAlign: 'center', padding: '40px 0' }}>
-              변환 이력이 없습니다.
-            </p>
-          ) : (
-            <>
-              <div style={{
-                background: 'var(--bg-secondary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '12px',
-                overflow: 'hidden',
-                marginBottom: '12px',
-              }}>
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr style={{ borderBottom: '1px solid var(--border-color)' }}>
-                      {['날짜', '파일명', '길이', '언어', '세그먼트 수', '다운로드'].map((h) => (
-                        <th key={h} style={thStyle}>{h}</th>
                       ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {transcriptionLogs.map((log, i) => (
-                      <tr
-                        key={log.id || i}
-                        style={{
-                          borderBottom: i < transcriptionLogs.length - 1 ? '1px solid var(--border-color)' : 'none',
-                          transition: 'background 0.15s',
-                        }}
-                        onMouseEnter={(e) => e.currentTarget.style.background = 'var(--bg-tertiary)'}
-                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                      >
-                        <td style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                          {formatDate(log.created_at)}
-                        </td>
-                        <td style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--text-primary)', maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {log.filename || '-'}
-                        </td>
-                        <td style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                          {formatDuration(log.duration_seconds)}
-                        </td>
-                        <td style={{ padding: '14px 16px' }}>
-                          <span style={{
-                            display: 'inline-block', padding: '3px 10px', borderRadius: '20px',
-                            fontSize: '0.78rem', fontWeight: 600,
-                            background: 'rgba(0,245,255,0.12)', color: '#00F5FF',
-                          }}>
-                            {log.language || '-'}
-                          </span>
-                        </td>
-                        <td style={{ padding: '14px 16px', fontSize: '0.85rem', color: 'var(--text-secondary)', textAlign: 'right' }}>
-                          {log.segments_count ?? '-'}
-                        </td>
-                        <td style={{ padding: '10px 16px', whiteSpace: 'nowrap' }}>
-                          {['srt', 'txt', 'ass'].map((fmt) => {
-                            const key = `${log.id}_${fmt}`;
-                            const busy = downloadingId === key;
-                            return (
-                              <button
-                                key={fmt}
-                                onClick={() => handleDownload(log.id, fmt)}
-                                disabled={downloadingId !== null}
-                                style={{
-                                  marginRight: '4px',
-                                  padding: '4px 10px',
-                                  fontSize: '0.75rem',
-                                  fontWeight: 600,
-                                  background: busy ? 'var(--gradient)' : 'var(--bg-tertiary)',
-                                  border: '1px solid var(--border-color)',
-                                  borderRadius: '6px',
-                                  color: busy ? '#000' : 'var(--text-secondary)',
-                                  cursor: downloadingId !== null ? 'not-allowed' : 'pointer',
-                                  opacity: downloadingId !== null && !busy ? 0.4 : 1,
-                                  transition: 'all 0.15s',
-                                  fontFamily: 'var(--font-family)',
-                                }}
-                              >
-                                {busy ? '...' : fmt.toUpperCase()}
-                              </button>
-                            );
-                          })}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                    </tbody>
+                  </table>
+                </div>
 
-              {transcriptionLogs.length < transcriptionTotal && (
-                <button onClick={loadMoreTranscription} disabled={loadingMoreTranscription} style={loadMoreBtnStyle}>
-                  {loadingMoreTranscription ? '불러오는 중...' : `더 보기 (${transcriptionLogs.length} / ${transcriptionTotal})`}
-                </button>
-              )}
-            </>
-          )}
-        </>
+                {transcriptionLogs.length < transcriptionTotal && (
+                  <button
+                    className="usage-load-more"
+                    onClick={loadMoreTranscription}
+                    disabled={loadingMoreTranscription}
+                  >
+                    {loadingMoreTranscription ? '불러오는 중...' : `더 보기 (${transcriptionLogs.length} / ${transcriptionTotal})`}
+                  </button>
+                )}
+              </>
+            )}
+          </section>
+        </div>
       )}
     </div>
   );
