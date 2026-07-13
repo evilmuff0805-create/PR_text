@@ -74,8 +74,7 @@ export default function IntroPage() {
         <h3 style={{ fontSize: '1.1rem', marginBottom: '12px', color: 'var(--text-primary)' }}>지원 기능</h3>
         <p style={{ color: 'var(--text-secondary)', lineHeight: 1.8 }}>
           • 한국어 음성 → 텍스트 변환 + 맞춤법 교정<br />
-          • 일본어/중국어 음성 → 한국어 번역 자막<br />
-          • 영어 음성 → 텍스트 변환<br />
+          • 영어/일본어/중국어 음성 → 원문 언어 텍스트 변환 (자동 번역 없음)<br />
           • 최대 150MB 오디오 파일 지원 (약 109분)<br />
           • SRT, TXT, ASS 자막 포맷 다운로드<br />
           • 변환 결과 직접 편집 가능<br />
