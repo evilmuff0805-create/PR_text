@@ -73,6 +73,38 @@ const ASS_PRESETS = [
   },
 ];
 
+const DOWNLOAD_FORMATS = [
+  { id: 'srt', name: '표준 자막', detail: '타임코드 포함' },
+  { id: 'txt', name: '전체 텍스트', detail: '편집 내용 반영' },
+  { id: 'ass', name: '스타일 자막', detail: '위치·폰트·색상 설정' },
+];
+
+const LANGUAGE_LABELS = {
+  ko: '한국어',
+  korean: '한국어',
+  en: '영어',
+  english: '영어',
+  ja: '일본어',
+  japanese: '일본어',
+  zh: '중국어',
+  chinese: '중국어',
+  unknown: '자동 감지',
+};
+
+function formatResultDuration(segments) {
+  const totalSeconds = segments.reduce((maximum, segment) => (
+    Math.max(maximum, Number(segment.end) || 0)
+  ), 0);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = Math.floor(totalSeconds % 60);
+
+  if (hours > 0) {
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
 export default function ResultPage() {
   const { state } = useLocation();
   const navigate = useNavigate();
@@ -114,6 +146,13 @@ export default function ResultPage() {
 
   // ASS 설정 패널 표시 여부
   const [showAssPanel, setShowAssPanel] = useState(false);
+
+  useEffect(() => {
+    if (!showAssPanel) return;
+    window.requestAnimationFrame(() => {
+      document.getElementById('ass-style-panel')?.scrollIntoView({ block: 'start' });
+    });
+  }, [showAssPanel]);
 
   // ASS 스타일 옵션
   const [assPosition, setAssPosition] = useState('bottom');
@@ -278,482 +317,345 @@ export default function ResultPage() {
 
   if (!resolved) return null;
 
-  const selectStyle = {
-    padding: '8px 12px',
-    background: 'var(--bg-tertiary)',
-    border: '1px solid var(--border-color)',
-    borderRadius: '8px',
-    color: 'var(--text-primary)',
-    fontSize: '0.85rem',
-    fontFamily: 'var(--font-family)',
-    cursor: 'pointer',
-  };
-
-  const labelStyle = {
-    display: 'block',
-    color: 'var(--text-muted)',
-    fontSize: '0.8rem',
-    marginBottom: '6px',
-  };
-
-  const outlineBtn = {
-    background: 'var(--bg-tertiary)',
-    border: '1px solid var(--border-color)',
-    color: 'var(--text-primary)',
-    padding: '10px 24px',
-    borderRadius: 'var(--border-radius)',
-    fontFamily: 'var(--font-family)',
-    fontWeight: 600,
-    fontSize: '0.95rem',
-    cursor: downloading ? 'not-allowed' : 'pointer',
-    opacity: downloading ? 0.5 : 1,
-    transition: 'border-color 0.2s',
-  };
+  const languageLabel = LANGUAGE_LABELS[String(language).toLowerCase()] || language || '알 수 없음';
+  const resultDuration = formatResultDuration(segments);
+  const hasSpeakers = speakerIds.length > 0;
 
   return (
-    <div style={{ maxWidth: '800px', margin: '0 auto', padding: '40px 20px' }}>
-      <h1 className="gradient-text" style={{ fontSize: '1.75rem', fontWeight: 700, marginBottom: '8px' }}>
-        변환 완료
-      </h1>
+    <div className="result-workspace">
+      <header className="result-heading">
+        <div>
+          <p className="workspace-kicker">TRANSCRIPTION COMPLETE</p>
+          <h1 className="result-title">자막 편집</h1>
+          <p className="result-description">변환된 문장을 확인하고 필요한 형식으로 내려받으세요.</p>
+        </div>
+        <button
+          className="button button--secondary result-new-file"
+          onClick={() => navigate('/transcribe')}
+          type="button"
+        >
+          새 파일 변환
+        </button>
+      </header>
 
-      <div style={{ display: 'flex', gap: '24px', marginBottom: '24px' }}>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-          감지된 언어: <span style={{ color: 'var(--text-primary)' }}>{language || '알 수 없음'}</span>
-        </p>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem' }}>
-          세그먼트 수: <span style={{ color: 'var(--text-primary)' }}>{segments.length}개</span>
-        </p>
-      </div>
+      <dl className="result-summary" aria-label="변환 결과 요약">
+        <div>
+          <dt>상태</dt>
+          <dd><span className="result-status-dot" aria-hidden="true" />완료</dd>
+        </div>
+        <div>
+          <dt>언어</dt>
+          <dd>{languageLabel}</dd>
+        </div>
+        <div>
+          <dt>길이</dt>
+          <dd>{resultDuration}</dd>
+        </div>
+        <div>
+          <dt>구간</dt>
+          <dd>{segments.length}개</dd>
+        </div>
+        <div>
+          <dt>화자</dt>
+          <dd>{hasSpeakers ? `${speakerIds.length}명` : diarize ? '분석됨' : '단일'}</dd>
+        </div>
+      </dl>
 
-      {/* 화자 색상 설정 패널 (다화자 모드일 때만 표시) */}
-      {speakerIds.length > 0 && (
-        <div className="card" style={{ padding: '16px', marginBottom: '24px', border: '1px solid var(--gradient-start)' }}>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', fontWeight: 600, marginBottom: '12px' }}>
-            화자별 색상 설정
-          </p>
-          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '12px' }}>
+      {hasSpeakers && (
+        <section className="speaker-palette" aria-labelledby="speaker-palette-title">
+          <div className="speaker-palette__heading">
+            <p className="result-section-kicker">SPEAKERS</p>
+            <h2 id="speaker-palette-title">화자 색상</h2>
+          </div>
+          <div className="speaker-palette__controls">
             {speakerIds.map(id => (
-              <label
-                key={id}
-                style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-              >
-                <span style={{
-                  display: 'inline-block',
-                  width: '20px',
-                  height: '20px',
-                  borderRadius: '4px',
-                  background: speakerColors[String(id)],
-                  border: '2px solid var(--border-color)',
-                  flexShrink: 0,
-                }} />
-                <span style={{ color: 'var(--text-primary)', fontSize: '0.875rem' }}>
-                  인물 {id + 1}
-                </span>
+              <label className="speaker-color-control" key={id}>
                 <input
+                  aria-label={`인물 ${Number(id) + 1} 색상`}
                   type="color"
                   value={speakerColors[String(id)]}
-                  onChange={(e) => setSpeakerColors(prev => ({ ...prev, [String(id)]: e.target.value }))}
-                  style={{ opacity: 0, width: 0, height: 0, position: 'absolute' }}
+                  onChange={(event) => setSpeakerColors(previous => ({
+                    ...previous,
+                    [String(id)]: event.target.value,
+                  }))}
                 />
+                <span>인물 {Number(id) + 1}</span>
               </label>
             ))}
           </div>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', margin: 0 }}>
-            색깔 칩을 클릭하면 색상을 바꿀 수 있습니다 · SRT/ASS 다운로드 시 색상이 적용됩니다
-          </p>
-        </div>
+        </section>
       )}
 
-      <section style={{ marginBottom: '24px' }}>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '8px' }}>
-          변환 결과 편집
-        </p>
-        <div
-          aria-label="자막 편집 방식"
-          role="tablist"
-          style={{ display: 'flex', gap: '4px', borderBottom: '1px solid var(--border-color)', marginBottom: '12px' }}
-        >
-          {[
-            { id: 'text', label: '전체 텍스트' },
-            { id: 'segments', label: '구간별 편집' },
-          ].map((mode) => (
-            <button
-              key={mode.id}
-              aria-selected={editorMode === mode.id}
-              onClick={() => setEditorMode(mode.id)}
-              role="tab"
-              style={{
-                background: 'none',
-                border: 'none',
-                borderBottom: `2px solid ${editorMode === mode.id ? 'var(--gradient-start)' : 'transparent'}`,
-                color: editorMode === mode.id ? 'var(--text-primary)' : 'var(--text-muted)',
-                padding: '8px 12px',
-                fontFamily: 'var(--font-family)',
-                fontSize: '0.875rem',
-                fontWeight: 600,
-                cursor: 'pointer',
-              }}
-            >
-              {mode.label}
-            </button>
-          ))}
-        </div>
+      <div className="result-layout">
+        <section className="result-editor-panel" aria-labelledby="result-editor-title">
+          <div className="result-panel-heading">
+            <div>
+              <p className="result-section-kicker">EDITOR</p>
+              <h2 id="result-editor-title">변환 결과</h2>
+            </div>
+            <span>{editedSegments.length}개 구간</span>
+          </div>
 
-        {editorMode === 'text' ? (
-          <textarea
-            value={editedText}
-            onChange={(e) => updateFullText(e.target.value)}
-            style={{
-              width: '100%',
-              minHeight: '300px',
-              background: 'var(--bg-tertiary)',
-              color: 'var(--text-primary)',
-              border: '1px solid var(--border-color)',
-              borderRadius: 'var(--border-radius)',
-              padding: '16px',
-              fontFamily: 'var(--font-family)',
-              fontSize: '0.95rem',
-              lineHeight: '1.6',
-              resize: 'vertical',
-              boxSizing: 'border-box',
-            }}
-          />
-        ) : (
-          <div
-            role="tabpanel"
-            style={{
-              borderTop: '1px solid var(--border-color)',
-              borderBottom: '1px solid var(--border-color)',
-              maxHeight: '540px',
-              overflowY: 'auto',
-            }}
-          >
-            {editedSegments.map((segment, index) => (
-              <div
-                key={`${segment.start}-${segment.end}-${index}`}
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: '118px minmax(0, 1fr)',
-                  gap: '12px',
-                  padding: '12px 0',
-                  borderBottom: index === editedSegments.length - 1 ? 'none' : '1px solid var(--border-color)',
-                }}
+          <div className="result-editor-tabs" aria-label="자막 편집 방식" role="tablist">
+            {[
+              { id: 'text', label: '전체 텍스트' },
+              { id: 'segments', label: '구간별 편집' },
+            ].map((mode) => (
+              <button
+                aria-controls={`editor-panel-${mode.id}`}
+                aria-selected={editorMode === mode.id}
+                className={editorMode === mode.id ? 'is-active' : ''}
+                id={`editor-tab-${mode.id}`}
+                key={mode.id}
+                onClick={() => setEditorMode(mode.id)}
+                role="tab"
+                type="button"
               >
-                <div style={{ color: 'var(--text-muted)', fontSize: '0.78rem', lineHeight: '1.5' }}>
-                  <div>{formatSegmentTime(segment.start)} - {formatSegmentTime(segment.end)}</div>
-                  {segment.speaker !== undefined && (
-                    <div style={{ color: speakerColors[String(segment.speaker)] || 'var(--text-secondary)', marginTop: '4px' }}>
-                      인물 {segment.speaker + 1}
+                {mode.label}
+              </button>
+            ))}
+          </div>
+
+          {editorMode === 'text' ? (
+            <div
+              aria-labelledby="editor-tab-text"
+              className="result-text-editor"
+              id="editor-panel-text"
+              role="tabpanel"
+            >
+              <label className="sr-only" htmlFor="full-transcript">전체 변환 텍스트</label>
+              <textarea
+                id="full-transcript"
+                onChange={(event) => updateFullText(event.target.value)}
+                value={editedText}
+              />
+            </div>
+          ) : (
+            <div
+              aria-labelledby="editor-tab-segments"
+              className="result-segment-list"
+              id="editor-panel-segments"
+              role="tabpanel"
+            >
+              {editedSegments.map((segment, index) => (
+                <article className="result-segment-row" key={`${segment.start}-${segment.end}-${index}`}>
+                  <div className="result-segment-meta">
+                    <span className="result-segment-index">#{String(index + 1).padStart(2, '0')}</span>
+                    <span className="result-segment-time">
+                      {formatSegmentTime(segment.start)} - {formatSegmentTime(segment.end)}
+                    </span>
+                    {segment.speaker !== undefined && (
+                      <span
+                        className="result-segment-speaker"
+                        style={{ color: speakerColors[String(segment.speaker)] || 'var(--text-secondary)' }}
+                      >
+                        인물 {Number(segment.speaker) + 1}
+                      </span>
+                    )}
+                  </div>
+                  <textarea
+                    aria-label={`자막 구간 ${index + 1}`}
+                    onChange={(event) => updateSegmentText(index, event.target.value)}
+                    rows={2}
+                    value={segment.text}
+                  />
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+
+        <aside className="result-tools" aria-label="자막 내보내기 도구">
+          <section className="result-tool-section" aria-labelledby="export-title">
+            <div className="result-tool-heading">
+              <p className="result-section-kicker">EXPORT</p>
+              <h2 id="export-title">다운로드</h2>
+            </div>
+
+            <div className="export-options">
+              {DOWNLOAD_FORMATS.map((format) => (
+                <button
+                  className={format.id === 'ass' && showAssPanel ? 'export-option is-active' : 'export-option'}
+                  disabled={downloading}
+                  key={format.id}
+                  onClick={() => handleDownload(format.id)}
+                  type="button"
+                >
+                  <span className="export-option__format">{format.id.toUpperCase()}</span>
+                  <span className="export-option__copy">
+                    <strong>{format.name}</strong>
+                    <small>{format.detail}</small>
+                  </span>
+                  <span className="export-option__action" aria-hidden="true">
+                    {format.id === 'ass' ? '설정' : '↓'}
+                  </span>
+                </button>
+              ))}
+            </div>
+
+            {hasSpeakers && (
+              <p className="result-tool-note">화자 색상은 SRT와 ASS에 포함됩니다.</p>
+            )}
+            {downloading && <p className="result-tool-status" role="status">파일 생성 중...</p>}
+          </section>
+
+          <section className="result-tool-section" aria-labelledby="translation-title">
+            <div className="result-tool-heading result-tool-heading--inline">
+              <div>
+                <p className="result-section-kicker">OPTIONAL</p>
+                <h2 id="translation-title">영어 번역</h2>
+              </div>
+              {showTranslation && <span className="tool-state">켜짐</span>}
+            </div>
+            <button
+              className={showTranslation ? 'button button--secondary tool-button is-active' : 'button button--secondary tool-button'}
+              disabled={translating}
+              onClick={handleToggleTranslation}
+              type="button"
+            >
+              {translating
+                ? `번역 중 · 약 ${Math.max(Math.ceil(segments.length / 30) * 5, 5)}초`
+                : showTranslation ? '번역 닫기' : '영어 번역 만들기'}
+            </button>
+
+            {showTranslation && translatedSegments && (
+              <>
+                <div className="translation-results">
+                  {translatedSegments.map((segment, index) => (
+                    <div className="translation-row" key={index}>
+                      <p>{segment.text}</p>
+                      <p>{segment.translatedText}</p>
                     </div>
-                  )}
+                  ))}
                 </div>
-                <textarea
-                  aria-label={`자막 구간 ${index + 1}`}
-                  value={segment.text}
-                  onChange={(e) => updateSegmentText(index, e.target.value)}
-                  style={{
-                    width: '100%',
-                    minHeight: '64px',
-                    background: 'var(--bg-tertiary)',
-                    color: 'var(--text-primary)',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: 'var(--border-radius)',
-                    padding: '10px 12px',
-                    fontFamily: 'var(--font-family)',
-                    fontSize: '0.9rem',
-                    lineHeight: '1.5',
-                    resize: 'vertical',
-                    boxSizing: 'border-box',
-                  }}
-                />
-              </div>
-            ))}
-          </div>
-        )}
-      </section>
-
-      {/* 영어 번역 토글 */}
-      <div style={{ marginBottom: '24px' }}>
-        <button
-          onClick={handleToggleTranslation}
-          disabled={translating}
-          style={{
-            background: showTranslation ? 'linear-gradient(135deg, #39FF14, #00F5FF)' : 'var(--bg-tertiary)',
-            border: '1px solid var(--border-color)',
-            color: showTranslation ? '#000' : 'var(--text-primary)',
-            padding: '10px 24px',
-            borderRadius: 'var(--border-radius)',
-            fontFamily: 'var(--font-family)',
-            fontWeight: 600,
-            fontSize: '0.95rem',
-            cursor: translating ? 'not-allowed' : 'pointer',
-            opacity: translating ? 0.6 : 1,
-            transition: 'all 0.2s',
-          }}
-        >
-          {translating ? `번역 중... (약 ${Math.max(Math.ceil(segments.length / 30) * 5, 5)}초 소요 예상)` : '🌐 영어 번역'}
-        </button>
-
-        {showTranslation && translatedSegments && (
-          <div style={{
-            marginTop: '16px',
-            background: 'var(--bg-tertiary)',
-            border: '1px solid var(--border-color)',
-            borderRadius: 'var(--border-radius)',
-            padding: '16px',
-            maxHeight: '360px',
-            overflowY: 'auto',
-          }}>
-            {translatedSegments.map((seg, idx) => (
-              <div key={idx} style={{ marginBottom: '10px', lineHeight: '1.5' }}>
-                <div style={{ color: '#FFFFFF', fontSize: '0.95rem' }}>{seg.text}</div>
-                <div style={{ color: '#4ADE80', fontSize: '0.9rem', paddingLeft: '12px' }}>{seg.translatedText}</div>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {showTranslation && translatedSegments && (
-          <button
-            onClick={handleTranslationTxtDownload}
-            style={{
-              marginTop: '12px',
-              background: 'var(--bg-tertiary)',
-              border: '1px solid #4ADE80',
-              color: '#4ADE80',
-              padding: '8px 20px',
-              borderRadius: 'var(--border-radius)',
-              fontFamily: 'var(--font-family)',
-              fontWeight: 600,
-              fontSize: '0.875rem',
-              cursor: 'pointer',
-            }}
-          >
-            번역 TXT 다운로드
-          </button>
-        )}
+                <button className="translation-download" onClick={handleTranslationTxtDownload} type="button">
+                  번역 TXT 다운로드
+                </button>
+              </>
+            )}
+          </section>
+        </aside>
       </div>
 
-      {/* 다운로드 버튼 */}
-      <div style={{ marginBottom: '16px' }}>
-        <p style={{ color: 'var(--text-secondary)', fontSize: '0.875rem', marginBottom: '12px' }}>
-          자막 다운로드
-        </p>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          {['srt', 'txt', 'ass'].map((format) => (
-            <button
-              key={format}
-              onClick={() => handleDownload(format)}
-              disabled={downloading}
-              style={{
-                ...outlineBtn,
-                ...(format === 'srt' && speakerIds.length > 0 ? {
-                  borderColor: 'var(--gradient-start)',
-                  color: 'var(--gradient-start)',
-                } : {}),
-                ...(format === 'ass' && showAssPanel ? {
-                  borderColor: 'var(--gradient-start)',
-                  color: 'var(--gradient-start)',
-                } : {}),
-              }}
-            >
-              {format.toUpperCase()}
-            </button>
-          ))}
-        </div>
-        {speakerIds.length > 0 && (
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', marginTop: '8px' }}>
-            SRT/ASS에 화자별 색상이 적용됩니다 · VLC·편집 프로그램 호환 / YouTube 업로드 시 일반 텍스트로 표시됨
-          </p>
-        )}
-      </div>
-
-      {/* ASS 스타일 설정 패널 (ASS 버튼 클릭 시 표시) */}
       {showAssPanel && (
-        <div className="card" style={{ padding: '24px', marginBottom: '24px', border: '1px solid var(--gradient-start)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-            <h3 style={{ color: 'var(--text-primary)', fontSize: '1rem', fontWeight: 600 }}>
-              🎨 ASS 자막 스타일 설정
-            </h3>
+        <section className="ass-style-panel" aria-labelledby="ass-style-title" id="ass-style-panel">
+          <div className="ass-style-heading">
+            <div>
+              <p className="result-section-kicker">ASS STYLE</p>
+              <h2 id="ass-style-title">스타일 자막 설정</h2>
+            </div>
             <button
+              aria-label="스타일 설정 닫기"
+              className="icon-button ass-style-close"
               onClick={() => setShowAssPanel(false)}
-              style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1.2rem', cursor: 'pointer' }}
+              type="button"
             >
-              ✕
+              <span aria-hidden="true">×</span>
             </button>
           </div>
 
-          <div style={{ marginBottom: '20px' }}>
-            <p style={labelStyle}>빠른 스타일</p>
-            <div role="group" aria-label="ASS 자막 프리셋" style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-              {ASS_PRESETS.map((preset) => {
-                const isActive = activeAssPreset === preset.id;
-                return (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    onClick={() => applyAssPreset(preset)}
-                    aria-pressed={isActive}
-                    style={{
-                      background: isActive ? 'var(--gradient-start)' : 'var(--bg-tertiary)',
-                      border: `1px solid ${isActive ? 'var(--gradient-start)' : 'var(--border-color)'}`,
-                      borderRadius: '6px',
-                      color: isActive ? '#FFFFFF' : 'var(--text-primary)',
-                      cursor: 'pointer',
-                      fontFamily: 'var(--font-family)',
-                      fontSize: '0.8rem',
-                      fontWeight: 600,
-                      padding: '8px 10px',
-                    }}
-                  >
-                    {preset.label}
-                  </button>
-                );
-              })}
-            </div>
+          <div className="ass-preset-tabs" aria-label="ASS 자막 프리셋" role="group">
+            {ASS_PRESETS.map((preset) => {
+              const isActive = activeAssPreset === preset.id;
+              return (
+                <button
+                  aria-pressed={isActive}
+                  className={isActive ? 'is-active' : ''}
+                  key={preset.id}
+                  onClick={() => applyAssPreset(preset)}
+                  type="button"
+                >
+                  {preset.label}
+                </button>
+              );
+            })}
           </div>
 
-          {/* 미리보기 창 */}
-          <div style={{
-            width: '100%',
-            aspectRatio: '16 / 9',
-            background: '#000',
-            borderRadius: '8px',
-            marginBottom: '20px',
-            display: 'flex',
-            alignItems: getPreviewAlign(),
-            justifyContent: 'center',
-            padding: '16px',
-            boxSizing: 'border-box',
-            position: 'relative',
-            overflow: 'hidden',
-          }}>
-            {/* 배경 가이드 텍스트 */}
-            <p style={{
-              position: 'absolute',
-              top: '8px',
-              left: '12px',
-              color: 'rgba(255,255,255,0.15)',
-              fontSize: '0.7rem',
-              margin: 0,
-            }}>
-              미리보기 (16:9)
-            </p>
-
-            {/* 자막 미리보기 */}
-            <p style={{
-              color: assFontColor,
-              fontFamily: assFontFamily,
-              fontSize: `${Math.max(assFontSize * 0.8, 12)}px`,
-              fontWeight: 400,
-              textAlign: 'center',
-              textShadow: '1px 1px 3px rgba(0,0,0,0.9), -1px -1px 3px rgba(0,0,0,0.9)',
-              margin: 0,
-              padding: '4px 12px',
-              lineHeight: 1.4,
-              maxWidth: '90%',
-              wordBreak: 'keep-all',
-            }}>
-              {previewText}
-            </p>
-          </div>
-
-          {/* 설정 옵션 */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-
-            {/* 위치 */}
-            <div>
-              <label style={labelStyle}>자막 위치</label>
-              <select value={assPosition} onChange={(e) => setAssPosition(e.target.value)} style={{ ...selectStyle, width: '100%' }}>
-                <option value="top">상단</option>
-                <option value="middle">중앙</option>
-                <option value="bottom">하단 (기본)</option>
-              </select>
-            </div>
-
-            {/* 폰트 */}
-            <div>
-              <label style={labelStyle}>폰트</label>
-              <select value={assFontFamily} onChange={(e) => setAssFontFamily(e.target.value)} style={{ ...selectStyle, width: '100%' }}>
-                {fontOptions.map((f) => (
-                  <option key={f.value} value={f.value}>{f.label}</option>
-                ))}
-              </select>
-              <p style={{ fontSize: '0.75rem', color: '#999', marginTop: '6px' }}>
-                선택한 폰트가 영상 재생기에 설치되어 있어야 정상 표시됩니다.
+          <div className="ass-config-layout">
+            <div
+              className="ass-preview"
+              style={{ alignItems: getPreviewAlign() }}
+            >
+              <span className="ass-preview__label">16:9 PREVIEW</span>
+              <p style={{
+                color: assFontColor,
+                fontFamily: assFontFamily,
+                fontSize: `${Math.max(assFontSize * 0.8, 12)}px`,
+              }}>
+                {previewText}
               </p>
             </div>
 
-            {/* 색상 */}
-            <div>
-              <label style={labelStyle}>글자 색상</label>
-              <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
-                {colorPresets.map((c) => (
-                  <button
-                    key={c.value}
-                    onClick={() => setAssFontColor(c.value)}
-                    title={c.label}
-                    style={{
-                      width: '28px',
-                      height: '28px',
-                      borderRadius: '50%',
-                      background: c.value,
-                      border: assFontColor === c.value ? '3px solid var(--gradient-start)' : '2px solid var(--border-color)',
-                      cursor: 'pointer',
-                      transition: 'border 0.2s',
-                    }}
-                  />
-                ))}
-                <input
-                  type="color"
-                  value={assFontColor}
-                  onChange={(e) => setAssFontColor(e.target.value)}
-                  title="직접 선택"
-                  style={{ width: '28px', height: '28px', border: 'none', background: 'none', cursor: 'pointer', padding: 0 }}
-                />
-              </div>
-            </div>
+            <div className="ass-controls">
+              <div className="ass-control-grid">
+                <label>
+                  <span>자막 위치</span>
+                  <select value={assPosition} onChange={(event) => setAssPosition(event.target.value)}>
+                    <option value="top">상단</option>
+                    <option value="middle">중앙</option>
+                    <option value="bottom">하단</option>
+                  </select>
+                </label>
 
-            {/* 글자 크기 */}
-            <div>
-              <label style={labelStyle}>글자 크기: {assFontSize}px</label>
-              <input
-                type="range"
-                min="12"
-                max="48"
-                value={assFontSize}
-                onChange={(e) => setAssFontSize(Number(e.target.value))}
-                style={{ width: '100%', cursor: 'pointer' }}
-              />
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-muted)' }}>
-                <span>12</span><span>20</span><span>30</span><span>48</span>
+                <label>
+                  <span>폰트</span>
+                  <select value={assFontFamily} onChange={(event) => setAssFontFamily(event.target.value)}>
+                    {fontOptions.map((font) => (
+                      <option key={font.value} value={font.value}>{font.label}</option>
+                    ))}
+                  </select>
+                </label>
               </div>
+
+              <fieldset className="ass-color-field">
+                <legend>글자 색상</legend>
+                <div className="ass-color-swatches">
+                  {colorPresets.map((color) => (
+                    <button
+                      aria-label={color.label}
+                      aria-pressed={assFontColor === color.value}
+                      className={assFontColor === color.value ? 'is-active' : ''}
+                      key={color.value}
+                      onClick={() => setAssFontColor(color.value)}
+                      style={{ backgroundColor: color.value }}
+                      type="button"
+                    />
+                  ))}
+                  <label className="ass-custom-color">
+                    <span className="sr-only">직접 색상 선택</span>
+                    <input
+                      aria-label="직접 색상 선택"
+                      onChange={(event) => setAssFontColor(event.target.value)}
+                      type="color"
+                      value={assFontColor}
+                    />
+                  </label>
+                </div>
+              </fieldset>
+
+              <label className="ass-size-control">
+                <span>글자 크기 <strong>{assFontSize}px</strong></span>
+                <input
+                  max="48"
+                  min="12"
+                  onChange={(event) => setAssFontSize(Number(event.target.value))}
+                  type="range"
+                  value={assFontSize}
+                />
+              </label>
+
+              <button
+                className="gradient-btn ass-download"
+                disabled={downloading}
+                onClick={handleAssDownload}
+                type="button"
+              >
+                {downloading ? '다운로드 중...' : 'ASS 자막 다운로드'}
+              </button>
             </div>
           </div>
-
-          {/* ASS 다운로드 버튼 */}
-          <button
-            className="gradient-btn"
-            onClick={handleAssDownload}
-            disabled={downloading}
-            style={{
-              width: '100%',
-              marginTop: '20px',
-              opacity: downloading ? 0.5 : 1,
-            }}
-          >
-            {downloading ? '다운로드 중...' : 'ASS 자막 다운로드'}
-          </button>
-        </div>
+        </section>
       )}
-
-      <button
-        className="gradient-btn"
-        onClick={() => navigate('/transcribe')}
-        style={{ width: '100%', marginTop: '16px' }}
-      >
-        새 파일 변환
-      </button>
     </div>
   );
 }
