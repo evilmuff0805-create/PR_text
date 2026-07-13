@@ -117,6 +117,14 @@ app.use('/api/download', downloadLimiter, downloadRouter);
 app.use('/api/translate', translateLimiter, translateRouter);
 app.use(apiErrorHandler);
 
+// Unknown API paths must not fall through to the SPA HTML fallback.
+app.use('/api', (req, res) => {
+  res.status(404).json({
+    error: '요청한 API를 찾을 수 없습니다.',
+    requestId: req.requestId,
+  });
+});
+
 // Static files (production)
 if (existsSync(distPath)) {
   app.use(express.static(distPath));
