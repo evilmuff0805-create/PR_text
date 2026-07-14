@@ -3,13 +3,14 @@ import express from 'express';
 import cors from 'cors';
 import { rateLimit } from 'express-rate-limit';
 import authRouter from './routes/auth.js';
-import paymentRouter from './routes/payment.js';
+import paymentRouter, { paymentWebhookRouter } from './routes/payment.js';
 import transcribeRouter from './routes/transcribe.js';
 import transcriptionJobsRouter from './routes/transcription-jobs.js';
 import downloadRouter from './routes/download.js';
 import translateRouter from './routes/translate.js';
 import { requestObservability, apiErrorHandler } from './middleware/observability.js';
 import { startDiarizationJobWorker } from './services/diarization-jobs.js';
+import { validateTossKeyPair } from './services/toss-payments.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { existsSync } from 'fs';
@@ -28,6 +29,17 @@ const REQUIRED_ENV = [
 const missingEnv = REQUIRED_ENV.filter(k => !process.env[k]);
 if (missingEnv.length > 0) {
   console.error(`[ENV] 필수 환경변수 누락: ${missingEnv.join(', ')}`);
+  process.exit(1);
+}
+
+try {
+  const { environment } = validateTossKeyPair({
+    clientKey: process.env.TOSS_CLIENT_KEY,
+    secretKey: process.env.TOSS_SECRET_KEY,
+  });
+  console.log(`[ENV] Toss Payments mode: ${environment}`);
+} catch (error) {
+  console.error(`[ENV] ${error.message}`);
   process.exit(1);
 }
 
@@ -99,6 +111,13 @@ const downloadLimiter = rateLimit({
   handler: rateLimitHandler,
 });
 
+// 토스 결제 상태 웹훅: 인증 대신 토스 API 재조회로 진위를 검증한다.
+const paymentWebhookLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 120,
+  handler: rateLimitHandler,
+});
+
 // Health check
 app.get('/api/health', (req, res) => {
   res.json({
@@ -110,6 +129,7 @@ app.get('/api/health', (req, res) => {
 
 app.use('/api/auth/reset-password', resetPasswordLimiter);
 app.use('/api/auth', generalLimiter, authRouter);
+app.use('/api/payment/webhook', paymentWebhookLimiter, paymentWebhookRouter);
 app.use('/api/payment', generalLimiter, paymentRouter);
 app.use('/api/transcribe/jobs', generalLimiter, transcriptionJobsRouter);
 app.use('/api/transcribe', transcribeLimiter, transcribeRouter);
