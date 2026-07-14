@@ -1,8 +1,18 @@
 export const MAX_UPLOAD_BYTES = 150 * 1024 * 1024;
 
-const SUPPORTED_EXTENSIONS = new Set([
+export const SUPPORTED_UPLOAD_EXTENSIONS = [
   '.mp3', '.wav', '.m4a', '.webm', '.mp4', '.mpeg', '.mpga', '.ogg', '.flac',
-]);
+];
+
+const SUPPORTED_EXTENSIONS = new Set(SUPPORTED_UPLOAD_EXTENSIONS);
+
+// Android content providers commonly identify recordings by MIME type instead of extension.
+export const UPLOAD_ACCEPT = [
+  'audio/*',
+  'video/mp4',
+  'video/webm',
+  ...SUPPORTED_UPLOAD_EXTENSIONS,
+].join(',');
 
 function formatMegabytes(bytes) {
   return (bytes / 1024 / 1024).toFixed(2);

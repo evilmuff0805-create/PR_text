@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import AuthModal from '../components/AuthModal.jsx';
-import { validateUploadFile } from '../utils/upload-validation.js';
+import { UPLOAD_ACCEPT, validateUploadFile } from '../utils/upload-validation.js';
 
 const pendingJobStorageKey = (userId) => `pendingDiarizationJob:${userId}`;
 
@@ -402,7 +402,7 @@ export default function HomePage() {
         <input
           ref={fileInputRef}
           type="file"
-          accept=".mp3,.wav,.m4a,.webm,.mp4,.mpeg,.mpga,.ogg,.flac"
+          accept={UPLOAD_ACCEPT}
           style={{ display: 'none' }}
           onChange={handleFileChange}
         />
