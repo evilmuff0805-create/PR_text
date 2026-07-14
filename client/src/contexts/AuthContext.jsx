@@ -3,6 +3,16 @@ import { useNavigate } from 'react-router-dom';
 
 const AuthContext = createContext(null);
 
+function normalizeUser(data) {
+  return {
+    id: data.id,
+    email: data.email,
+    credits: data.credits,
+    plan: data.plan,
+    canChangePassword: data.canChangePassword !== false,
+  };
+}
+
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(() => localStorage.getItem('token'));
@@ -25,7 +35,7 @@ export function AuthProvider({ children }) {
           .then((r) => r.json())
           .then((data) => {
             if (data.error) throw new Error(data.error);
-            setUser({ id: data.id, email: data.email, credits: data.credits, plan: data.plan });
+            setUser(normalizeUser(data));
             navigate('/', { replace: true });
           })
           .catch(() => {
@@ -49,7 +59,7 @@ export function AuthProvider({ children }) {
       .then((r) => r.json())
       .then((data) => {
         if (data.error) throw new Error(data.error);
-        setUser({ id: data.id, email: data.email, credits: data.credits, plan: data.plan });
+        setUser(normalizeUser(data));
         setToken(saved);
       })
       .catch(() => {
@@ -77,7 +87,7 @@ export function AuthProvider({ children }) {
       headers: { Authorization: `Bearer ${data.token}` },
     });
     const me = await meRes.json();
-    setUser({ id: me.id, email: me.email, credits: me.credits, plan: me.plan });
+    setUser(normalizeUser(me));
   };
 
   const signup = async (email, password) => {
@@ -119,12 +129,28 @@ export function AuthProvider({ children }) {
     });
   }, []);
 
+  const replaceToken = useCallback((newToken) => {
+    if (!newToken) return;
+    localStorage.setItem('token', newToken);
+    setToken(newToken);
+  }, []);
+
   const getToken = useCallback(() => token, [token]);
 
   if (loading) return null; // 초기 인증 확인 중에는 아무것도 렌더하지 않음
 
   return (
-    <AuthContext.Provider value={{ user, token, login, signup, loginWithGoogle, logout, updateCredits, getToken }}>
+    <AuthContext.Provider value={{
+      user,
+      token,
+      login,
+      signup,
+      loginWithGoogle,
+      logout,
+      updateCredits,
+      replaceToken,
+      getToken,
+    }}>
       {children}
     </AuthContext.Provider>
   );

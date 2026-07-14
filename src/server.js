@@ -104,6 +104,14 @@ const resetPasswordLimiter = rateLimit({
   handler: rateLimitHandler,
 });
 
+// 비밀번호 변경 실패: IP당 15분에 5회
+const passwordChangeLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  skipSuccessfulRequests: true,
+  handler: rateLimitHandler,
+});
+
 // /api/download: IP당 분당 20회
 const downloadLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -128,6 +136,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/auth/reset-password', resetPasswordLimiter);
+app.use('/api/auth/password', passwordChangeLimiter);
 app.use('/api/auth', generalLimiter, authRouter);
 app.use('/api/payment/webhook', paymentWebhookLimiter, paymentWebhookRouter);
 app.use('/api/payment', generalLimiter, paymentRouter);

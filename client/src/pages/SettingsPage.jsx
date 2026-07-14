@@ -3,7 +3,8 @@ import { Link } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
 export default function SettingsPage() {
-  const { user, getToken } = useAuth();
+  const { user, getToken, replaceToken } = useAuth();
+  const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -29,7 +30,9 @@ export default function SettingsPage() {
     event.preventDefault();
     setError('');
     setSuccess('');
-    if (newPassword.length < 6) return setError('비밀번호는 6자 이상이어야 합니다.');
+    if (!currentPassword) return setError('현재 비밀번호를 입력해주세요.');
+    if (newPassword.length < 8) return setError('비밀번호는 8자 이상이어야 합니다.');
+    if (currentPassword === newPassword) return setError('새 비밀번호는 현재 비밀번호와 달라야 합니다.');
     if (newPassword !== confirmPassword) return setError('비밀번호가 일치하지 않습니다.');
 
     setLoading(true);
@@ -40,11 +43,13 @@ export default function SettingsPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${getToken()}`,
         },
-        body: JSON.stringify({ newPassword }),
+        body: JSON.stringify({ currentPassword, newPassword }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
+      replaceToken(data.token);
       setSuccess('비밀번호가 변경되었습니다.');
+      setCurrentPassword('');
       setNewPassword('');
       setConfirmPassword('');
     } catch (err) {
@@ -101,19 +106,33 @@ export default function SettingsPage() {
               <p className="settings-panel__kicker">SECURITY</p>
               <h2 id="password-title">비밀번호 변경</h2>
             </div>
-            <span className="settings-panel__status">로그인 계정</span>
+            <span className="settings-panel__status">
+              {user.canChangePassword ? '이메일 계정' : 'Google 계정'}
+            </span>
           </div>
 
-          <form className="settings-password-form" onSubmit={handleChange} noValidate>
+          {user.canChangePassword ? (
+            <form className="settings-password-form" onSubmit={handleChange} noValidate>
+            <label className="settings-field">
+              <span>현재 비밀번호</span>
+              <input
+                type="password"
+                placeholder="현재 비밀번호 입력"
+                value={currentPassword}
+                onChange={(event) => setCurrentPassword(event.target.value)}
+                autoComplete="current-password"
+                required
+              />
+            </label>
             <label className="settings-field">
               <span>새 비밀번호</span>
               <input
                 type="password"
-                placeholder="6자 이상 입력"
+                placeholder="8자 이상 입력"
                 value={newPassword}
                 onChange={(event) => setNewPassword(event.target.value)}
                 autoComplete="new-password"
-                minLength={6}
+                minLength={8}
                 required
               />
             </label>
@@ -125,7 +144,7 @@ export default function SettingsPage() {
                 value={confirmPassword}
                 onChange={(event) => setConfirmPassword(event.target.value)}
                 autoComplete="new-password"
-                minLength={6}
+                minLength={8}
                 required
               />
             </label>
@@ -134,7 +153,7 @@ export default function SettingsPage() {
             {success && <p className="settings-alert" role="status">{success}</p>}
 
             <div className="settings-password-form__footer">
-              <p>비밀번호는 6자 이상이어야 합니다.</p>
+              <p>새 비밀번호는 8자 이상이어야 합니다.</p>
               <button
                 className="gradient-btn settings-password-form__submit"
                 disabled={loading}
@@ -143,7 +162,12 @@ export default function SettingsPage() {
                 {loading ? '변경 중...' : '비밀번호 변경'}
               </button>
             </div>
-          </form>
+            </form>
+          ) : (
+            <p className="settings-alert" role="status">
+              Google 로그인 계정은 별도의 비밀번호를 사용하지 않습니다.
+            </p>
+          )}
         </section>
 
         <aside className="settings-panel settings-panel--links" aria-labelledby="account-links-title">
