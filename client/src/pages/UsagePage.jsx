@@ -188,10 +188,9 @@ export default function UsagePage() {
                     </thead>
                     <tbody>
                       {usageLogs.map((log, i) => {
-                        const isCharge = log.action === 'charge';
-                        const isRefund = log.action === 'refund';
-                        const isCreditIncrease = isCharge || isRefund;
-                        const actionLabel = isCharge ? '충전' : isRefund ? '환불' : '변환';
+                        const amount = Number(log.amount ?? log.credits_used ?? 0);
+                        const isCreditIncrease = amount < 0;
+                        const actionLabel = getUsageActionLabel(log.action);
                         return (
                           <tr key={log.id || i}>
                             <td className="usage-table__date">
@@ -206,7 +205,7 @@ export default function UsagePage() {
                             </td>
                             <td className={`usage-table__amount ${isCreditIncrease ? 'is-positive' : 'is-negative'}`}>
                               <span className="usage-mobile-label">시간 변동</span>
-                              <strong>{isCreditIncrease ? '+' : '-'}{Math.abs(log.amount ?? log.credits_used ?? 0)}분</strong>
+                              <strong>{isCreditIncrease ? '+' : '-'}{Math.abs(amount)}분</strong>
                             </td>
                             <td className="usage-table__description">
                               <span className="usage-mobile-label">설명</span>
@@ -323,4 +322,12 @@ export default function UsagePage() {
       )}
     </div>
   );
+}
+
+function getUsageActionLabel(action) {
+  if (action === 'charge') return '충전';
+  if (action === 'refund') return '환불';
+  if (action === 'payment_refund' || action === 'payment_refund_reconcile') return '결제 환불';
+  if (action === 'payment_refund_restore') return '환불 취소';
+  return '변환';
 }

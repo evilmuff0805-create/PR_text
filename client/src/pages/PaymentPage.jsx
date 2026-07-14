@@ -1,11 +1,17 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
 export default function PaymentPage() {
-  const { user, getToken } = useAuth();
+  const { user, getToken, updateCredits } = useAuth();
   const [loading, setLoading] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
+  const [orders, setOrders] = useState([]);
+  const [ordersLoading, setOrdersLoading] = useState(false);
+  const [ordersError, setOrdersError] = useState('');
+  const [refundsEnabled, setRefundsEnabled] = useState(false);
+  const [confirmingRefund, setConfirmingRefund] = useState(null);
+  const [refunding, setRefunding] = useState(null);
 
   const plans = [
     {
@@ -49,6 +55,34 @@ export default function PaymentPage() {
     plan.salePrice / plan.credits < best.salePrice / best.credits ? plan : best
   ), plans[0]);
   const remainingCredits = Number.isFinite(user?.credits) ? user.credits : 0;
+
+  const loadPaymentOrders = useCallback(async () => {
+    if (!user) {
+      setOrders([]);
+      setRefundsEnabled(false);
+      return;
+    }
+
+    setOrdersLoading(true);
+    setOrdersError('');
+    try {
+      const res = await fetch('/api/payment/orders', {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '결제 내역을 불러오지 못했습니다.');
+      setOrders(data.orders || []);
+      setRefundsEnabled(Boolean(data.refundsEnabled));
+    } catch (err) {
+      setOrdersError(err.message || '결제 내역을 불러오지 못했습니다.');
+    } finally {
+      setOrdersLoading(false);
+    }
+  }, [getToken, user]);
+
+  useEffect(() => {
+    loadPaymentOrders();
+  }, [loadPaymentOrders]);
 
   async function handlePurchase(plan) {
     if (!user) {
@@ -98,6 +132,36 @@ export default function PaymentPage() {
       setError(err.message || '결제 중 오류가 발생했습니다.');
     } finally {
       setLoading(null);
+    }
+  }
+
+  async function handleRefund(order) {
+    setError('');
+    setSuccess('');
+    setOrdersError('');
+    setRefunding(order.order_id);
+
+    try {
+      const res = await fetch('/api/payment/refund', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({ orderId: order.order_id, reason: '고객 요청' }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || '환불 상태를 확인하지 못했습니다.');
+
+      updateCredits(data.credits);
+      setSuccess(data.message || '결제가 전액 환불되었습니다.');
+      setConfirmingRefund(null);
+      await loadPaymentOrders();
+    } catch (err) {
+      setError(err.message || '환불 처리 중 오류가 발생했습니다.');
+      await loadPaymentOrders();
+    } finally {
+      setRefunding(null);
     }
   }
 
@@ -187,8 +251,121 @@ export default function PaymentPage() {
           </article>
         ))}
       </section>
+
+      {user && (
+        <section className="payment-orders" aria-labelledby="payment-orders-title">
+          <div className="payment-orders__heading">
+            <div>
+              <p className="workspace-kicker">PAYMENT HISTORY</p>
+              <h3 id="payment-orders-title">최근 결제</h3>
+            </div>
+            <span>최근 {orders.length}건</span>
+          </div>
+
+          {ordersLoading && orders.length === 0 && (
+            <p className="payment-orders__state">결제 내역을 불러오는 중입니다.</p>
+          )}
+          {!ordersLoading && ordersError && (
+            <p className="payment-orders__state payment-orders__state--error">{ordersError}</p>
+          )}
+          {!ordersLoading && !ordersError && orders.length === 0 && (
+            <p className="payment-orders__state">아직 결제 내역이 없습니다.</p>
+          )}
+
+          {orders.length > 0 && (
+            <div className="payment-order-list">
+              {orders.map((order) => {
+                const isConfirming = confirmingRefund === order.order_id;
+                const isRefunding = refunding === order.order_id;
+                const canRequest = refundsEnabled && (order.can_refund || order.can_retry);
+                const status = getRefundStatus(order, refundsEnabled);
+
+                return (
+                  <article className="payment-order" key={order.order_id}>
+                    <div className="payment-order__summary">
+                      <div>
+                        <strong>{order.plan_name}</strong>
+                        <span>{formatDate(order.approved_at || order.created_at)}</span>
+                      </div>
+                      <div className="payment-order__amount">
+                        <strong>{Number(order.amount).toLocaleString()}원</strong>
+                        <span>{Number(order.credits).toLocaleString()}분</span>
+                      </div>
+                    </div>
+
+                    {isConfirming ? (
+                      <div className="payment-refund-confirm" role="alert">
+                        <p>
+                          결제 금액 전액을 취소하고 구매한 {Number(order.credits).toLocaleString()}분을 즉시 회수합니다.
+                          이 작업은 되돌릴 수 없습니다.
+                        </p>
+                        <div>
+                          <button
+                            className="payment-refund-button payment-refund-button--danger"
+                            type="button"
+                            disabled={isRefunding}
+                            onClick={() => handleRefund(order)}
+                          >
+                            {isRefunding ? '환불 확인 중...' : '전액 환불 확정'}
+                          </button>
+                          <button
+                            className="payment-refund-button"
+                            type="button"
+                            disabled={isRefunding}
+                            onClick={() => setConfirmingRefund(null)}
+                          >
+                            취소
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="payment-order__action">
+                        <span className={`payment-order__status payment-order__status--${status.tone}`}>
+                          {status.label}
+                        </span>
+                        {canRequest && (
+                          <button
+                            className="payment-refund-button"
+                            type="button"
+                            disabled={refunding !== null}
+                            onClick={() => setConfirmingRefund(order.order_id)}
+                          >
+                            {order.can_retry ? '환불 다시 확인' : '전액 환불'}
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </article>
+                );
+              })}
+            </div>
+          )}
+        </section>
+      )}
     </div>
   );
+}
+
+function formatDate(value) {
+  if (!value) return '승인 대기';
+  return new Date(value).toLocaleDateString('ko-KR', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  });
+}
+
+function getRefundStatus(order, refundsEnabled) {
+  if (order.refund_status === 'refunded') return { label: '환불 완료', tone: 'success' };
+  if (order.refund_status === 'pending') return { label: '환불 확인 필요', tone: 'warning' };
+  if (order.refund_status === 'review_required') return { label: '고객센터 확인 필요', tone: 'danger' };
+  if (order.refund_status === 'failed') return { label: '자동 환불 불가', tone: 'danger' };
+  if (order.payment_status !== 'paid') return { label: '결제 미완료', tone: 'muted' };
+  if (order.eligibility_reason === 'environment_mismatch') return { label: '결제 환경 확인 필요', tone: 'muted' };
+  if (!refundsEnabled) return { label: '자동 환불 준비 중', tone: 'muted' };
+  if (order.eligibility_reason === 'credits_used') return { label: '사용 후 환불 문의', tone: 'muted' };
+  if (order.eligibility_reason === 'insufficient_credits') return { label: '잔여 시간 부족', tone: 'muted' };
+  return { label: '환불 가능', tone: 'success' };
 }
 
 function loadTossPayments(clientKey) {

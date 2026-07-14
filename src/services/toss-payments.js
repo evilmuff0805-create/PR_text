@@ -1,12 +1,18 @@
 const TOSS_API_BASE_URL = 'https://api.tosspayments.com/v1';
 
 export class TossPaymentError extends Error {
-  constructor(message, { status = 502, code = null, retryable = true } = {}) {
+  constructor(message, {
+    status = 502,
+    code = null,
+    retryable = true,
+    definitivelyNotCanceled = false,
+  } = {}) {
     super(message);
     this.name = 'TossPaymentError';
     this.status = status;
     this.code = code;
     this.retryable = retryable;
+    this.definitivelyNotCanceled = definitivelyNotCanceled;
   }
 }
 
@@ -46,6 +52,22 @@ export function isVerifiedTossPayment(payment, expected) {
     && payment.orderId === expected.orderId
     && payment.totalAmount === expected.amount
     && payment.status === 'DONE'
+  );
+}
+
+export function isVerifiedCanceledTossPayment(payment, expected) {
+  const canceledAmount = Array.isArray(payment?.cancels)
+    ? payment.cancels.reduce((sum, cancel) => sum + Number(cancel?.cancelAmount || 0), 0)
+    : 0;
+
+  return Boolean(
+    payment
+    && payment.paymentKey === expected.paymentKey
+    && payment.orderId === expected.orderId
+    && payment.totalAmount === expected.amount
+    && payment.status === 'CANCELED'
+    && Number(payment.balanceAmount) === 0
+    && canceledAmount === expected.amount
   );
 }
 
@@ -177,4 +199,80 @@ export async function confirmOrRecoverTossPayment({
   }
 
   throw confirmationError;
+}
+
+export async function cancelOrRecoverTossPayment({
+  paymentKey,
+  orderId,
+  amount,
+  cancelReason,
+  idempotencyKey,
+  secretKey,
+  fetchFn = fetch,
+}) {
+  const expected = { paymentKey, orderId, amount };
+  let cancellationError;
+
+  try {
+    const result = await requestToss(
+      `${TOSS_API_BASE_URL}/payments/${encodeURIComponent(paymentKey)}/cancel`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: createAuthorization(secretKey),
+          'Content-Type': 'application/json',
+          'Idempotency-Key': idempotencyKey,
+        },
+        body: JSON.stringify({ cancelReason }),
+      },
+      fetchFn,
+    );
+
+    if (result.ok && isVerifiedCanceledTossPayment(result.data, expected)) {
+      return { payment: result.data, recovered: false };
+    }
+
+    cancellationError = result.ok
+      ? new TossPaymentError('결제 취소 응답이 주문 정보와 일치하지 않습니다.', {
+        status: 502,
+        code: 'TOSS_CANCELLATION_MISMATCH',
+        retryable: true,
+      })
+      : toProviderError(result, '결제 취소에 실패했습니다.');
+  } catch (error) {
+    cancellationError = error instanceof TossPaymentError
+      ? error
+      : new TossPaymentError('결제 취소 결과를 확인하지 못했습니다.');
+  }
+
+  try {
+    const payment = await getTossPaymentByOrderId({ orderId, secretKey, fetchFn });
+    if (isVerifiedCanceledTossPayment(payment, expected)) {
+      return { payment, recovered: true };
+    }
+
+    const samePayment = payment
+      && payment.paymentKey === paymentKey
+      && payment.orderId === orderId
+      && payment.totalAmount === amount;
+
+    if (samePayment && payment.status === 'DONE' && cancellationError?.retryable === false) {
+      throw new TossPaymentError(cancellationError.message, {
+        status: cancellationError.status,
+        code: cancellationError.code,
+        retryable: false,
+        definitivelyNotCanceled: true,
+      });
+    }
+  } catch (error) {
+    if (error instanceof TossPaymentError && error.definitivelyNotCanceled) {
+      throw error;
+    }
+  }
+
+  throw new TossPaymentError('환불 상태를 확정하지 못했습니다. 다시 결제하지 말고 환불 확인을 재시도해주세요.', {
+    status: 502,
+    code: cancellationError?.code || 'TOSS_CANCELLATION_UNAVAILABLE',
+    retryable: true,
+  });
 }

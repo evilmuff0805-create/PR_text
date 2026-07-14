@@ -12,6 +12,7 @@ const {
   createPaymentWebhookRouter,
 } = await import('../src/routes/payment.js');
 const {
+  cancelOrRecoverTossPayment,
   confirmOrRecoverTossPayment,
   TossPaymentError,
   validateTossKeyPair,
@@ -25,6 +26,7 @@ const ORDER = {
   credits: 100,
   status: 'pending',
   payment_key: null,
+  payment_environment: 'test',
   idempotency_key: '49ff4ef0-f325-4c66-bffe-3d630e257d9f',
 };
 const PAYMENT = {
@@ -32,6 +34,12 @@ const PAYMENT = {
   orderId: ORDER.order_id,
   totalAmount: ORDER.amount,
   status: 'DONE',
+};
+const CANCELED_PAYMENT = {
+  ...PAYMENT,
+  status: 'CANCELED',
+  balanceAmount: 0,
+  cancels: [{ cancelAmount: ORDER.amount }],
 };
 
 function auth(req, res, next) {
@@ -49,7 +57,7 @@ function jsonResponse(status, data) {
   };
 }
 
-async function request(router, path, body) {
+async function request(router, path, body, method = 'POST') {
   const app = express();
   app.use(express.json());
   app.use(router);
@@ -58,11 +66,12 @@ async function request(router, path, body) {
 
   try {
     const { port } = server.address();
-    const response = await fetch(`http://127.0.0.1:${port}${path}`, {
-      method: 'POST',
+    const options = {
+      method,
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
+    };
+    if (body !== undefined) options.body = JSON.stringify(body);
+    const response = await fetch(`http://127.0.0.1:${port}${path}`, options);
     return { status: response.status, data: await response.json() };
   } finally {
     server.close();
@@ -207,6 +216,109 @@ test('keeps a non-retryable provider rejection when no approved payment exists',
   );
 });
 
+test('cancels the full payment with the stored idempotency key', async () => {
+  const calls = [];
+  const result = await cancelOrRecoverTossPayment({
+    paymentKey: PAYMENT.paymentKey,
+    orderId: ORDER.order_id,
+    amount: ORDER.amount,
+    cancelReason: '고객 요청',
+    idempotencyKey: ORDER.idempotency_key,
+    secretKey: 'test_sk_secret',
+    fetchFn: async (url, options) => {
+      calls.push({ url, options });
+      return jsonResponse(200, CANCELED_PAYMENT);
+    },
+  });
+
+  assert.equal(result.recovered, false);
+  assert.equal(calls.length, 1);
+  assert.match(calls[0].url, /payments\/payment-key-1\/cancel$/);
+  assert.equal(calls[0].options.headers['Idempotency-Key'], ORDER.idempotency_key);
+  assert.deepEqual(JSON.parse(calls[0].options.body), { cancelReason: '고객 요청' });
+});
+
+test('recovers a lost cancellation response from the authoritative Toss lookup', async () => {
+  let calls = 0;
+  const result = await cancelOrRecoverTossPayment({
+    paymentKey: PAYMENT.paymentKey,
+    orderId: ORDER.order_id,
+    amount: ORDER.amount,
+    cancelReason: '고객 요청',
+    idempotencyKey: ORDER.idempotency_key,
+    secretKey: 'test_sk_secret',
+    fetchFn: async () => {
+      calls += 1;
+      if (calls === 1) throw new Error('response lost');
+      return jsonResponse(200, CANCELED_PAYMENT);
+    },
+  });
+
+  assert.equal(result.recovered, true);
+  assert.equal(calls, 2);
+});
+
+test('does not accept a mismatched full cancellation response', async () => {
+  await assert.rejects(
+    cancelOrRecoverTossPayment({
+      paymentKey: PAYMENT.paymentKey,
+      orderId: ORDER.order_id,
+      amount: ORDER.amount,
+      cancelReason: '고객 요청',
+      idempotencyKey: ORDER.idempotency_key,
+      secretKey: 'test_sk_secret',
+      fetchFn: async () => jsonResponse(200, {
+        ...CANCELED_PAYMENT,
+        cancels: [{ cancelAmount: 1000 }],
+      }),
+    }),
+    (error) => error instanceof TossPaymentError
+      && error.code === 'TOSS_CANCELLATION_MISMATCH'
+      && error.retryable === true,
+  );
+});
+
+test('marks a provider cancellation rejection as definite only after lookup proves DONE', async () => {
+  let calls = 0;
+  await assert.rejects(
+    cancelOrRecoverTossPayment({
+      paymentKey: PAYMENT.paymentKey,
+      orderId: ORDER.order_id,
+      amount: ORDER.amount,
+      cancelReason: '고객 요청',
+      idempotencyKey: ORDER.idempotency_key,
+      secretKey: 'test_sk_secret',
+      fetchFn: async () => {
+        calls += 1;
+        return calls === 1
+          ? jsonResponse(400, { code: 'NOT_CANCELABLE_AMOUNT', message: 'cannot cancel' })
+          : jsonResponse(200, PAYMENT);
+      },
+    }),
+    (error) => error instanceof TossPaymentError
+      && error.code === 'NOT_CANCELABLE_AMOUNT'
+      && error.retryable === false
+      && error.definitivelyNotCanceled === true,
+  );
+});
+
+test('keeps credits held when the cancellation outcome cannot be proven', async () => {
+  await assert.rejects(
+    cancelOrRecoverTossPayment({
+      paymentKey: PAYMENT.paymentKey,
+      orderId: ORDER.order_id,
+      amount: ORDER.amount,
+      cancelReason: '고객 요청',
+      idempotencyKey: ORDER.idempotency_key,
+      secretKey: 'test_sk_secret',
+      fetchFn: async () => { throw new Error('network unavailable'); },
+    }),
+    (error) => error instanceof TossPaymentError
+      && error.retryable === true
+      && error.definitivelyNotCanceled === false,
+  );
+});
+
 test('creates orders from the server plan catalog and ignores client-supplied prices', async () => {
   let created;
   const store = {
@@ -216,6 +328,7 @@ test('creates orders from the server plan catalog and ignores client-supplied pr
     auth,
     store,
     clientKey: () => 'test_ck_client',
+    secretKey: () => 'test_sk_secret',
   });
 
   const response = await request(router, '/create', {
@@ -230,6 +343,7 @@ test('creates orders from the server plan catalog and ignores client-supplied pr
   assert.equal(created.amount, 4900);
   assert.equal(created.credits, 100);
   assert.equal(created.user_id, USER.id);
+  assert.equal(created.payment_environment, 'test');
 });
 
 test('rejects an altered confirmation amount before contacting Toss', async () => {
@@ -330,6 +444,298 @@ test('completes credits only after a verified Toss confirmation', async () => {
   });
 });
 
+test('lists the authenticated user payment orders and refund gate state', async () => {
+  const orders = [{
+    order_id: ORDER.order_id,
+    payment_status: 'paid',
+    payment_environment: 'test',
+  }];
+  const store = {
+    async listForRefund(userId, limit) {
+      assert.equal(userId, USER.id);
+      assert.equal(limit, 10);
+      return orders;
+    },
+  };
+  const router = createPaymentRouter({
+    auth,
+    store,
+    refundsEnabled: () => true,
+    paymentEnvironment: () => 'test',
+  });
+
+  const response = await request(router, '/orders', undefined, 'GET');
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.data.orders, orders);
+  assert.equal(response.data.refundsEnabled, true);
+});
+
+test('marks payment orders from another Toss environment as non-refundable', async () => {
+  const store = {
+    async listForRefund() {
+      return [{
+        order_id: ORDER.order_id,
+        payment_status: 'paid',
+        payment_environment: 'test',
+        can_refund: true,
+        can_retry: false,
+      }];
+    },
+  };
+  const router = createPaymentRouter({
+    auth,
+    store,
+    refundsEnabled: () => true,
+    paymentEnvironment: () => 'live',
+  });
+
+  const response = await request(router, '/orders', undefined, 'GET');
+
+  assert.equal(response.status, 200);
+  assert.equal(response.data.orders[0].can_refund, false);
+  assert.equal(response.data.orders[0].can_retry, false);
+  assert.equal(response.data.orders[0].eligibility_reason, 'environment_mismatch');
+});
+
+test('blocks refunds before any order or provider mutation when the gate is disabled', async () => {
+  let findCalls = 0;
+  let cancelCalls = 0;
+  const router = createPaymentRouter({
+    auth,
+    store: { async find() { findCalls += 1; } },
+    cancelPayment: async () => { cancelCalls += 1; },
+    refundsEnabled: () => false,
+  });
+
+  const response = await request(router, '/refund', { orderId: ORDER.order_id });
+
+  assert.equal(response.status, 503);
+  assert.equal(findCalls, 0);
+  assert.equal(cancelCalls, 0);
+});
+
+test('holds credits before Toss cancellation and completes the verified refund', async () => {
+  const calls = [];
+  const paidOrder = { ...ORDER, status: 'paid', payment_key: PAYMENT.paymentKey };
+  const prepared = {
+    order_id: ORDER.order_id,
+    payment_key: PAYMENT.paymentKey,
+    amount: ORDER.amount,
+    credits: ORDER.credits,
+    refund_idempotency_key: ORDER.idempotency_key,
+    credits_remaining: 210,
+    already_refunded: false,
+  };
+  const store = {
+    async find() { return paidOrder; },
+    async prepareRefund() { calls.push('prepare'); return prepared; },
+    async completeRefund() {
+      calls.push('complete');
+      return { credits_remaining: 210, refunded: 100, already_refunded: false };
+    },
+  };
+  const router = createPaymentRouter({
+    auth,
+    store,
+    refundsEnabled: () => true,
+    paymentEnvironment: () => 'test',
+    cancelPayment: async (input) => {
+      calls.push('cancel');
+      assert.equal(input.idempotencyKey, ORDER.idempotency_key);
+      return { payment: CANCELED_PAYMENT, recovered: false };
+    },
+  });
+
+  const response = await request(router, '/refund', { orderId: ORDER.order_id });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.data.credits, 210);
+  assert.deepEqual(calls, ['prepare', 'cancel', 'complete']);
+});
+
+test('replays an already refunded order without a second Toss cancellation', async () => {
+  let cancelCalls = 0;
+  const store = {
+    async find() { return { ...ORDER, status: 'paid', payment_key: PAYMENT.paymentKey }; },
+    async prepareRefund() {
+      return {
+        credits_remaining: 210,
+        credits: 100,
+        already_refunded: true,
+      };
+    },
+  };
+  const router = createPaymentRouter({
+    auth,
+    store,
+    refundsEnabled: () => true,
+    paymentEnvironment: () => 'test',
+    cancelPayment: async () => { cancelCalls += 1; },
+  });
+
+  const response = await request(router, '/refund', { orderId: ORDER.order_id });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.data.alreadyRefunded, true);
+  assert.equal(cancelCalls, 0);
+});
+
+test('restores held credits only when Toss definitively rejected cancellation', async () => {
+  let failed = false;
+  const store = {
+    async find() { return { ...ORDER, status: 'paid', payment_key: PAYMENT.paymentKey }; },
+    async prepareRefund() {
+      return {
+        order_id: ORDER.order_id,
+        payment_key: PAYMENT.paymentKey,
+        amount: ORDER.amount,
+        refund_idempotency_key: ORDER.idempotency_key,
+        already_refunded: false,
+      };
+    },
+    async failRefund() {
+      failed = true;
+      return { credits_remaining: 310 };
+    },
+  };
+  const router = createPaymentRouter({
+    auth,
+    store,
+    refundsEnabled: () => true,
+    paymentEnvironment: () => 'test',
+    cancelPayment: async () => {
+      throw new TossPaymentError('cannot cancel', {
+        code: 'NOT_CANCELABLE_AMOUNT',
+        retryable: false,
+        definitivelyNotCanceled: true,
+      });
+    },
+  });
+
+  const response = await request(router, '/refund', { orderId: ORDER.order_id });
+
+  assert.equal(response.status, 409);
+  assert.equal(response.data.credits, 310);
+  assert.equal(failed, true);
+});
+
+test('does not restore held credits while the Toss cancellation result is uncertain', async () => {
+  let failCalls = 0;
+  const store = {
+    async find() { return { ...ORDER, status: 'paid', payment_key: PAYMENT.paymentKey }; },
+    async prepareRefund() {
+      return {
+        order_id: ORDER.order_id,
+        payment_key: PAYMENT.paymentKey,
+        amount: ORDER.amount,
+        refund_idempotency_key: ORDER.idempotency_key,
+        already_refunded: false,
+      };
+    },
+    async failRefund() { failCalls += 1; },
+  };
+  const router = createPaymentRouter({
+    auth,
+    store,
+    refundsEnabled: () => true,
+    paymentEnvironment: () => 'test',
+    cancelPayment: async () => {
+      throw new TossPaymentError('unknown', { retryable: true });
+    },
+  });
+
+  const response = await request(router, '/refund', { orderId: ORDER.order_id });
+
+  assert.equal(response.status, 502);
+  assert.equal(response.data.retryable, true);
+  assert.equal(failCalls, 0);
+});
+
+test('returns a safe conflict when purchased credits were already used', async () => {
+  const store = {
+    async find() { return { ...ORDER, status: 'paid', payment_key: PAYMENT.paymentKey }; },
+    async prepareRefund() {
+      throw Object.assign(new Error('결제 이후 변환 시간을 사용했습니다.'), { code: 'PR003' });
+    },
+  };
+  const router = createPaymentRouter({
+    auth,
+    store,
+    refundsEnabled: () => true,
+    paymentEnvironment: () => 'test',
+  });
+
+  const response = await request(router, '/refund', { orderId: ORDER.order_id });
+
+  assert.equal(response.status, 409);
+  assert.equal(response.data.retryable, false);
+});
+
+test('blocks refund mutation when an old order belongs to a different Toss environment', async () => {
+  let prepareCalls = 0;
+  let cancelCalls = 0;
+  const store = {
+    async find() { return { ...ORDER, status: 'paid', payment_environment: 'test' }; },
+    async prepareRefund() { prepareCalls += 1; },
+  };
+  const router = createPaymentRouter({
+    auth,
+    store,
+    refundsEnabled: () => true,
+    paymentEnvironment: () => 'live',
+    cancelPayment: async () => { cancelCalls += 1; },
+  });
+
+  const response = await request(router, '/refund', { orderId: ORDER.order_id });
+
+  assert.equal(response.status, 409);
+  assert.equal(response.data.retryable, false);
+  assert.equal(prepareCalls, 0);
+  assert.equal(cancelCalls, 0);
+});
+
+test('returns success when a cancellation webhook wins the credit-restore race', async () => {
+  let findCalls = 0;
+  const store = {
+    async find() {
+      findCalls += 1;
+      return findCalls === 1
+        ? { ...ORDER, status: 'paid', payment_key: PAYMENT.paymentKey }
+        : { ...ORDER, status: 'paid', refund_status: 'refunded', credits: 100 };
+    },
+    async prepareRefund() {
+      return {
+        order_id: ORDER.order_id,
+        payment_key: PAYMENT.paymentKey,
+        amount: ORDER.amount,
+        refund_idempotency_key: ORDER.idempotency_key,
+        already_refunded: false,
+      };
+    },
+    async failRefund() { throw new Error('state already changed'); },
+    async getCurrentCredits() { return 210; },
+  };
+  const router = createPaymentRouter({
+    auth,
+    store,
+    refundsEnabled: () => true,
+    paymentEnvironment: () => 'test',
+    cancelPayment: async () => {
+      throw new TossPaymentError('cannot cancel', {
+        retryable: false,
+        definitivelyNotCanceled: true,
+      });
+    },
+  });
+
+  const response = await request(router, '/refund', { orderId: ORDER.order_id });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.data.alreadyRefunded, true);
+  assert.equal(response.data.credits, 210);
+});
+
 test('webhook re-queries Toss before completing a pending order', async () => {
   let queryCalls = 0;
   let completed;
@@ -379,4 +785,52 @@ test('webhook ignores an unverified DONE payload without changing credits', asyn
   assert.equal(response.status, 200);
   assert.equal(response.data.ignored, true);
   assert.equal(completeCalls, 0);
+});
+
+test('webhook re-queries Toss and reconciles a verified full cancellation', async () => {
+  let reconciled;
+  const store = {
+    async find() { return { ...ORDER, status: 'paid', payment_key: PAYMENT.paymentKey }; },
+    async reconcileCanceledRefund(input) {
+      reconciled = input;
+      return { refunded: 100, manual_review: false, already_refunded: false };
+    },
+  };
+  const router = createPaymentWebhookRouter({
+    store,
+    getPayment: async () => CANCELED_PAYMENT,
+  });
+
+  const response = await request(router, '/', {
+    eventType: 'PAYMENT_STATUS_CHANGED',
+    data: CANCELED_PAYMENT,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.data.refunded, true);
+  assert.deepEqual(reconciled, {
+    orderId: ORDER.order_id,
+    paymentKey: PAYMENT.paymentKey,
+  });
+});
+
+test('webhook does not reclaim credits for an unverified cancellation', async () => {
+  let reconcileCalls = 0;
+  const store = {
+    async find() { return { ...ORDER, status: 'paid', payment_key: PAYMENT.paymentKey }; },
+    async reconcileCanceledRefund() { reconcileCalls += 1; },
+  };
+  const router = createPaymentWebhookRouter({
+    store,
+    getPayment: async () => ({ ...CANCELED_PAYMENT, balanceAmount: 100 }),
+  });
+
+  const response = await request(router, '/', {
+    eventType: 'PAYMENT_STATUS_CHANGED',
+    data: CANCELED_PAYMENT,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.data.ignored, true);
+  assert.equal(reconcileCalls, 0);
 });
