@@ -1274,6 +1274,164 @@ textarea:focus-visible {
   opacity: 0.5;
 }
 
+.payment-orders {
+  margin-top: 34px;
+  border-top: 1px solid var(--border-color);
+  padding-top: 28px;
+}
+
+.payment-orders__heading {
+  display: flex;
+  margin-bottom: 14px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.payment-orders__heading h3 {
+  margin-top: 4px;
+  color: var(--text-primary);
+  font-size: 1.08rem;
+}
+
+.payment-orders__heading > span,
+.payment-orders__state {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+}
+
+.payment-orders__state {
+  padding: 24px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  text-align: center;
+}
+
+.payment-orders__state--error {
+  color: var(--danger);
+}
+
+.payment-order-list {
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.payment-order {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.payment-order:last-child {
+  border-bottom: 0;
+}
+
+.payment-order__summary,
+.payment-order__action,
+.payment-refund-confirm > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.payment-order__summary > div,
+.payment-order__amount {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.payment-order__summary strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.payment-order__summary span {
+  color: var(--text-muted);
+  font-size: 0.68rem;
+}
+
+.payment-order__amount {
+  flex: 0 0 auto;
+  text-align: right;
+}
+
+.payment-order__action {
+  margin-top: 12px;
+}
+
+.payment-order__status {
+  font-size: 0.68rem;
+  font-weight: 750;
+}
+
+.payment-order__status--success {
+  color: var(--accent);
+}
+
+.payment-order__status--warning {
+  color: #ffbd59;
+}
+
+.payment-order__status--danger {
+  color: var(--danger);
+}
+
+.payment-order__status--muted {
+  color: var(--text-muted);
+}
+
+.payment-refund-button {
+  min-height: 34px;
+  padding: 7px 11px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.payment-refund-button:hover:not(:disabled) {
+  border-color: rgba(61, 242, 116, 0.36);
+  color: var(--text-primary);
+}
+
+.payment-refund-button--danger {
+  border-color: rgba(255, 107, 114, 0.42);
+  color: var(--danger);
+}
+
+.payment-refund-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.payment-refund-confirm {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(255, 107, 114, 0.24);
+}
+
+.payment-refund-confirm p {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.6;
+  word-break: keep-all;
+}
+
+.payment-refund-confirm > div {
+  margin-top: 12px;
+  justify-content: flex-start;
+}
+
 .payment-status-page {
   display: grid;
   width: min(100%, 540px);
@@ -3598,6 +3756,29 @@ textarea:focus-visible {
 
   .payment-plan__summary {
     min-height: 0;
+  }
+
+  .payment-orders {
+    margin-top: 26px;
+    padding-top: 22px;
+  }
+
+  .payment-order {
+    padding: 15px;
+  }
+
+  .payment-order__summary {
+    align-items: flex-start;
+  }
+
+  .payment-refund-confirm > div {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .payment-refund-button {
+    width: 100%;
   }
 
   .payment-status-page {

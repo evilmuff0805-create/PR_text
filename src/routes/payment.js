@@ -3,10 +3,13 @@ import { randomUUID } from 'node:crypto';
 import { authMiddleware } from '../middleware/auth.js';
 import { paymentOrderStore } from '../services/payment-orders.js';
 import {
+  cancelOrRecoverTossPayment,
   confirmOrRecoverTossPayment,
   getTossPaymentByOrderId,
+  isVerifiedCanceledTossPayment,
   isVerifiedTossPayment,
   TossPaymentError,
+  validateTossKeyPair,
 } from '../services/toss-payments.js';
 
 export const PLANS = {
@@ -16,6 +19,7 @@ export const PLANS = {
 };
 
 const ORDER_ID_PATTERN = /^[A-Za-z0-9_-]{6,64}$/;
+const REFUND_CLIENT_ERROR_CODES = new Set(['PR001', 'PR002', 'PR003', 'PR004', 'PR005', 'PR006']);
 
 export function isValidPaymentKey(paymentKey) {
   return typeof paymentKey === 'string' && paymentKey.length > 0 && paymentKey.length <= 200;
@@ -35,12 +39,28 @@ function sendCompletedPayment(res, result, message) {
   });
 }
 
+function normalizeRefundReason(value) {
+  if (value === undefined || value === null || value === '') return '고객 요청';
+  if (typeof value !== 'string') return null;
+  const reason = value.trim();
+  return reason.length >= 1 && reason.length <= 200 ? reason : null;
+}
+
 export function createPaymentRouter({
   auth = authMiddleware,
   store = paymentOrderStore,
   confirmPayment = confirmOrRecoverTossPayment,
+  cancelPayment = cancelOrRecoverTossPayment,
   clientKey = () => process.env.TOSS_CLIENT_KEY,
   secretKey = () => process.env.TOSS_SECRET_KEY,
+  paymentEnvironment = () => validateTossKeyPair({
+    clientKey: clientKey(),
+    secretKey: secretKey(),
+  }).environment,
+  refundsEnabled = () => {
+    const environment = paymentEnvironment();
+    return environment === 'test' || process.env.PAYMENT_REFUNDS_ENABLED === 'true';
+  },
 } = {}) {
   const router = Router();
 
@@ -62,6 +82,7 @@ export function createPaymentRouter({
         plan_name: plan.name,
         amount: plan.price,
         credits: plan.credits,
+        payment_environment: paymentEnvironment(),
       });
     } catch (error) {
       console.error('[payment.create]', JSON.stringify({
@@ -164,6 +185,184 @@ export function createPaymentRouter({
     }
   });
 
+  router.get('/orders', auth, async (req, res) => {
+    try {
+      const environment = paymentEnvironment();
+      const storedOrders = await store.listForRefund(req.user.id, 10);
+      const orders = storedOrders.map((order) => (
+        order.payment_environment === environment
+          ? order
+          : {
+            ...order,
+            can_refund: false,
+            can_retry: false,
+            eligibility_reason: 'environment_mismatch',
+          }
+      ));
+      return res.json({
+        orders,
+        refundsEnabled: refundsEnabled(),
+      });
+    } catch (error) {
+      console.error('[payment.orders_error]', JSON.stringify({
+        requestId: req.requestId,
+        userId: req.user.id,
+        error: error.message,
+      }));
+      return res.status(500).json({ error: '결제 내역을 불러오지 못했습니다.' });
+    }
+  });
+
+  router.post('/refund', auth, async (req, res) => {
+    const { orderId } = req.body ?? {};
+    const reason = normalizeRefundReason(req.body?.reason);
+    let prepared;
+
+    try {
+      if (!refundsEnabled()) {
+        return res.status(503).json({
+          error: '자동 환불은 현재 테스트 환경에서만 사용할 수 있습니다.',
+        });
+      }
+      if (!isValidOrderId(orderId) || !reason) {
+        return res.status(400).json({ error: '환불 요청 정보가 올바르지 않습니다.' });
+      }
+
+      const order = await store.find(orderId);
+      if (!order || order.user_id !== req.user.id) {
+        return res.status(404).json({ error: '결제 주문을 찾을 수 없습니다.' });
+      }
+      if (order.payment_environment !== paymentEnvironment()) {
+        return res.status(409).json({
+          error: '현재 결제 환경과 다른 주문입니다. 고객센터에 문의해주세요.',
+          retryable: false,
+        });
+      }
+
+      prepared = await store.prepareRefund({
+        orderId,
+        userId: req.user.id,
+        reason,
+      });
+
+      if (prepared.already_refunded) {
+        return res.json({
+          success: true,
+          credits: prepared.credits_remaining,
+          refunded: prepared.credits,
+          alreadyRefunded: true,
+          message: '이미 환불된 결제입니다.',
+        });
+      }
+
+      const { recovered } = await cancelPayment({
+        paymentKey: prepared.payment_key,
+        orderId: prepared.order_id,
+        amount: prepared.amount,
+        cancelReason: reason,
+        idempotencyKey: prepared.refund_idempotency_key,
+        secretKey: secretKey(),
+      });
+
+      const result = await store.completeRefund({
+        orderId,
+        userId: req.user.id,
+        paymentKey: prepared.payment_key,
+      });
+
+      console.log('[payment.refund_complete]', JSON.stringify({
+        requestId: req.requestId,
+        orderId,
+        refunded: result.refunded,
+        recovered,
+        alreadyRefunded: result.already_refunded,
+      }));
+
+      return res.json({
+        success: true,
+        credits: result.credits_remaining,
+        refunded: result.refunded,
+        alreadyRefunded: result.already_refunded,
+        message: `${result.refunded}분 결제가 전액 환불되었습니다.`,
+      });
+    } catch (error) {
+      if (error instanceof TossPaymentError) {
+        let restoredCredits = null;
+
+        if (error.definitivelyNotCanceled && prepared) {
+          try {
+            const restored = await store.failRefund({
+              orderId,
+              userId: req.user.id,
+              errorCode: error.code || 'TOSS_CANCELLATION_REJECTED',
+            });
+            restoredCredits = restored.credits_remaining;
+          } catch (restoreError) {
+            try {
+              const latestOrder = await store.find(orderId);
+              if (latestOrder?.refund_status === 'refunded') {
+                const credits = await store.getCurrentCredits(req.user.id);
+                return res.json({
+                  success: true,
+                  credits,
+                  refunded: latestOrder.credits,
+                  alreadyRefunded: true,
+                  message: '결제가 전액 환불되었습니다.',
+                });
+              }
+            } catch (statusError) {
+              console.error('[payment.refund_restore_status_error]', JSON.stringify({
+                requestId: req.requestId,
+                orderId,
+                error: statusError.message,
+              }));
+            }
+
+            console.error('[payment.refund_restore_error]', JSON.stringify({
+              requestId: req.requestId,
+              orderId,
+              error: restoreError.message,
+            }));
+            return res.status(500).json({
+              error: '환불 실패 후 크레딧 복구 상태를 확인하지 못했습니다. 고객센터에 문의해주세요.',
+              retryable: true,
+            });
+          }
+        }
+
+        console.error('[payment.refund_provider_error]', JSON.stringify({
+          requestId: req.requestId,
+          orderId,
+          code: error.code,
+          retryable: error.retryable,
+          definitivelyNotCanceled: error.definitivelyNotCanceled,
+        }));
+
+        return res.status(error.definitivelyNotCanceled ? 409 : 502).json({
+          error: error.definitivelyNotCanceled
+            ? '결제가 취소되지 않아 회수한 크레딧을 복구했습니다. 고객센터에 문의해주세요.'
+            : error.message,
+          retryable: !error.definitivelyNotCanceled,
+          credits: restoredCredits,
+        });
+      }
+
+      if (REFUND_CLIENT_ERROR_CODES.has(error.code)) {
+        return res.status(409).json({ error: error.message, retryable: false });
+      }
+
+      console.error('[payment.refund_error]', JSON.stringify({
+        requestId: req.requestId,
+        orderId,
+        error: error.message,
+      }));
+      return res.status(500).json({
+        error: '환불 처리 상태를 확인하지 못했습니다. 환불 확인을 다시 시도해주세요.',
+        retryable: true,
+      });
+    }
+  });
+
   return router;
 }
 
@@ -177,7 +376,7 @@ export function createPaymentWebhookRouter({
   router.post('/', async (req, res) => {
     const { eventType, data } = req.body ?? {};
 
-    if (eventType !== 'PAYMENT_STATUS_CHANGED' || data?.status !== 'DONE') {
+    if (eventType !== 'PAYMENT_STATUS_CHANGED' || !['DONE', 'CANCELED'].includes(data?.status)) {
       return res.json({ received: true });
     }
 
@@ -191,6 +390,35 @@ export function createPaymentWebhookRouter({
       if (!order) {
         console.warn('[payment.webhook_unknown_order]', JSON.stringify({ orderId }));
         return res.json({ received: true });
+      }
+
+      if (data.status === 'CANCELED') {
+        const payment = await getPayment({
+          orderId,
+          secretKey: secretKey(),
+        });
+        const expected = { paymentKey, orderId, amount: order.amount };
+
+        if (!isVerifiedCanceledTossPayment(payment, expected)) {
+          console.error('[payment.webhook_cancel_verification_failed]', JSON.stringify({
+            orderId,
+            status: payment?.status,
+          }));
+          return res.json({ received: true, ignored: true });
+        }
+
+        const result = await store.reconcileCanceledRefund({ orderId, paymentKey });
+        console.log('[payment.webhook_refund_complete]', JSON.stringify({
+          orderId,
+          refunded: result.refunded,
+          manualReview: result.manual_review,
+          alreadyRefunded: result.already_refunded,
+        }));
+        return res.json({
+          received: true,
+          refunded: !result.manual_review,
+          manualReview: result.manual_review,
+        });
       }
 
       if (order.status === 'paid') {
