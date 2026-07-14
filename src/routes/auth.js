@@ -1,6 +1,11 @@
 import { Router } from 'express';
-import { supabase, supabaseAdmin } from '../lib/supabase.js';
+import { createPasswordClient, supabase, supabaseAdmin } from '../lib/supabase.js';
 import { authMiddleware } from '../middleware/auth.js';
+import {
+  changePasswordWithCurrentPassword,
+  PasswordChangeError,
+  validateNewPassword,
+} from '../services/password-security.js';
 
 const router = Router();
 
@@ -9,6 +14,10 @@ router.post('/signup', async (req, res) => {
   const { email, password } = req.body;
   if (!email || !password) {
     return res.status(400).json({ error: '이메일과 비밀번호를 입력해주세요.' });
+  }
+  const passwordError = validateNewPassword(password);
+  if (passwordError) {
+    return res.status(400).json({ error: passwordError });
   }
 
   const { data, error } = await supabase.auth.signUp({ email, password });
@@ -79,15 +88,51 @@ router.post('/reset-password', async (req, res) => {
 
 // 비밀번호 변경 (로그인 상태)
 router.put('/password', authMiddleware, async (req, res) => {
-  const { newPassword } = req.body;
-  if (!newPassword || newPassword.length < 6) {
-    return res.status(400).json({ error: '비밀번호는 6자 이상이어야 합니다.' });
+  const { currentPassword, newPassword } = req.body;
+
+  if (!req.user.canChangePassword) {
+    return res.status(400).json({
+      error: 'Google 로그인 계정은 별도의 비밀번호를 사용하지 않습니다.',
+    });
   }
-  const { error } = await supabaseAdmin.auth.admin.updateUserById(req.user.id, {
-    password: newPassword,
-  });
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ message: '비밀번호가 변경되었습니다.' });
+
+  try {
+    const { accessToken, sessionCleanupError } = await changePasswordWithCurrentPassword({
+      authClient: createPasswordClient(),
+      email: req.user.email,
+      userId: req.user.id,
+      currentPassword,
+      newPassword,
+    });
+
+    if (sessionCleanupError) {
+      console.warn('[auth.password_session_cleanup_failed]', JSON.stringify({
+        requestId: req.requestId,
+        userId: req.user.id,
+        code: sessionCleanupError.code || 'unknown',
+      }));
+    }
+
+    return res.json({
+      message: '비밀번호가 변경되었습니다.',
+      token: accessToken,
+    });
+  } catch (error) {
+    if (error instanceof PasswordChangeError) {
+      console.warn('[auth.password_change_rejected]', JSON.stringify({
+        requestId: req.requestId,
+        userId: req.user.id,
+        code: error.code,
+      }));
+      return res.status(error.status).json({ error: error.message });
+    }
+
+    console.error('[auth.password_change_failed]', JSON.stringify({
+      requestId: req.requestId,
+      userId: req.user.id,
+    }));
+    return res.status(500).json({ error: '비밀번호 변경 중 오류가 발생했습니다.' });
+  }
 });
 
 // 로그아웃
@@ -98,7 +143,7 @@ router.post('/logout', authMiddleware, async (req, res) => {
 
 // 현재 유저 정보
 router.get('/me', authMiddleware, async (req, res) => {
-  const { id, email, credits, plan } = req.user;
+  const { id, email, credits, plan, canChangePassword } = req.user;
 
   const { data: usageLogs, error: logsError } = await supabaseAdmin
     .from('usage_logs')
@@ -122,7 +167,15 @@ router.get('/me', authMiddleware, async (req, res) => {
     console.error('[/me] transcription_logs 조회 실패:', transcriptionLogsError.message);
   }
 
-  res.json({ id, email, credits, plan, usageLogs: usageLogs || [], transcriptionLogs: transcriptionLogs || [] });
+  res.json({
+    id,
+    email,
+    credits,
+    plan,
+    canChangePassword,
+    usageLogs: usageLogs || [],
+    transcriptionLogs: transcriptionLogs || [],
+  });
 });
 
 // 사용 내역 페이지네이션

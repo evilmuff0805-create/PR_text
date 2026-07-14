@@ -1,4 +1,5 @@
 import { supabase, supabaseAdmin } from '../lib/supabase.js';
+import { userHasPasswordIdentity } from '../services/password-security.js';
 
 export async function authMiddleware(req, res, next) {
   const authHeader = req.headers['authorization'];
@@ -32,6 +33,7 @@ export async function authMiddleware(req, res, next) {
     email: user.email,
     credits: profile?.credits ?? 10,
     plan: profile?.plan ?? 'free',
+    canChangePassword: userHasPasswordIdentity(user),
     token,
   };
 

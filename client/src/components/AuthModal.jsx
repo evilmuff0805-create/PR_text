@@ -21,7 +21,7 @@ export default function AuthModal({ isOpen, onClose }) {
       ['Invalid login credentials', '이메일 또는 비밀번호가 올바르지 않습니다.'],
       ['Invalid credentials', '이메일 또는 비밀번호가 올바르지 않습니다.'],
       ['Email not confirmed', '이메일 인증이 완료되지 않았습니다. 메일함을 확인해주세요.'],
-      ['Password should be', '비밀번호는 6자 이상이어야 합니다.'],
+      ['Password should be', '비밀번호는 8자 이상이어야 합니다.'],
       ['signup is disabled', '현재 회원가입이 비활성화되어 있습니다.'],
     ];
     for (const [key, val] of map) {
@@ -36,7 +36,9 @@ export default function AuthModal({ isOpen, onClose }) {
     if (!email) return setError('이메일을 입력해주세요.');
     if (mode !== 'reset') {
       if (!password) return setError('비밀번호를 입력해주세요.');
-      if (password.length < 6) return setError('비밀번호는 6자 이상이어야 합니다.');
+      if (mode === 'signup' && password.length < 8) {
+        return setError('비밀번호는 8자 이상이어야 합니다.');
+      }
     }
 
     setLoading(true);
@@ -120,8 +122,10 @@ export default function AuthModal({ isOpen, onClose }) {
           }} />
 
         {mode !== 'reset' && (
-          <input type="password" placeholder="비밀번호 (6자 이상)" value={password}
+          <input type="password" placeholder={mode === 'signup' ? '비밀번호 (8자 이상)' : '비밀번호'} value={password}
             onChange={e => setPassword(e.target.value)} onKeyDown={handleKeyDown}
+            autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+            minLength={mode === 'signup' ? 8 : undefined}
             style={{
               width: '100%', padding: '12px', marginBottom: '16px',
               background: 'var(--bg-tertiary)', border: '1px solid var(--border-color)',
