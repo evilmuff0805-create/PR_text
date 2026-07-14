@@ -8,33 +8,26 @@ export default function PaymentFailPage() {
   const message = searchParams.get('message') || '알 수 없는 오류가 발생했습니다.';
 
   return (
-    <div style={{ maxWidth: '500px', margin: '80px auto', textAlign: 'center' }}>
-      <div className="card" style={{ padding: '40px' }}>
-        <p style={{ fontSize: '3rem', marginBottom: '16px' }}>❌</p>
-        <h2 style={{ color: '#FF4444', marginBottom: '12px' }}>결제 실패</h2>
-        <p style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>{message}</p>
-        <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '28px' }}>
+    <div className="payment-status-page">
+      <div className="payment-status-card">
+        <p className="payment-status-card__icon payment-status-card__icon--error" aria-hidden="true">!</p>
+        <h2 className="payment-status-card__title--error">결제 실패</h2>
+        <p>{message}</p>
+        <p className="payment-status-card__note">
           오류 코드: {code}
         </p>
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
+        <div className="payment-status-card__actions">
           <button
-            className="gradient-btn"
-            style={{ padding: '12px 28px' }}
+            className="gradient-btn payment-status-card__button"
             onClick={() => navigate('/payment')}
+            type="button"
           >
             다시 시도
           </button>
           <button
-            style={{
-              padding: '12px 28px',
-              background: 'transparent',
-              border: '1px solid var(--border-color)',
-              borderRadius: '8px',
-              color: 'var(--text-secondary)',
-              cursor: 'pointer',
-              fontSize: '0.95rem',
-            }}
+            className="button button--secondary payment-status-card__button"
             onClick={() => navigate('/')}
+            type="button"
           >
             홈으로
           </button>

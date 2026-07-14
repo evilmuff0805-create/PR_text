@@ -2,16 +2,53 @@ import { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
 export default function PaymentPage() {
-  const { user, updateCredits, getToken } = useAuth();
+  const { user, getToken } = useAuth();
   const [loading, setLoading] = useState(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
 
   const plans = [
-    { id: 'basic', name: '베이직', credits: 100, originalPrice: 9900, salePrice: 4900, discount: 50, color: '#39FF14' },
-    { id: 'pro', name: '프로', credits: 300, originalPrice: 25900, salePrice: 12900, discount: 50, color: '#00F5FF', popular: true },
-    { id: 'creator', name: '크리에이터', credits: 1000, originalPrice: 90000, salePrice: 34900, discount: 61, color: '#FF6B6B' },
+    {
+      id: 'basic',
+      name: '베이직',
+      credits: 100,
+      originalPrice: 9900,
+      salePrice: 4900,
+      discount: 50,
+      tone: 'green',
+      summary: '가벼운 테스트와 짧은 클립 변환',
+      detail: '약 100분 변환',
+    },
+    {
+      id: 'pro',
+      name: '프로',
+      credits: 300,
+      originalPrice: 25900,
+      salePrice: 12900,
+      discount: 50,
+      tone: 'cyan',
+      popular: true,
+      summary: '인터뷰, 회의, 유튜브 초안 작업',
+      detail: '약 300분 변환',
+    },
+    {
+      id: 'creator',
+      name: '크리에이터',
+      credits: 1000,
+      originalPrice: 90000,
+      salePrice: 34900,
+      discount: 61,
+      tone: 'coral',
+      summary: '정기 콘텐츠와 대량 자막 작업',
+      detail: '약 1,000분 변환',
+    },
   ];
+
+  const selectedPlan = plans.find((plan) => plan.id === loading);
+  const bestPlan = plans.reduce((best, plan) => (
+    plan.salePrice / plan.credits < best.salePrice / best.credits ? plan : best
+  ), plans[0]);
+  const remainingCredits = Number.isFinite(user?.credits) ? user.credits : 0;
 
   async function handlePurchase(plan) {
     if (!user) {
@@ -65,88 +102,91 @@ export default function PaymentPage() {
   }
 
   return (
-    <div>
-      <h2 className="gradient-text" style={{ fontSize: '1.8rem', marginBottom: '8px' }}>
-        이용권 구매
-      </h2>
-      <p style={{ color: 'var(--text-secondary)', marginBottom: '12px' }}>
-        결제하시면 변환 가능 시간(분)이 충전됩니다. 충전된 시간은 만료되지 않습니다.
-      </p>
-      <div className="card" style={{ marginBottom: '24px', padding: '16px 20px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <span style={{ fontSize: '1.5rem' }}>🎁</span>
-        <div>
-          <p style={{ color: 'var(--text-primary)', fontWeight: 600 }}>무료 체험 10분</p>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>회원가입 시 10분 무료 변환 제공</p>
+    <div className="payment-page">
+      <section className="payment-heading" aria-labelledby="payment-title">
+        <p className="workspace-kicker">PAYMENT</p>
+        <div className="payment-heading__row">
+          <div>
+            <h2 id="payment-title" className="workspace-title">변환 시간 충전</h2>
+            <p className="workspace-description">
+              결제한 시간은 분 단위로 차감되며, 충전된 시간은 만료되지 않습니다.
+            </p>
+          </div>
+          <div className="payment-balance" aria-label="현재 보유 변환 시간">
+            <span>현재 보유</span>
+            <strong>{remainingCredits.toLocaleString()}분</strong>
+          </div>
         </div>
-      </div>
+      </section>
 
-      {error && <p style={{ color: '#FF4444', marginBottom: '16px', textAlign: 'center' }}>{error}</p>}
-      {success && <p style={{ color: '#22c55e', marginBottom: '16px', textAlign: 'center' }}>{success}</p>}
+      <section className="payment-brief" aria-label="충전 안내">
+        <div>
+          <span>무료 체험</span>
+          <strong>회원가입 시 10분 제공</strong>
+        </div>
+        <div>
+          <span>사용 방식</span>
+          <strong>음성 길이 1분당 1분 차감</strong>
+        </div>
+        <div>
+          <span>가성비</span>
+          <strong>{bestPlan.name} {Math.round(bestPlan.salePrice / bestPlan.credits).toLocaleString()}원/분</strong>
+        </div>
+      </section>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '16px' }}>
+      {(error || success || selectedPlan) && (
+        <div className={error ? 'payment-alert payment-alert--error' : 'payment-alert'}>
+          {error || success || `${selectedPlan.name} 결제창을 여는 중입니다.`}
+        </div>
+      )}
+
+      <section className="payment-plans" aria-label="충전 상품">
         {plans.map((plan) => (
-          <div
+          <article
             key={plan.name}
-            className="card"
-            style={{
-              position: 'relative',
-              textAlign: 'center',
-              padding: '28px 20px',
-              border: plan.popular ? '2px solid var(--gradient-end)' : '1px solid var(--border-color)',
-            }}
+            className={plan.popular ? 'payment-plan is-popular' : 'payment-plan'}
           >
             {plan.popular && (
-              <div style={{
-                position: 'absolute',
-                top: '-12px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                background: 'var(--gradient)',
-                color: '#000',
-                fontSize: '0.7rem',
-                fontWeight: 700,
-                padding: '4px 14px',
-                borderRadius: '20px',
-              }}>
-                인기
-              </div>
+              <span className="payment-plan__badge">추천</span>
             )}
-            <h3 style={{ fontSize: '1.1rem', color: 'var(--text-primary)', marginBottom: '8px' }}>
-              {plan.name}
-            </h3>
-            <p style={{ fontSize: '2rem', fontWeight: 700, color: plan.color, marginBottom: '4px' }}>
-              {plan.credits} <span style={{ fontSize: '0.9rem', fontWeight: 400 }}>분</span>
-            </p>
-            <p style={{ marginBottom: '4px' }}>
-              <span style={{ color: '#FF4444', textDecoration: 'line-through', fontSize: '0.95rem' }}>
-                {plan.originalPrice.toLocaleString()}원
-              </span>
-              <span style={{
-                background: '#FF4444',
-                color: '#fff',
-                fontSize: '0.7rem',
-                fontWeight: 700,
-                padding: '2px 6px',
-                borderRadius: '4px',
-                marginLeft: '6px',
-              }}>
-                {plan.discount}% 할인
-              </span>
-            </p>
-            <p style={{ fontSize: '1.5rem', fontWeight: 700, color: 'var(--text-primary)', marginBottom: '16px' }}>
-              {plan.salePrice.toLocaleString()}원
-            </p>
+            <div className="payment-plan__topline">
+              <span className={`payment-plan__mark payment-plan__mark--${plan.tone}`} aria-hidden="true" />
+              <span>{plan.detail}</span>
+            </div>
+            <h3>{plan.name}</h3>
+            <p className="payment-plan__summary">{plan.summary}</p>
+            <div className="payment-plan__credits">
+              <strong>{plan.credits.toLocaleString()}</strong>
+              <span>분</span>
+            </div>
+            <dl className="payment-plan__price">
+              <div>
+                <dt>판매가</dt>
+                <dd>{plan.salePrice.toLocaleString()}원</dd>
+              </div>
+              <div>
+                <dt>정상가</dt>
+                <dd>
+                  <span>{plan.originalPrice.toLocaleString()}원</span>
+                  <em>{plan.discount}%</em>
+                </dd>
+              </div>
+              <div>
+                <dt>분당</dt>
+                <dd>{Math.round(plan.salePrice / plan.credits).toLocaleString()}원</dd>
+              </div>
+            </dl>
             <button
-              className="gradient-btn"
-              style={{ width: '100%', padding: '10px', opacity: loading === plan.id ? 0.5 : 1 }}
+              className="gradient-btn payment-plan__button"
               onClick={() => handlePurchase(plan)}
               disabled={loading !== null}
+              type="button"
             >
               {loading === plan.id ? '처리 중...' : '충전하기'}
             </button>
-          </div>
+          </article>
         ))}
-      </div>
+      </section>
     </div>
   );
 }
