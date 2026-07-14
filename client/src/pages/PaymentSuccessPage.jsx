@@ -71,44 +71,44 @@ export default function PaymentSuccessPage() {
   }, []);
 
   return (
-    <div style={{ maxWidth: '500px', margin: '80px auto', textAlign: 'center' }}>
-      <div className="card" style={{ padding: '40px' }}>
+    <div className="payment-status-page">
+      <div className="payment-status-card">
         {status === 'processing' && (
           <>
-            <p style={{ fontSize: '3rem', marginBottom: '16px' }}>⏳</p>
-            <h2 style={{ color: 'var(--text-primary)', marginBottom: '12px' }}>결제 처리 중</h2>
-            <p style={{ color: 'var(--text-secondary)' }}>{message}</p>
+            <p className="payment-status-card__icon" aria-hidden="true">...</p>
+            <h2>결제 처리 중</h2>
+            <p>{message}</p>
           </>
         )}
         {status === 'success' && (
           <>
-            <p style={{ fontSize: '3rem', marginBottom: '16px' }}>✅</p>
-            <h2 style={{ color: '#22c55e', marginBottom: '12px' }}>충전 완료!</h2>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>{message}</p>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem', marginBottom: '24px' }}>
+            <p className="payment-status-card__icon payment-status-card__icon--success" aria-hidden="true">OK</p>
+            <h2 className="payment-status-card__title--success">충전 완료</h2>
+            <p>{message}</p>
+            <p className="payment-status-card__note">
               {countdown}초 후 자동으로 이동합니다...
             </p>
-            <button className="gradient-btn" onClick={() => { clearInterval(timerRef.current); navigate('/transcribe'); }} style={{ padding: '12px 32px' }}>
+            <button className="gradient-btn payment-status-card__button" onClick={() => { clearInterval(timerRef.current); navigate('/transcribe'); }} type="button">
               자막 변환하러 가기
             </button>
           </>
         )}
         {status === 'error' && (
           <>
-            <p style={{ fontSize: '3rem', marginBottom: '16px' }}>❌</p>
-            <h2 style={{ color: '#FF4444', marginBottom: '12px' }}>결제 실패</h2>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>{message}</p>
-            <button className="gradient-btn" onClick={() => navigate('/payment')} style={{ padding: '12px 32px' }}>
+            <p className="payment-status-card__icon payment-status-card__icon--error" aria-hidden="true">!</p>
+            <h2 className="payment-status-card__title--error">결제 실패</h2>
+            <p>{message}</p>
+            <button className="gradient-btn payment-status-card__button" onClick={() => navigate('/payment')} type="button">
               다시 시도
             </button>
           </>
         )}
         {status === 'retry' && (
           <>
-            <p style={{ fontSize: '3rem', marginBottom: '16px' }}>!</p>
-            <h2 style={{ color: '#f59e0b', marginBottom: '12px' }}>결제 확인이 필요해요</h2>
-            <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>{message}</p>
-            <button className="gradient-btn" onClick={() => confirmRef.current?.()} style={{ padding: '12px 32px' }}>
+            <p className="payment-status-card__icon payment-status-card__icon--warn" aria-hidden="true">!</p>
+            <h2 className="payment-status-card__title--warn">결제 확인 필요</h2>
+            <p>{message}</p>
+            <button className="gradient-btn payment-status-card__button" onClick={() => confirmRef.current?.()} type="button">
               결제 다시 확인
             </button>
           </>
