@@ -2272,6 +2272,39 @@ textarea:focus-visible {
   opacity: 0.55;
 }
 
+.password-recovery-page {
+  width: min(100%, 680px);
+}
+
+.password-recovery-panel {
+  min-height: 320px;
+}
+
+.password-recovery-result {
+  display: grid;
+  min-height: 270px;
+  align-content: center;
+  justify-items: start;
+  gap: 14px;
+}
+
+.password-recovery-result h2 {
+  color: var(--text-primary);
+  font-size: 1.35rem;
+  line-height: 1.4;
+}
+
+.password-recovery-result > p:not(.settings-panel__kicker, .settings-alert) {
+  max-width: 520px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.7;
+}
+
+.password-recovery-result .button {
+  margin-top: 6px;
+}
+
 .settings-panel--links {
   padding-bottom: 10px;
 }

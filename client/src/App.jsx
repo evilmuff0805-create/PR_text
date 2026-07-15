@@ -13,6 +13,7 @@ import PaymentFailPage from './pages/PaymentFailPage.jsx';
 import UsagePage from './pages/UsagePage.jsx';
 import RedownloadPage from './pages/RedownloadPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
+import PasswordResetPage from './pages/PasswordResetPage.jsx';
 
 function App() {
   return (
@@ -32,6 +33,8 @@ function App() {
         <Route path="/usage" element={<UsagePage />} />
         <Route path="/redownload" element={<RedownloadPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/auth/reset" element={<PasswordResetPage />} />
+        <Route path="/reset-password" element={<PasswordResetPage />} />
       </Routes>
     </Layout>
   );
