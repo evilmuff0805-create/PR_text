@@ -120,6 +120,9 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
           <NavLink to="/usage" style={navLinkStyle} onClick={isMobile ? onClose : undefined}>
             📊 사용 내역
           </NavLink>
+          <NavLink to="/redownload" style={navLinkStyle} onClick={isMobile ? onClose : undefined}>
+            📥 변환_재다운로드
+          </NavLink>
         </nav>
 
         <div style={{ marginTop: 'auto', padding: '0 12px' }}>
