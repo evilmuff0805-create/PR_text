@@ -39,7 +39,7 @@ export default function PasswordResetPage() {
       <section className="settings-heading" aria-labelledby="password-recovery-title">
         <p className="workspace-kicker">ACCOUNT RECOVERY</p>
         <h1 id="password-recovery-title" className="workspace-title">비밀번호 재설정</h1>
-        <p className="workspace-description">새 비밀번호를 설정한 뒤 다시 로그인합니다.</p>
+        <p className="workspace-description">이메일 로그인 계정의 새 비밀번호를 설정한 뒤 다시 로그인합니다.</p>
       </section>
 
       <section className="settings-panel password-recovery-panel">
@@ -47,7 +47,7 @@ export default function PasswordResetPage() {
           <div className="password-recovery-result" role="status">
             <p className="settings-panel__kicker">PASSWORD UPDATED</p>
             <h2>비밀번호가 변경되었습니다</h2>
-            <p>이 화면의 임시 인증 정보를 삭제했습니다. 새 비밀번호로 다시 로그인해주세요.</p>
+            <p>PR_text 이메일 비밀번호가 변경되었습니다. Google 비밀번호에는 영향이 없습니다. 새 비밀번호로 다시 로그인해주세요.</p>
             <Link
               className="button button--primary"
               to="/transcribe"
@@ -63,7 +63,7 @@ export default function PasswordResetPage() {
             <p className="settings-alert settings-alert--error">
               {recoveryError || '재설정 링크가 만료되었거나 이미 사용되었습니다.'}
             </p>
-            <p>로그인 화면에서 비밀번호 재설정 메일을 다시 요청할 수 있습니다.</p>
+            <p>Google 계정은 비밀번호를 재설정하지 않고 Google로 로그인해주세요. 이메일 로그인 계정은 로그인 화면에서 재설정 메일을 다시 요청할 수 있습니다.</p>
             <Link
               className="button button--secondary"
               to="/transcribe"
@@ -115,7 +115,7 @@ export default function PasswordResetPage() {
               )}
 
               <div className="settings-password-form__footer">
-                <p>변경 후 이 화면의 임시 인증 정보가 삭제되며 다시 로그인해야 합니다.</p>
+                <p>PR_text 이메일 비밀번호만 변경되며 Google 비밀번호에는 영향을 주지 않습니다.</p>
                 <button
                   className="gradient-btn settings-password-form__submit"
                   disabled={loading}
