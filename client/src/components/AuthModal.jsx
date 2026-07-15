@@ -66,7 +66,7 @@ export default function AuthModal({ isOpen, onClose }) {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
-        setSuccess('재설정 링크가 이메일로 발송되었습니다. 메일함을 확인해주세요.');
+        setSuccess('계정이 확인되면 재설정 링크가 발송됩니다. 메일함을 확인해주세요.');
       }
     } catch (err) {
       setError(localizeError(err.message));

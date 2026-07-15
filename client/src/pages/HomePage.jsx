@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import AuthModal from '../components/AuthModal.jsx';
 import { UPLOAD_ACCEPT, validateUploadFile } from '../utils/upload-validation.js';
@@ -99,6 +99,14 @@ export default function HomePage() {
   const fileInputRef = useRef(null);
   const fileSelectionRef = useRef(0);
   const navigate = useNavigate();
+  const location = useLocation();
+
+  useEffect(() => {
+    if (!user && location.state?.openAuth) {
+      setShowAuthModal(true);
+      navigate('/transcribe', { replace: true, state: null });
+    }
+  }, [location.state, navigate, user]);
 
   async function selectFile(selected) {
     const validationError = validateUploadFile(selected);

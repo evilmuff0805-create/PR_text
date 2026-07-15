@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { createPasswordClient, supabase, supabaseAdmin } from '../lib/supabase.js';
 import { authMiddleware } from '../middleware/auth.js';
 import {
+  changePasswordWithRecoverySession,
   changePasswordWithCurrentPassword,
   PasswordChangeError,
   validateNewPassword,
@@ -79,11 +80,58 @@ router.get('/google', async (req, res) => {
 router.post('/reset-password', async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: '이메일을 입력해주세요.' });
+  const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${process.env.APP_URL || 'http://localhost:3000'}/auth/reset`,
+    redirectTo: `${appUrl}/auth/reset`,
   });
-  if (error) return res.status(400).json({ error: error.message });
-  res.json({ message: '비밀번호 재설정 링크가 이메일로 발송되었습니다.' });
+  if (error) {
+    console.warn('[auth.password_recovery_request_failed]', JSON.stringify({
+      requestId: req.requestId,
+      code: error.code || 'unknown',
+    }));
+    return res.status(503).json({ error: '재설정 메일을 발송하지 못했습니다. 잠시 후 다시 시도해주세요.' });
+  }
+  res.json({ message: '계정이 확인되면 비밀번호 재설정 링크가 발송됩니다.' });
+});
+
+// 비밀번호 재설정 링크의 recovery 세션으로 변경
+router.put('/recovery-password', async (req, res) => {
+  const accessToken = req.headers.authorization?.startsWith('Bearer ')
+    ? req.headers.authorization.slice(7)
+    : '';
+  const { refreshToken, newPassword } = req.body || {};
+
+  try {
+    const { userId, sessionCleanupError } = await changePasswordWithRecoverySession({
+      authClient: createPasswordClient(),
+      accessToken,
+      refreshToken,
+      newPassword,
+    });
+
+    if (sessionCleanupError) {
+      console.warn('[auth.password_recovery_session_cleanup_failed]', JSON.stringify({
+        requestId: req.requestId,
+        userId,
+        code: sessionCleanupError.code || 'unknown',
+      }));
+    }
+
+    return res.json({ message: '비밀번호가 재설정되었습니다. 다시 로그인해주세요.' });
+  } catch (error) {
+    if (error instanceof PasswordChangeError) {
+      console.warn('[auth.password_recovery_rejected]', JSON.stringify({
+        requestId: req.requestId,
+        code: error.code,
+      }));
+      return res.status(error.status).json({ error: error.message });
+    }
+
+    console.error('[auth.password_recovery_failed]', JSON.stringify({
+      requestId: req.requestId,
+    }));
+    return res.status(500).json({ error: '비밀번호 재설정 중 오류가 발생했습니다.' });
+  }
 });
 
 // 비밀번호 변경 (로그인 상태)
