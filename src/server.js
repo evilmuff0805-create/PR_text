@@ -136,6 +136,7 @@ app.get('/api/health', (req, res) => {
 });
 
 app.use('/api/auth/reset-password', resetPasswordLimiter);
+app.use('/api/auth/recovery-password', passwordChangeLimiter);
 app.use('/api/auth/password', passwordChangeLimiter);
 app.use('/api/auth', generalLimiter, authRouter);
 app.use('/api/payment/webhook', paymentWebhookLimiter, paymentWebhookRouter);

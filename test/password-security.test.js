@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import {
+  changePasswordWithRecoverySession,
   changePasswordWithCurrentPassword,
   MIN_PASSWORD_LENGTH,
   PasswordChangeError,
@@ -144,4 +145,127 @@ test('returns a safe error when Supabase rejects the password update', async () 
       && !error.message.includes('sensitive provider detail'),
   );
   assert.deepEqual(calls.map((call) => call.method), ['signInWithPassword', 'updateUser']);
+});
+
+function createRecoveryAuthClient({
+  claims = {
+    sub: 'user-1',
+    amr: [{ method: 'recovery', timestamp: 123 }],
+  },
+  claimsError = null,
+  sessionError = null,
+  sessionUser = {
+    id: 'user-1',
+    app_metadata: { providers: ['email'] },
+  },
+  updateError = null,
+  signOutError = null,
+} = {}) {
+  const calls = [];
+  return {
+    calls,
+    client: {
+      auth: {
+        async getClaims(accessToken) {
+          calls.push({ method: 'getClaims', accessToken });
+          return claimsError
+            ? { data: null, error: claimsError }
+            : { data: { claims }, error: null };
+        },
+        async setSession(session) {
+          calls.push({ method: 'setSession', session });
+          return sessionError
+            ? { data: null, error: sessionError }
+            : { data: { session: { access_token: 'verified-token' }, user: sessionUser }, error: null };
+        },
+        async updateUser(attributes) {
+          calls.push({ method: 'updateUser', attributes });
+          return { data: { user: sessionUser }, error: updateError };
+        },
+        async signOut(options) {
+          calls.push({ method: 'signOut', options });
+          return { error: signOutError };
+        },
+      },
+    },
+  };
+}
+
+const recoveryRequest = {
+  accessToken: 'recovery-access-token',
+  refreshToken: 'recovery-refresh-token',
+  newPassword: 'new-password',
+};
+
+test('accepts only a signed recovery authentication method', async () => {
+  const { client, calls } = createRecoveryAuthClient({
+    claims: { sub: 'user-1', amr: [{ method: 'password', timestamp: 123 }] },
+  });
+
+  await assert.rejects(
+    changePasswordWithRecoverySession({ ...recoveryRequest, authClient: client }),
+    (error) => error.code === 'RECOVERY_SESSION_INVALID' && error.status === 401,
+  );
+  assert.deepEqual(calls.map((call) => call.method), ['getClaims']);
+});
+
+test('rejects a recovery session whose verified user does not match the token subject', async () => {
+  const { client, calls } = createRecoveryAuthClient({
+    sessionUser: { id: 'different-user', app_metadata: { providers: ['email'] } },
+  });
+
+  await assert.rejects(
+    changePasswordWithRecoverySession({ ...recoveryRequest, authClient: client }),
+    (error) => error.code === 'RECOVERY_SESSION_INVALID',
+  );
+  assert.deepEqual(calls.map((call) => call.method), ['getClaims', 'setSession']);
+});
+
+test('does not add a password to a Google-only recovery identity', async () => {
+  const { client, calls } = createRecoveryAuthClient({
+    sessionUser: { id: 'user-1', app_metadata: { providers: ['google'] } },
+  });
+
+  await assert.rejects(
+    changePasswordWithRecoverySession({ ...recoveryRequest, authClient: client }),
+    (error) => error.code === 'PASSWORD_IDENTITY_UNAVAILABLE',
+  );
+  assert.deepEqual(calls.map((call) => call.method), ['getClaims', 'setSession']);
+});
+
+test('updates through the verified recovery session and signs out globally', async () => {
+  const { client, calls } = createRecoveryAuthClient();
+
+  const result = await changePasswordWithRecoverySession({
+    ...recoveryRequest,
+    authClient: client,
+  });
+
+  assert.equal(result.userId, 'user-1');
+  assert.equal(result.sessionCleanupError, null);
+  assert.deepEqual(calls, [
+    { method: 'getClaims', accessToken: recoveryRequest.accessToken },
+    {
+      method: 'setSession',
+      session: {
+        access_token: recoveryRequest.accessToken,
+        refresh_token: recoveryRequest.refreshToken,
+      },
+    },
+    { method: 'updateUser', attributes: { password: recoveryRequest.newPassword } },
+    { method: 'signOut', options: { scope: 'global' } },
+  ]);
+});
+
+test('does not expose provider details when recovery password update fails', async () => {
+  const { client, calls } = createRecoveryAuthClient({
+    updateError: { code: 'provider_internal_error', message: 'sensitive provider detail' },
+  });
+
+  await assert.rejects(
+    changePasswordWithRecoverySession({ ...recoveryRequest, authClient: client }),
+    (error) => error.code === 'PASSWORD_UPDATE_REJECTED'
+      && !error.message.includes('sensitive provider detail'),
+  );
+  assert.deepEqual(calls.map((call) => call.method), ['getClaims', 'setSession', 'updateUser']);
 });
