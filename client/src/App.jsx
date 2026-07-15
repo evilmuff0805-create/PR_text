@@ -11,6 +11,7 @@ import PaymentPage from './pages/PaymentPage.jsx';
 import PaymentSuccessPage from './pages/PaymentSuccessPage.jsx';
 import PaymentFailPage from './pages/PaymentFailPage.jsx';
 import UsagePage from './pages/UsagePage.jsx';
+import RedownloadPage from './pages/RedownloadPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 
 function App() {
@@ -29,6 +30,7 @@ function App() {
         <Route path="/privacy" element={<PrivacyPage />} />
         <Route path="/support" element={<SupportPage />} />
         <Route path="/usage" element={<UsagePage />} />
+        <Route path="/redownload" element={<RedownloadPage />} />
         <Route path="/settings" element={<SettingsPage />} />
       </Routes>
     </Layout>

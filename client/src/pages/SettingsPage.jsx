@@ -189,7 +189,14 @@ export default function SettingsPage() {
             <Link to="/usage">
               <span>
                 <strong>사용 내역</strong>
-                <small>차감 기록과 완료 파일 확인</small>
+                <small>충전, 차감, 환불 기록 확인</small>
+              </span>
+              <span aria-hidden="true">→</span>
+            </Link>
+            <Link to="/redownload">
+              <span>
+                <strong>변환 재다운로드</strong>
+                <small>완료된 변환과 자막 파일 다시 받기</small>
               </span>
               <span aria-hidden="true">→</span>
             </Link>
