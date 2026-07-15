@@ -53,9 +53,11 @@ test('keeps recovery tokens in temporary session storage', () => {
 });
 
 test('routes and limits the recovery completion endpoint', async () => {
-  const [app, authContext, authRoutes, server] = await Promise.all([
+  const [app, authModal, authContext, resetPage, authRoutes, server] = await Promise.all([
     readFile(new URL('../client/src/App.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../client/src/components/AuthModal.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../client/src/contexts/AuthContext.jsx', import.meta.url), 'utf8'),
+    readFile(new URL('../client/src/pages/PasswordResetPage.jsx', import.meta.url), 'utf8'),
     readFile(new URL('../src/routes/auth.js', import.meta.url), 'utf8'),
     readFile(new URL('../src/server.js', import.meta.url), 'utf8'),
   ]);
@@ -63,6 +65,8 @@ test('routes and limits the recovery completion endpoint', async () => {
   assert.match(app, /path="\/auth\/reset" element=\{<PasswordResetPage \/>\}/);
   assert.match(authContext, /savePasswordRecoverySession\(sessionStorage, recovery\.session\)/);
   assert.match(authContext, /addEventListener\('hashchange', applyPasswordRecoveryHash\)/);
+  assert.match(authModal, /Google 비밀번호는 PR_text에서 변경되지 않습니다/);
+  assert.match(resetPage, /Google 비밀번호에는 영향을 주지 않습니다/);
   assert.match(authRoutes, /router\.put\('\/recovery-password'/);
   assert.match(authRoutes, /changePasswordWithRecoverySession/);
   assert.match(server, /app\.use\('\/api\/auth\/recovery-password', passwordChangeLimiter\)/);

@@ -94,23 +94,29 @@ export default function AuthModal({ isOpen, onClose }) {
           {mode === 'login' ? '로그인' : mode === 'signup' ? '회원가입' : '비밀번호 재설정'}
         </h2>
 
-        {mode !== 'reset' && (
-          <>
-            <button onClick={loginWithGoogle} style={{
-              width: '100%', padding: '12px', marginBottom: '16px',
-              background: '#fff', color: '#333', border: '1px solid #ddd',
-              borderRadius: '8px', fontSize: '0.9rem', fontWeight: 600,
-              cursor: 'pointer', display: 'flex', alignItems: 'center',
-              justifyContent: 'center', gap: '8px',
-            }}>
-              <span style={{ fontSize: '1.2rem' }}>G</span> Google로 {mode === 'login' ? '로그인' : '회원가입'}
-            </button>
+        <button onClick={loginWithGoogle} style={{
+          width: '100%', padding: '12px', marginBottom: '16px',
+          background: '#fff', color: '#333', border: '1px solid #ddd',
+          borderRadius: '8px', fontSize: '0.9rem', fontWeight: 600,
+          cursor: 'pointer', display: 'flex', alignItems: 'center',
+          justifyContent: 'center', gap: '8px',
+        }}>
+          <span style={{ fontSize: '1.2rem' }}>G</span> Google로 {mode === 'signup' ? '회원가입' : '로그인'}
+        </button>
 
-            <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem', margin: '16px 0' }}>
-              또는 이메일로 {mode === 'login' ? '로그인' : '회원가입'}
-            </div>
-          </>
-        )}
+        <div style={{
+          textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem',
+          lineHeight: 1.6, margin: '16px 0', wordBreak: 'keep-all',
+        }}>
+          {mode === 'reset' ? (
+            <>
+              Google 비밀번호는 PR_text에서 변경되지 않습니다.<br />
+              Google 계정은 위 버튼으로 로그인하고, 이메일 계정만 아래에서 재설정하세요.
+            </>
+          ) : (
+            <>또는 이메일로 {mode === 'login' ? '로그인' : '회원가입'}</>
+          )}
+        </div>
 
         <input type="email" placeholder="이메일" value={email}
           onChange={e => setEmail(e.target.value)} onKeyDown={handleKeyDown}
