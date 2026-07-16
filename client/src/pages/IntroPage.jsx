@@ -1,4 +1,4 @@
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 const featureRows = [
   {
@@ -85,8 +85,13 @@ function ProductPreview() {
 }
 
 export default function IntroPage() {
+  const location = useLocation();
+
   return (
     <div className="intro-page">
+      {location.state?.accountDeleted && (
+        <p className="landing-notice" role="status">회원 탈퇴가 완료되었습니다.</p>
+      )}
       <section className="landing-hero" aria-labelledby="landing-title">
         <div className="landing-hero__copy">
           <p className="eyebrow">음성·영상 자막 변환기 <span>V.1.1</span></p>
