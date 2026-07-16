@@ -23,6 +23,7 @@ const USER = {
   email: 'user@example.com',
   canChangePassword: true,
   lastSignInAt: '2026-07-16T02:55:00.000Z',
+  welcomeIdentityHashes: ['a'.repeat(64), 'b'.repeat(64)],
   token: 'access-token',
 };
 
@@ -185,6 +186,9 @@ test('deletes in the safe order after reauthentication', async () => {
   const calls = [];
   const store = {
     async preview() { calls.push('preview'); return FREE_PREVIEW; },
+    async recordWelcomeCreditClaim(identityHashes) {
+      calls.push(`welcome:${identityHashes.join(',')}`);
+    },
     async begin() {
       calls.push('begin');
       return { deletion_id: 'deletion-1', credits_forfeited: 10 };
@@ -241,6 +245,7 @@ test('deletes in the safe order after reauthentication', async () => {
     'preview',
     'reauth',
     'reauth-signout:local',
+    `welcome:${USER.welcomeIdentityHashes.join(',')}`,
     'storage',
     'begin',
     'signout:access-token:global',
@@ -263,6 +268,7 @@ test('does not mutate account data when payment review blocks deletion', async (
           blocker_reason: 'paid_credit_review',
         };
       },
+      async recordWelcomeCreditClaim() { beginCalls += 100; },
       async begin() { beginCalls += 1; },
     },
     now: () => NOW,
@@ -275,4 +281,41 @@ test('does not mutate account data when payment review blocks deletion', async (
   assert.equal(response.status, 409);
   assert.equal(response.data.code, 'paid_credit_review');
   assert.equal(beginCalls, 0);
+});
+
+test('does not remove account data when the welcome-credit marker cannot be recorded', async () => {
+  const calls = [];
+  const router = createAccountRouter({
+    auth,
+    store: {
+      async preview() { return FREE_PREVIEW; },
+      async recordWelcomeCreditClaim() {
+        calls.push('welcome');
+        throw new Error('database unavailable');
+      },
+      async begin() { calls.push('begin'); },
+    },
+    storage: {
+      from() {
+        return { async list() { calls.push('storage'); return { data: [], error: null }; } };
+      },
+    },
+    passwordClient: () => ({
+      auth: {
+        async signInWithPassword() {
+          return { data: { user: { id: USER.id } }, error: null };
+        },
+        async signOut() { return { error: null }; },
+      },
+    }),
+    now: () => NOW,
+  });
+
+  const response = await request(router, {
+    confirmationEmail: USER.email,
+    currentPassword: 'current-password',
+  });
+
+  assert.equal(response.status, 500);
+  assert.deepEqual(calls, ['welcome']);
 });

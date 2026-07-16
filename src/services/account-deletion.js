@@ -131,6 +131,13 @@ export function createAccountDeletionStore(database = supabaseAdmin) {
       return firstResult(data, '탈퇴 준비 결과를 확인하지 못했습니다.');
     },
 
+    async recordWelcomeCreditClaim(identityHashes) {
+      const { error } = await database.rpc('register_welcome_credit_claims', {
+        p_identity_hashes: identityHashes,
+      });
+      if (error) throw error;
+    },
+
     async complete(deletionId) {
       const { error } = await database
         .from('account_deletions')

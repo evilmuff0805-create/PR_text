@@ -403,6 +403,10 @@ export default function SettingsPage() {
                   </p>
                 )}
 
+                <p className="settings-alert">
+                  탈퇴 후 같은 로그인 계정으로 다시 가입할 수 있지만, 신규 가입 무료 10분은 다시 지급되지 않습니다.
+                </p>
+
                 <label className="settings-field">
                   <span>계정 이메일 확인</span>
                   <input
@@ -435,7 +439,9 @@ export default function SettingsPage() {
                     checked={deletionConsent}
                     onChange={(event) => setDeletionConsent(event.target.checked)}
                   />
-                  <span>삭제되는 정보와 잔여 무료 크레딧 소멸 내용을 확인했습니다.</span>
+                  <span>
+                    삭제되는 정보, 잔여 무료 크레딧 소멸 및 재가입 시 무료 10분 미지급 내용을 확인했습니다.
+                  </span>
                 </label>
 
                 {deletionError && (
