@@ -65,6 +65,7 @@ export function createAccountRouter({
         now: now(),
       });
 
+      await store.recordWelcomeCreditClaim(req.user.welcomeIdentityHashes);
       await removeAccountAudio(storage, req.user.id);
       deletion = await store.begin(req.user.id);
 

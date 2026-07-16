@@ -7,6 +7,7 @@ import {
   PasswordChangeError,
   validateNewPassword,
 } from '../services/password-security.js';
+import { getWelcomeIdentityHashes, welcomeCreditStore } from '../services/welcome-credits.js';
 
 const router = Router();
 const OAUTH_RETURN_PATHS = new Set(['/settings']);
@@ -31,13 +32,14 @@ router.post('/signup', async (req, res) => {
     return res.status(400).json({ error: error.message });
   }
 
-  // profiles 테이블에 직접 행 생성
+  // 최초 무료 크레딧은 동일 로그인 신원에 한 번만 원자적으로 지급한다.
   if (data.user) {
-    const { error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .upsert({ id: data.user.id, email: data.user.email, credits: 10, plan: 'free' });
-    if (profileError) {
-      console.error('[signup] profiles 생성 실패:', profileError.message);
+    try {
+      const identityHashes = getWelcomeIdentityHashes(data.user);
+      await welcomeCreditStore.ensureProfile(data.user, identityHashes);
+    } catch {
+      // 이메일 인증 후 첫 로그인에서도 같은 원자적 준비를 다시 시도한다.
+      console.error('[signup.profile_prepare_failed]', JSON.stringify({ userId: data.user.id }));
     }
   }
 

@@ -159,6 +159,15 @@ export default function AuthModal({ isOpen, onClose }) {
           {loading ? '처리 중...' : (mode === 'login' ? '로그인' : mode === 'signup' ? '가입하기' : '재설정 링크 발송')}
         </button>
 
+        {mode === 'signup' && (
+          <p style={{
+            color: 'var(--text-muted)', fontSize: '0.78rem', lineHeight: 1.6,
+            marginTop: '10px', textAlign: 'center', wordBreak: 'keep-all',
+          }}>
+            신규 무료 10분은 동일 로그인 계정에 최초 1회만 지급됩니다.
+          </p>
+        )}
+
         <p style={{ textAlign: 'center', marginTop: '16px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
           {mode === 'login' && (
             <>

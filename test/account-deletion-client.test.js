@@ -24,6 +24,7 @@ test('renders paid-credit blockers and explicit free-credit consent', async () =
   ]);
 
   assert.match(settings, /잔여 무료 크레딧/);
+  assert.match(settings, /재가입 시 무료 10분 미지급/);
   assert.match(settings, /결제 내역 확인/);
   assert.match(settings, /Google로 다시 인증/);
   assert.match(authContext, /loginWithGoogle = \(returnPath = '\/'\)/);
