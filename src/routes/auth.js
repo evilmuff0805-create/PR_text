@@ -9,6 +9,11 @@ import {
 } from '../services/password-security.js';
 
 const router = Router();
+const OAUTH_RETURN_PATHS = new Set(['/settings']);
+
+export function safeOAuthReturnPath(value) {
+  return OAUTH_RETURN_PATHS.has(value) ? value : '/';
+}
 
 // 회원가입
 router.post('/signup', async (req, res) => {
@@ -59,14 +64,22 @@ router.post('/login', async (req, res) => {
 
 // Google OAuth 시작
 router.get('/google', async (req, res) => {
-  const redirectTo = `${process.env.APP_URL || 'http://localhost:3000'}/auth/callback`;
+  const appUrl = (process.env.APP_URL || 'http://localhost:3000').replace(/\/+$/, '');
+  const returnPath = safeOAuthReturnPath(req.query.next);
+  const callbackUrl = new URL('/auth/callback', appUrl);
+  callbackUrl.searchParams.set('next', returnPath);
+
+  const oauthOptions = {
+    redirectTo: callbackUrl.toString(),
+    skipBrowserRedirect: true,
+  };
+  if (returnPath === '/settings') {
+    oauthOptions.queryParams = { prompt: 'select_account' };
+  }
 
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: 'google',
-    options: {
-      redirectTo,
-      skipBrowserRedirect: true,
-    },
+    options: oauthOptions,
   });
 
   if (error || !data?.url) {

@@ -1,15 +1,62 @@
-import { useState } from 'react';
-import { Link } from 'react-router-dom';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
 export default function SettingsPage() {
-  const { user, getToken, replaceToken } = useAuth();
+  const { user, getToken, replaceToken, loginWithGoogle, clearSession } = useAuth();
+  const navigate = useNavigate();
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [deletionPreview, setDeletionPreview] = useState(null);
+  const [deletionPreviewError, setDeletionPreviewError] = useState('');
+  const [deletionOpen, setDeletionOpen] = useState(false);
+  const [deletionEmail, setDeletionEmail] = useState('');
+  const [deletionPassword, setDeletionPassword] = useState('');
+  const [deletionConsent, setDeletionConsent] = useState(false);
+  const [deletionError, setDeletionError] = useState('');
+  const [deletionLoading, setDeletionLoading] = useState(false);
+  const deletionCloseRef = useRef(null);
+
+  const loadDeletionPreview = useCallback(async () => {
+    if (!user) return;
+    setDeletionPreviewError('');
+    try {
+      const res = await fetch('/api/account/deletion-preview', {
+        headers: { Authorization: `Bearer ${getToken()}` },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setDeletionPreview(data);
+    } catch (previewError) {
+      setDeletionPreview(null);
+      setDeletionPreviewError(previewError.message || '탈퇴 가능 여부를 확인하지 못했습니다.');
+    }
+  }, [getToken, user]);
+
+  useEffect(() => {
+    loadDeletionPreview();
+  }, [loadDeletionPreview]);
+
+  useEffect(() => {
+    if (!deletionOpen) return undefined;
+
+    deletionCloseRef.current?.focus();
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const handleKeyDown = (event) => {
+      if (event.key === 'Escape' && !deletionLoading) setDeletionOpen(false);
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [deletionLoading, deletionOpen]);
 
   if (!user) {
     return (
@@ -56,6 +103,57 @@ export default function SettingsPage() {
       setError(err.message || '비밀번호 변경에 실패했습니다.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const openDeletion = () => {
+    setDeletionError('');
+    setDeletionEmail('');
+    setDeletionPassword('');
+    setDeletionConsent(false);
+    setDeletionOpen(true);
+    loadDeletionPreview();
+  };
+
+  const closeDeletion = () => {
+    if (deletionLoading) return;
+    setDeletionOpen(false);
+    setDeletionError('');
+  };
+
+  const handleDeleteAccount = async (event) => {
+    event.preventDefault();
+    setDeletionError('');
+
+    if (!deletionConsent) {
+      return setDeletionError('탈퇴 시 삭제되는 정보와 크레딧 소멸 내용을 확인해주세요.');
+    }
+
+    setDeletionLoading(true);
+    try {
+      const res = await fetch('/api/account', {
+        method: 'DELETE',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getToken()}`,
+        },
+        body: JSON.stringify({
+          confirmationEmail: deletionEmail,
+          currentPassword: deletionPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (data.preview) setDeletionPreview(data.preview);
+        throw new Error(data.error);
+      }
+
+      clearSession();
+      navigate('/', { replace: true, state: { accountDeleted: true } });
+    } catch (deleteError) {
+      setDeletionError(deleteError.message || '회원 탈퇴를 완료하지 못했습니다.');
+    } finally {
+      setDeletionLoading(false);
     }
   };
 
@@ -217,6 +315,150 @@ export default function SettingsPage() {
           </nav>
         </aside>
       </div>
+
+      <section className="settings-danger" aria-labelledby="account-deletion-title">
+        <div>
+          <p className="settings-panel__kicker">ACCOUNT DELETION</p>
+          <h2 id="account-deletion-title">회원 탈퇴</h2>
+          <p>
+            변환 결과와 사용 내역은 삭제되며, 법령상 보관이 필요한 결제 기록은 계정 정보와 분리해 보관합니다.
+          </p>
+          {deletionPreviewError && (
+            <p className="settings-alert settings-alert--error" role="alert">{deletionPreviewError}</p>
+          )}
+        </div>
+        <button className="button settings-danger__button" type="button" onClick={openDeletion}>
+          회원 탈퇴
+        </button>
+      </section>
+
+      {deletionOpen && (
+        <div className="settings-dialog-backdrop" role="presentation" onMouseDown={closeDeletion}>
+          <section
+            className="settings-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="deletion-dialog-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <div className="settings-dialog__heading">
+              <div>
+                <p className="settings-panel__kicker">FINAL CONFIRMATION</p>
+                <h2 id="deletion-dialog-title">정말 탈퇴하시겠습니까?</h2>
+              </div>
+              <button
+                ref={deletionCloseRef}
+                className="settings-dialog__close"
+                type="button"
+                onClick={closeDeletion}
+                aria-label="닫기"
+              >
+                ×
+              </button>
+            </div>
+
+            {!deletionPreview ? (
+              <p className="settings-dialog__loading">탈퇴 가능 여부를 확인하고 있습니다...</p>
+            ) : !deletionPreview.canDelete ? (
+              <div className="settings-deletion-blocked">
+                <p className="settings-alert settings-alert--error" role="alert">
+                  {deletionPreview.blockerMessage}
+                </p>
+                <p>결제 또는 변환 작업을 정리한 뒤 다시 확인해주세요.</p>
+                <div className="settings-dialog__actions">
+                  <Link className="button button--secondary" to="/payment" onClick={closeDeletion}>
+                    결제 내역 확인
+                  </Link>
+                  <Link className="button button--secondary" to="/support" onClick={closeDeletion}>
+                    고객센터
+                  </Link>
+                </div>
+              </div>
+            ) : deletionPreview.requiresRecentLogin ? (
+              <div className="settings-deletion-blocked">
+                <p>계정 보호를 위해 최근 10분 이내의 Google 인증이 필요합니다.</p>
+                <button
+                  className="gradient-btn"
+                  type="button"
+                  onClick={() => loginWithGoogle('/settings')}
+                >
+                  Google로 다시 인증
+                </button>
+              </div>
+            ) : (
+              <form className="settings-deletion-form" onSubmit={handleDeleteAccount}>
+                <div className="settings-deletion-summary">
+                  <strong>탈퇴하면 다음 정보가 삭제됩니다.</strong>
+                  <ul>
+                    <li>계정 정보와 로그인 권한</li>
+                    <li>변환 결과, 자막 세그먼트 및 재다운로드 내역</li>
+                    <li>일반 사용 내역과 임시 오디오 파일</li>
+                  </ul>
+                </div>
+
+                {deletionPreview.credits > 0 && (
+                  <p className="settings-alert settings-alert--error">
+                    현재 잔여 무료 크레딧 {deletionPreview.credits.toLocaleString()}분은 탈퇴 즉시 소멸하며
+                    복구하거나 환불받을 수 없습니다.
+                  </p>
+                )}
+
+                <label className="settings-field">
+                  <span>계정 이메일 확인</span>
+                  <input
+                    type="email"
+                    value={deletionEmail}
+                    onChange={(event) => setDeletionEmail(event.target.value)}
+                    placeholder={user.email}
+                    autoComplete="email"
+                    required
+                  />
+                </label>
+
+                {deletionPreview.confirmationMethod === 'password' && (
+                  <label className="settings-field">
+                    <span>현재 비밀번호</span>
+                    <input
+                      type="password"
+                      value={deletionPassword}
+                      onChange={(event) => setDeletionPassword(event.target.value)}
+                      placeholder="현재 비밀번호 입력"
+                      autoComplete="current-password"
+                      required
+                    />
+                  </label>
+                )}
+
+                <label className="settings-deletion-consent">
+                  <input
+                    type="checkbox"
+                    checked={deletionConsent}
+                    onChange={(event) => setDeletionConsent(event.target.checked)}
+                  />
+                  <span>삭제되는 정보와 잔여 무료 크레딧 소멸 내용을 확인했습니다.</span>
+                </label>
+
+                {deletionError && (
+                  <p className="settings-alert settings-alert--error" role="alert">{deletionError}</p>
+                )}
+
+                <div className="settings-dialog__actions">
+                  <button className="button button--secondary" type="button" onClick={closeDeletion}>
+                    취소
+                  </button>
+                  <button
+                    className="button settings-danger__button"
+                    type="submit"
+                    disabled={deletionLoading || !deletionConsent}
+                  >
+                    {deletionLoading ? '탈퇴 처리 중...' : '회원 탈퇴 완료'}
+                  </button>
+                </div>
+              </form>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   );
 }
