@@ -30,7 +30,7 @@ export default function PrivacyPage() {
           </div>
           <Link className="button button--secondary" to="/support">개인정보 문의</Link>
         </div>
-        <p className="info-heading__meta">시행일: 2026년 7월 11일</p>
+        <p className="info-heading__meta">시행일: 2026년 7월 16일</p>
       </header>
 
       <div className="document-layout">
@@ -71,6 +71,10 @@ export default function PrivacyPage() {
               <li>
                 회원 정보, 변환 이력, 이용 및 결제 기록은 서비스 제공과 분쟁 대응에 필요한 기간 동안 보관하며,
                 삭제 요청이 처리되면 관련 법령상 보관 의무가 있는 정보를 제외하고 삭제합니다.
+              </li>
+              <li>
+                회원 탈퇴 시 계정 정보, 변환 결과와 일반 사용 내역은 삭제합니다. 관계 법령상 보관이 필요한
+                결제·환불 기록은 계정 이메일과 분리하여 필요한 기간 동안 보관합니다.
               </li>
             </ul>
           </section>

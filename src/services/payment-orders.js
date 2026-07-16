@@ -28,7 +28,8 @@ export function createPaymentOrderStore(database = supabaseAdmin) {
           refund_status,
           refund_idempotency_key,
           refund_reason,
-          refund_credits_reclaimed
+          refund_credits_reclaimed,
+          account_deleted_at
         `)
         .eq('order_id', orderId)
         .maybeSingle();
@@ -110,6 +111,16 @@ export function createPaymentOrderStore(database = supabaseAdmin) {
 
       if (error) throw error;
       return firstResult(data, '취소 결제 동기화 결과를 받지 못했습니다.');
+    },
+
+    async recordDeletedAccountCancellation({ orderId, paymentKey }) {
+      const { data, error } = await database.rpc('record_deleted_account_payment_cancellation', {
+        p_order_id: orderId,
+        p_payment_key: paymentKey,
+      });
+
+      if (error) throw error;
+      return firstResult(data, '탈퇴 계정의 취소 결제 상태를 기록하지 못했습니다.');
     },
   };
 }

@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { rateLimit } from 'express-rate-limit';
 import authRouter from './routes/auth.js';
+import accountRouter from './routes/account.js';
 import paymentRouter, { paymentWebhookRouter } from './routes/payment.js';
 import transcribeRouter from './routes/transcribe.js';
 import transcriptionJobsRouter from './routes/transcription-jobs.js';
@@ -112,6 +113,14 @@ const passwordChangeLimiter = rateLimit({
   handler: rateLimitHandler,
 });
 
+// 회원 탈퇴 본인 확인 실패: IP당 15분에 5회
+const accountDeletionLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  skipSuccessfulRequests: true,
+  handler: rateLimitHandler,
+});
+
 // /api/download: IP당 분당 20회
 const downloadLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -139,6 +148,7 @@ app.use('/api/auth/reset-password', resetPasswordLimiter);
 app.use('/api/auth/recovery-password', passwordChangeLimiter);
 app.use('/api/auth/password', passwordChangeLimiter);
 app.use('/api/auth', generalLimiter, authRouter);
+app.use('/api/account', accountDeletionLimiter, generalLimiter, accountRouter);
 app.use('/api/payment/webhook', paymentWebhookLimiter, paymentWebhookRouter);
 app.use('/api/payment', generalLimiter, paymentRouter);
 app.use('/api/transcribe/jobs', generalLimiter, transcriptionJobsRouter);

@@ -814,6 +814,41 @@ test('webhook re-queries Toss and reconciles a verified full cancellation', asyn
   });
 });
 
+test('webhook records a verified cancellation for an already deleted account', async () => {
+  let recorded;
+  const store = {
+    async find() {
+      return {
+        ...ORDER,
+        user_id: null,
+        status: 'paid',
+        payment_key: PAYMENT.paymentKey,
+        account_deleted_at: '2026-07-16T03:00:00.000Z',
+      };
+    },
+    async recordDeletedAccountCancellation(input) {
+      recorded = input;
+      return { manual_review: true, already_refunded: false };
+    },
+  };
+  const router = createPaymentWebhookRouter({
+    store,
+    getPayment: async () => CANCELED_PAYMENT,
+  });
+
+  const response = await request(router, '/', {
+    eventType: 'PAYMENT_STATUS_CHANGED',
+    data: CANCELED_PAYMENT,
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.data.manualReview, true);
+  assert.deepEqual(recorded, {
+    orderId: ORDER.order_id,
+    paymentKey: PAYMENT.paymentKey,
+  });
+});
+
 test('webhook does not reclaim credits for an unverified cancellation', async () => {
   let reconcileCalls = 0;
   const store = {

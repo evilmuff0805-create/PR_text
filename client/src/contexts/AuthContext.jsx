@@ -7,6 +7,7 @@ import {
   parsePasswordRecoveryHash,
   savePasswordRecoverySession,
 } from '../utils/password-recovery.js';
+import { authReturnPathFromSearch, safeAuthReturnPath } from '../utils/auth-navigation.js';
 
 const AuthContext = createContext(null);
 
@@ -76,6 +77,7 @@ export function AuthProvider({ children }) {
       const params = new URLSearchParams(hash.slice(1)); // '#' 제거
       const accessToken = params.get('access_token');
       if (accessToken) {
+        const returnPath = authReturnPathFromSearch(window.location.search);
         localStorage.setItem('token', accessToken);
         setToken(accessToken);
         window.history.replaceState(null, '', window.location.pathname); // URL에서 해시 제거
@@ -86,7 +88,7 @@ export function AuthProvider({ children }) {
           .then((data) => {
             if (data.error) throw new Error(data.error);
             setUser(normalizeUser(data));
-            navigate('/', { replace: true });
+            navigate(returnPath, { replace: true });
           })
           .catch(() => {
             localStorage.removeItem('token');
@@ -156,9 +158,19 @@ export function AuthProvider({ children }) {
     // 회원가입 후 이메일 인증 필요 → 자동 로그인 안 함
   };
 
-  const loginWithGoogle = () => {
-    window.location.href = '/api/auth/google';
+  const loginWithGoogle = (returnPath = '/') => {
+    const next = safeAuthReturnPath(returnPath);
+    window.location.href = next === '/'
+      ? '/api/auth/google'
+      : `/api/auth/google?next=${encodeURIComponent(next)}`;
   };
+
+  const clearSession = useCallback(() => {
+    localStorage.removeItem('token');
+    clearPasswordRecoverySession(sessionStorage);
+    setToken(null);
+    setUser(null);
+  }, []);
 
   const logout = async () => {
     try {
@@ -171,10 +183,7 @@ export function AuthProvider({ children }) {
     } catch {
       // 서버 오류여도 클라이언트는 로그아웃
     } finally {
-      localStorage.removeItem('token');
-      clearPasswordRecoverySession(sessionStorage);
-      setToken(null);
-      setUser(null);
+      clearSession();
     }
   };
 
@@ -239,6 +248,7 @@ export function AuthProvider({ children }) {
       signup,
       loginWithGoogle,
       logout,
+      clearSession,
       updateCredits,
       replaceToken,
       getToken,

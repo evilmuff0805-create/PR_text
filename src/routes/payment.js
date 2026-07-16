@@ -407,10 +407,12 @@ export function createPaymentWebhookRouter({
           return res.json({ received: true, ignored: true });
         }
 
-        const result = await store.reconcileCanceledRefund({ orderId, paymentKey });
+        const result = order.user_id
+          ? await store.reconcileCanceledRefund({ orderId, paymentKey })
+          : await store.recordDeletedAccountCancellation({ orderId, paymentKey });
         console.log('[payment.webhook_refund_complete]', JSON.stringify({
           orderId,
-          refunded: result.refunded,
+          refunded: result.refunded || null,
           manualReview: result.manual_review,
           alreadyRefunded: result.already_refunded,
         }));
