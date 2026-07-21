@@ -93,16 +93,32 @@ export default function IntroPage() {
         <p className="landing-notice" role="status">회원 탈퇴가 완료되었습니다.</p>
       )}
       <section className="landing-hero" aria-labelledby="landing-title">
+        <picture className="landing-hero__media" aria-hidden="true">
+          <source
+            media="(max-width: 768px)"
+            srcSet="/images/hero-editor-mobile.webp"
+            type="image/webp"
+          />
+          <img
+            src="/images/hero-editor-desktop.webp"
+            alt=""
+            width="1672"
+            height="941"
+            decoding="async"
+            fetchpriority="high"
+          />
+        </picture>
+        <div className="landing-hero__veil" aria-hidden="true" />
+
         <div className="landing-hero__copy">
-          <p className="eyebrow">음성·영상 자막 변환기 <span>V.1.1</span></p>
+          <p className="eyebrow">음성·영상 자막 편집 도구 <span>V.1.1</span></p>
           <h1 id="landing-title">프리뷰 자막 머신</h1>
           <p className="landing-hero__statement">
-            말한 그대로,<br />
-            편집 가능한 자막으로.
+            자막에서 자유롭고 싶은 편집자라면?
           </p>
           <p className="landing-hero__description">
-            휴대폰 녹음부터 인터뷰 영상까지. 원문의 말투와 문맥을 지키면서
-            바로 편집하고 내려받을 수 있는 텍스트와 자막 파일을 만듭니다.
+            원문의 말투는 그대로. 휴대폰 녹음부터 인터뷰 영상까지
+            바로 편집하고 내려받을 수 있는 자막으로 완성하세요.
           </p>
 
           <div className="landing-hero__actions">
@@ -125,7 +141,17 @@ export default function IntroPage() {
             </div>
           </dl>
         </div>
+      </section>
 
+      <section className="landing-section landing-product-proof" aria-labelledby="product-proof-title">
+        <div className="section-heading landing-product-proof__copy">
+          <p className="eyebrow">실제 편집 흐름</p>
+          <h2 id="product-proof-title">변환한 뒤에도,<br />내가 끝까지 다듬을 수 있게.</h2>
+          <p>
+            구간별 문장과 화자를 확인하고 직접 수정하세요. 편집한 내용은
+            SRT, TXT, ASS 다운로드 파일에 그대로 반영됩니다.
+          </p>
+        </div>
         <ProductPreview />
       </section>
 
