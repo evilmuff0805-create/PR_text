@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 
 const featureRows = [
@@ -23,6 +24,85 @@ const workflow = [
   ['02', '변환·정리', '음성을 구간별 텍스트로 만들고 필요한 맞춤법을 정리합니다.'],
   ['03', '편집·다운로드', '결과를 직접 손본 뒤 원하는 자막 형식으로 내려받습니다.'],
 ];
+
+function LandingHeroVideo() {
+  const videoRef = useRef(null);
+  const [canPlayVideo, setCanPlayVideo] = useState(false);
+  const [videoFailed, setVideoFailed] = useState(false);
+
+  useEffect(() => {
+    const reducedMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    const desktopViewport = window.matchMedia?.('(min-width: 769px)');
+    const connection = navigator.connection;
+    const updatePlaybackPreference = () => {
+      setCanPlayVideo(
+        !reducedMotion?.matches
+        && desktopViewport?.matches !== false
+        && !connection?.saveData,
+      );
+    };
+
+    updatePlaybackPreference();
+    reducedMotion?.addEventListener?.('change', updatePlaybackPreference);
+    desktopViewport?.addEventListener?.('change', updatePlaybackPreference);
+    connection?.addEventListener?.('change', updatePlaybackPreference);
+
+    return () => {
+      reducedMotion?.removeEventListener?.('change', updatePlaybackPreference);
+      desktopViewport?.removeEventListener?.('change', updatePlaybackPreference);
+      connection?.removeEventListener?.('change', updatePlaybackPreference);
+    };
+  }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video || !canPlayVideo) return undefined;
+
+    const playVideo = () => {
+      try {
+        video.play()?.catch?.(() => {});
+      } catch {
+        setVideoFailed(true);
+      }
+    };
+
+    if (typeof IntersectionObserver === 'undefined') {
+      playVideo();
+      return undefined;
+    }
+
+    const observer = new IntersectionObserver(([entry]) => {
+      if (entry.isIntersecting) {
+        playVideo();
+      } else {
+        video.pause();
+      }
+    }, { threshold: 0.1 });
+
+    observer.observe(video);
+    return () => observer.disconnect();
+  }, [canPlayVideo]);
+
+  if (!canPlayVideo || videoFailed) return null;
+
+  return (
+    <video
+      ref={videoRef}
+      className="landing-hero__media landing-hero__media--video"
+      autoPlay
+      muted
+      loop
+      playsInline
+      preload="metadata"
+      aria-hidden="true"
+      tabIndex={-1}
+      disablePictureInPicture
+      onError={() => setVideoFailed(true)}
+    >
+      <source src="/videos/landing.mp4" type="video/mp4" />
+    </video>
+  );
+}
 
 function ProductPreview() {
   return (
@@ -93,7 +173,7 @@ export default function IntroPage() {
         <p className="landing-notice" role="status">회원 탈퇴가 완료되었습니다.</p>
       )}
       <section className="landing-hero" aria-labelledby="landing-title">
-        <picture className="landing-hero__media" aria-hidden="true">
+        <picture className="landing-hero__media landing-hero__media--image" aria-hidden="true">
           <source
             media="(max-width: 768px)"
             srcSet="/images/hero-editor-mobile.webp"
@@ -108,6 +188,7 @@ export default function IntroPage() {
             fetchpriority="high"
           />
         </picture>
+        <LandingHeroVideo />
         <div className="landing-hero__veil" aria-hidden="true" />
 
         <div className="landing-hero__copy">
