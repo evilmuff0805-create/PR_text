@@ -7,6 +7,8 @@ export const DEFAULT_SPEAKER_COLORS = [
   '#FF4BCB', // 5: 마젠타
 ];
 
+export const SUBTITLE_MAX_CHARS = 28;
+
 const SENTENCE_END = /[다요죠까!?]$/;
 const CONJUNCTIVE = /[면고서며]$|지만$|는데$|니까$|므로$|거나$|든지$/;
 const POSTPOSITION = /[은는이가을를에도로]$/;
@@ -16,8 +18,8 @@ function cleanText(text) {
 }
 
 function findCutAt(text, maxLen) {
-  for (let i = maxLen; i >= 1; i--) {
-    if (SENTENCE_END.test(text[i])) return i + 1;
+  for (let cutAt = maxLen; cutAt >= 1; cutAt--) {
+    if (SENTENCE_END.test(text[cutAt - 1])) return cutAt;
   }
   for (let i = maxLen; i >= 1; i--) {
     if (text[i] === ' ' && CONJUNCTIVE.test(text.slice(0, i).trimEnd())) return i;
@@ -31,45 +33,45 @@ function findCutAt(text, maxLen) {
   return maxLen;
 }
 
-function splitSegment(segment, maxLen = 35, depth = 0) {
-  const text = depth === 0 ? cleanText(segment.text) : segment.text;
+function splitSegment(segment, maxLen = SUBTITLE_MAX_CHARS) {
+  let text = cleanText(segment.text);
   const spk = segment.speaker;
-  if (!text || text.length <= maxLen || depth > 10) {
-    return [{ start: segment.start, end: segment.end, text: text || '', speaker: spk }];
+  let start = segment.start;
+  const end = segment.end;
+  const split = [];
+
+  while (text.length > maxLen) {
+    const cutAt = findCutAt(text, maxLen);
+    const frontText = text.slice(0, cutAt).trimEnd();
+    const backText = text.slice(cutAt).trimStart();
+    if (!frontText || !backText) break;
+
+    const total = frontText.length + backText.length;
+    const midTime = start + (end - start) * (frontText.length / total);
+    split.push({ start, end: midTime, text: frontText, speaker: spk });
+    start = midTime;
+    text = backText;
   }
-  const cutAt = findCutAt(text, maxLen);
-  if (cutAt <= 0 || cutAt >= text.length) {
-    return [{ start: segment.start, end: segment.end, text, speaker: spk }];
-  }
-  const frontText = text.slice(0, cutAt).trimEnd();
-  const backText = text.slice(cutAt).trimStart();
-  if (!frontText || !backText) {
-    return [{ start: segment.start, end: segment.end, text, speaker: spk }];
-  }
-  const total = frontText.length + backText.length;
-  const duration = segment.end - segment.start;
-  const midTime = segment.start + duration * (frontText.length / total);
-  const front = { start: segment.start, end: midTime, text: frontText, speaker: spk };
-  const back = { start: midTime, end: segment.end, text: backText, speaker: spk };
-  return [
-    ...splitSegment(front, maxLen, depth + 1),
-    ...splitSegment(back, maxLen, depth + 1),
-  ];
+
+  split.push({ start, end, text: text || '', speaker: spk });
+  return split;
 }
 
 function formatSRT(seconds) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  const ms = Math.round((seconds % 1) * 1000);
+  const totalMs = Math.max(0, Math.round(seconds * 1000));
+  const h = Math.floor(totalMs / 3_600_000);
+  const m = Math.floor((totalMs % 3_600_000) / 60_000);
+  const s = Math.floor((totalMs % 60_000) / 1000);
+  const ms = totalMs % 1000;
   return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0') + ',' + String(ms).padStart(3, '0');
 }
 
 function formatASS(seconds) {
-  const h = Math.floor(seconds / 3600);
-  const m = Math.floor((seconds % 3600) / 60);
-  const s = Math.floor(seconds % 60);
-  const cs = Math.round((seconds % 1) * 100);
+  const totalCs = Math.max(0, Math.round(seconds * 100));
+  const h = Math.floor(totalCs / 360_000);
+  const m = Math.floor((totalCs % 360_000) / 6000);
+  const s = Math.floor((totalCs % 6000) / 100);
+  const cs = totalCs % 100;
   return String(h) + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0') + '.' + String(cs).padStart(2, '0');
 }
 
