@@ -72,7 +72,12 @@ export default function PaymentSuccessPage() {
 
   return (
     <div className="payment-status-page">
-      <div className="payment-status-card">
+      <div
+        className="payment-status-card"
+        role={status === 'error' || status === 'retry' ? 'alert' : 'status'}
+        aria-live={status === 'error' || status === 'retry' ? 'assertive' : 'polite'}
+        aria-atomic="true"
+      >
         {status === 'processing' && (
           <>
             <p className="payment-status-card__icon" aria-hidden="true">...</p>

@@ -79,6 +79,11 @@ const DOWNLOAD_FORMATS = [
   { id: 'ass', name: '스타일 자막', detail: '위치·폰트·색상 설정' },
 ];
 
+const EDITOR_MODES = [
+  { id: 'text', label: '전체 텍스트' },
+  { id: 'segments', label: '구간별 편집' },
+];
+
 const LANGUAGE_LABELS = {
   ko: '한국어',
   korean: '한국어',
@@ -130,6 +135,22 @@ export default function ResultPage() {
   const [editorMode, setEditorMode] = useState('text');
   const [downloading, setDownloading] = useState(false);
   const editedText = editedSegments.map(segment => segment.text).join('\n');
+
+  const handleEditorTabKeyDown = (event, index) => {
+    let nextIndex = null;
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % EDITOR_MODES.length;
+    if (event.key === 'ArrowLeft') nextIndex = (index - 1 + EDITOR_MODES.length) % EDITOR_MODES.length;
+    if (event.key === 'Home') nextIndex = 0;
+    if (event.key === 'End') nextIndex = EDITOR_MODES.length - 1;
+    if (nextIndex === null) return;
+
+    event.preventDefault();
+    const nextMode = EDITOR_MODES[nextIndex];
+    setEditorMode(nextMode.id);
+    window.requestAnimationFrame(() => {
+      document.getElementById(`editor-tab-${nextMode.id}`)?.focus();
+    });
+  };
 
   const DEFAULT_SPEAKER_COLORS = ['#FFFFFF', '#39FF14', '#FFE600', '#00F5FF', '#FF6B35', '#FF4BCB'];
   const speakerIds = [...new Set(segments.filter(s => s.speaker !== undefined).map(s => s.speaker))].sort((a, b) => a - b);
@@ -397,10 +418,7 @@ export default function ResultPage() {
           </div>
 
           <div className="result-editor-tabs" aria-label="자막 편집 방식" role="tablist">
-            {[
-              { id: 'text', label: '전체 텍스트' },
-              { id: 'segments', label: '구간별 편집' },
-            ].map((mode) => (
+            {EDITOR_MODES.map((mode, index) => (
               <button
                 aria-controls={`editor-panel-${mode.id}`}
                 aria-selected={editorMode === mode.id}
@@ -408,7 +426,9 @@ export default function ResultPage() {
                 id={`editor-tab-${mode.id}`}
                 key={mode.id}
                 onClick={() => setEditorMode(mode.id)}
+                onKeyDown={(event) => handleEditorTabKeyDown(event, index)}
                 role="tab"
+                tabIndex={editorMode === mode.id ? 0 : -1}
                 type="button"
               >
                 {mode.label}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import { useDialogAccessibility } from '../utils/use-dialog-accessibility.js';
 
 export default function SettingsPage() {
   const { user, getToken, replaceToken, loginWithGoogle, clearSession } = useAuth();
@@ -19,7 +20,24 @@ export default function SettingsPage() {
   const [deletionConsent, setDeletionConsent] = useState(false);
   const [deletionError, setDeletionError] = useState('');
   const [deletionLoading, setDeletionLoading] = useState(false);
+  const deletionDialogRef = useRef(null);
+  const deletionTriggerRef = useRef(null);
   const deletionCloseRef = useRef(null);
+
+  const closeDeletion = useCallback(() => {
+    if (deletionLoading) return;
+    setDeletionOpen(false);
+    setDeletionError('');
+  }, [deletionLoading]);
+
+  useDialogAccessibility({
+    active: deletionOpen,
+    containerRef: deletionDialogRef,
+    initialFocusRef: deletionCloseRef,
+    onClose: closeDeletion,
+    restoreFocusRef: deletionTriggerRef,
+    closeOnEscape: !deletionLoading,
+  });
 
   const loadDeletionPreview = useCallback(async () => {
     if (!user) return;
@@ -40,23 +58,6 @@ export default function SettingsPage() {
   useEffect(() => {
     loadDeletionPreview();
   }, [loadDeletionPreview]);
-
-  useEffect(() => {
-    if (!deletionOpen) return undefined;
-
-    deletionCloseRef.current?.focus();
-    const previousOverflow = document.body.style.overflow;
-    document.body.style.overflow = 'hidden';
-    const handleKeyDown = (event) => {
-      if (event.key === 'Escape' && !deletionLoading) setDeletionOpen(false);
-    };
-    window.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.body.style.overflow = previousOverflow;
-      window.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [deletionLoading, deletionOpen]);
 
   if (!user) {
     return (
@@ -113,12 +114,6 @@ export default function SettingsPage() {
     setDeletionConsent(false);
     setDeletionOpen(true);
     loadDeletionPreview();
-  };
-
-  const closeDeletion = () => {
-    if (deletionLoading) return;
-    setDeletionOpen(false);
-    setDeletionError('');
   };
 
   const handleDeleteAccount = async (event) => {
@@ -327,7 +322,7 @@ export default function SettingsPage() {
             <p className="settings-alert settings-alert--error" role="alert">{deletionPreviewError}</p>
           )}
         </div>
-        <button className="button settings-danger__button" type="button" onClick={openDeletion}>
+        <button ref={deletionTriggerRef} className="button settings-danger__button" type="button" onClick={openDeletion}>
           회원 탈퇴
         </button>
       </section>
@@ -335,10 +330,12 @@ export default function SettingsPage() {
       {deletionOpen && (
         <div className="settings-dialog-backdrop" role="presentation" onMouseDown={closeDeletion}>
           <section
+            ref={deletionDialogRef}
             className="settings-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="deletion-dialog-title"
+            tabIndex={-1}
             onMouseDown={(event) => event.stopPropagation()}
           >
             <div className="settings-dialog__heading">

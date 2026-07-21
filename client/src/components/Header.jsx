@@ -26,7 +26,7 @@ export default function Header() {
       right: 0,
       zIndex: 99,
     }}>
-      <nav style={{ display: 'flex', gap: '4px', marginLeft: '24px' }}>
+      <nav aria-label="주요 페이지" style={{ display: 'flex', gap: '4px', marginLeft: '24px' }}>
         <NavLink to="/" style={({ isActive }) => linkStyle(isActive)}>
           소개
         </NavLink>

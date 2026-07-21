@@ -6,7 +6,7 @@
   --bg-elevated: #181e27;
   --text-primary: #f7f9fb;
   --text-secondary: #aeb5c2;
-  --text-muted: #737c8d;
+  --text-muted: #8790a0;
   --gradient-start: #3df274;
   --gradient-end: #27d8d1;
   --gradient: linear-gradient(135deg, var(--gradient-start), var(--gradient-end));
@@ -70,8 +70,9 @@ a:focus-visible,
 input:focus-visible,
 select:focus-visible,
 textarea:focus-visible {
-  outline: none;
-  box-shadow: var(--focus-ring);
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+  box-shadow: none;
 }
 
 ::selection {
@@ -183,6 +184,17 @@ textarea:focus-visible {
   cursor: pointer;
 }
 
+.auth-modal__text-button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  font: inherit;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
 .card {
   padding: 24px;
   border: 1px solid var(--border-color);
@@ -240,6 +252,16 @@ textarea:focus-visible {
 }
 
 .mobile-menu-button {
+  font-size: 1.25rem;
+}
+
+.mobile-sidebar-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 1;
+  border: 1px solid var(--border-color);
+  background: var(--bg-tertiary);
   font-size: 1.25rem;
 }
 
