@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, NavLink, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar.jsx';
 import Header from './Header.jsx';
@@ -62,6 +62,7 @@ export default function Layout({ children }) {
   const isLanding = location.pathname === '/' || location.pathname === '/intro';
   const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const mobileMenuButtonRef = useRef(null);
 
   useEffect(() => {
     const mq = window.matchMedia('(max-width: 768px)');
@@ -89,19 +90,24 @@ export default function Layout({ children }) {
 
   return (
     <div className="app-shell">
+      <a className="skip-link" href="#main-content">본문 바로가기</a>
       <Sidebar
         isOpen={!isMobile || sidebarOpen}
         isMobile={isMobile}
         onClose={() => setSidebarOpen(false)}
+        triggerRef={mobileMenuButtonRef}
       />
 
       {isMobile && (
         <div className="mobile-header">
           <div className="mobile-header__brand-row">
             <button
+              ref={mobileMenuButtonRef}
               className="icon-button mobile-menu-button"
               onClick={() => setSidebarOpen(true)}
               aria-label="메뉴 열기"
+              aria-controls="app-sidebar"
+              aria-expanded={sidebarOpen}
               type="button"
             >
               <span aria-hidden="true">☰</span>
@@ -130,7 +136,7 @@ export default function Layout({ children }) {
 
       <div className={isMobile ? 'app-content is-mobile' : 'app-content'}>
         {!isMobile && <Header />}
-        <main className="app-main">
+        <main className="app-main" id="main-content" tabIndex={-1}>
           {children}
         </main>
         <SiteFooter />

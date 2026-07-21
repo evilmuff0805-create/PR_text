@@ -105,9 +105,9 @@ export default function RedownloadPage() {
         </p>
       </header>
 
-      {loading && <p className="usage-state">불러오는 중...</p>}
+      {loading && <p className="usage-state" role="status">불러오는 중...</p>}
 
-      {!loading && error && <p className="usage-state usage-state--error">{error}</p>}
+      {!loading && error && <p className="usage-state usage-state--error" role="alert">{error}</p>}
 
       {!loading && !error && !token && (
         <p className="usage-state">로그인 후 변환 기록을 확인할 수 있습니다.</p>

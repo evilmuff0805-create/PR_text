@@ -424,7 +424,7 @@ export default function HomePage() {
               {(file.size / 1024 / 1024).toFixed(2)} MB
             </p>
             {isReadingDuration ? (
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '12px' }}>
+              <p role="status" style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '12px' }}>
                 예상 사용 시간을 확인 중입니다...
               </p>
             ) : estimatedCredits !== null ? (
@@ -536,7 +536,7 @@ export default function HomePage() {
 
       {/* 진행 상태 */}
       {status !== 'idle' && status !== 'error' && (
-        <p style={{ marginTop: '16px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+        <p role="status" aria-live="polite" style={{ marginTop: '16px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
           {progress}
         </p>
       )}
@@ -607,7 +607,7 @@ export default function HomePage() {
       {/* 에러 메시지 */}
       {status === 'error' && (
         <div style={{ marginTop: '16px', textAlign: 'center' }}>
-          <p style={{ color: '#FF4444', fontSize: '0.9rem' }}>{error}</p>
+          <p role="alert" style={{ color: '#FF6B72', fontSize: '0.9rem' }}>{error}</p>
           {(error.includes('시간이 부족') || error.includes('충전')) && (
             <button
               onClick={() => navigate('/payment')}

@@ -199,7 +199,11 @@ export default function PaymentPage() {
       </section>
 
       {(error || success || selectedPlan) && (
-        <div className={error ? 'payment-alert payment-alert--error' : 'payment-alert'}>
+        <div
+          className={error ? 'payment-alert payment-alert--error' : 'payment-alert'}
+          role={error ? 'alert' : 'status'}
+          aria-live={error ? 'assertive' : 'polite'}
+        >
           {error || success || `${selectedPlan.name} 결제창을 여는 중입니다.`}
         </div>
       )}

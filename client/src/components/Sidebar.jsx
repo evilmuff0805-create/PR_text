@@ -1,12 +1,23 @@
 import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import AuthModal from './AuthModal.jsx';
+import { useDialogAccessibility } from '../utils/use-dialog-accessibility.js';
 
-export default function Sidebar({ isOpen, isMobile, onClose }) {
+export default function Sidebar({ isOpen, isMobile, onClose, triggerRef }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const [showAuth, setShowAuth] = useState(false);
+  const sidebarRef = useRef(null);
+  const mobileCloseRef = useRef(null);
+
+  useDialogAccessibility({
+    active: isMobile && isOpen,
+    containerRef: sidebarRef,
+    initialFocusRef: mobileCloseRef,
+    onClose,
+    restoreFocusRef: triggerRef,
+  });
 
   const navLinkStyle = ({ isActive }) => ({
     display: 'flex',
@@ -27,6 +38,7 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
       {/* 모바일 오버레이 — 클릭 시 사이드바 닫기 */}
       {isMobile && isOpen && (
         <div
+          aria-hidden="true"
           onClick={onClose}
           style={{
             position: 'fixed',
@@ -38,8 +50,14 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
       )}
 
       <aside
+        ref={sidebarRef}
+        id="app-sidebar"
         aria-hidden={isMobile && !isOpen}
+        aria-label={isMobile ? '주요 메뉴' : undefined}
+        aria-modal={isMobile && isOpen ? 'true' : undefined}
         inert={isMobile && !isOpen ? '' : undefined}
+        role={isMobile ? 'dialog' : undefined}
+        tabIndex={isMobile ? -1 : undefined}
         style={{
         width: '220px',
         minHeight: '100vh',
@@ -56,6 +74,17 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
         transition: 'transform 0.25s ease',
         }}
       >
+        {isMobile && isOpen && (
+          <button
+            ref={mobileCloseRef}
+            aria-label="메뉴 닫기"
+            className="icon-button mobile-sidebar-close"
+            onClick={onClose}
+            type="button"
+          >
+            <span aria-hidden="true">×</span>
+          </button>
+        )}
         <div style={{ padding: '0 20px', marginBottom: '20px' }}>
           <Link
             to="/transcribe"
@@ -63,7 +92,7 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
             onClick={isMobile ? onClose : undefined}
             style={{ display: 'block', color: 'inherit', textDecoration: 'none' }}
           >
-            <h1 style={{
+            <p style={{
               fontSize: '1.1rem',
               fontWeight: 700,
               background: 'var(--gradient)',
@@ -72,7 +101,7 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
               lineHeight: 1.3,
             }}>
               프리뷰<br />자막 머신
-            </h1>
+            </p>
             <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
               with editor
             </p>
@@ -113,7 +142,7 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
           )}
         </div>
 
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '0 12px' }}>
+        <nav aria-label="작업 메뉴" style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '0 12px' }}>
           <NavLink to="/transcribe" style={navLinkStyle} onClick={isMobile ? onClose : undefined}>
             🎬 프리뷰_자막
           </NavLink>
@@ -128,6 +157,7 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
         <div style={{ marginTop: 'auto', padding: '0 12px' }}>
           {user && (
             <button
+              type="button"
               onClick={() => { navigate('/settings'); if (isMobile) onClose(); }}
               style={{
                 width: '100%',
@@ -148,7 +178,8 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
           )}
           {user ? (
             <button
-              onClick={logout}
+              type="button"
+              onClick={() => { logout(); if (isMobile) onClose(); }}
               style={{
                 width: '100%',
                 padding: '10px',
@@ -166,7 +197,8 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
             </button>
           ) : (
             <button
-              onClick={() => setShowAuth(true)}
+              type="button"
+              onClick={() => { setShowAuth(true); if (isMobile) onClose(); }}
               style={{
                 width: '100%',
                 padding: '10px',
@@ -207,7 +239,11 @@ export default function Sidebar({ isOpen, isMobile, onClose }) {
         </div>
       </aside>
 
-      <AuthModal isOpen={showAuth} onClose={() => setShowAuth(false)} />
+      <AuthModal
+        isOpen={showAuth}
+        onClose={() => setShowAuth(false)}
+        restoreFocusRef={isMobile ? triggerRef : undefined}
+      />
     </>
   );
 }
