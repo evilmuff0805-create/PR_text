@@ -38,6 +38,26 @@ export async function findCompletedCaptionIdeaRequest(requestId, userId) {
   return data || null;
 }
 
+export async function listCaptionIdeaHistory(userId, { page, limit }) {
+  const from = (page - 1) * limit;
+  const to = from + limit - 1;
+
+  const { data, error, count } = await supabaseAdmin
+    .from('caption_idea_requests')
+    .select('id, mode, ideas, completed_at', { count: 'exact' })
+    .eq('user_id', userId)
+    .not('ideas', 'is', null)
+    .gt('ideas_expires_at', new Date().toISOString())
+    .order('completed_at', { ascending: false })
+    .range(from, to);
+
+  if (error) throw new Error(error.message);
+  return {
+    items: data || [],
+    total: Number(count || 0),
+  };
+}
+
 export async function completeCaptionIdeaRequest({ requestId, userId, mode, generation }) {
   const { data, error } = await supabaseAdmin.rpc('complete_caption_idea_request', {
     p_request_id: requestId,
