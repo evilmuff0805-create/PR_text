@@ -1,3 +1,11 @@
 User-agent: *
 Allow: /
+Disallow: /auth/
+Disallow: /payment/fail
+Disallow: /payment/success
+Disallow: /redownload
+Disallow: /reset-password
+Disallow: /result
+Disallow: /settings
+Disallow: /usage
 Sitemap: https://pr-text.com/sitemap.xml
