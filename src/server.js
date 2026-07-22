@@ -9,8 +9,10 @@ import transcribeRouter from './routes/transcribe.js';
 import transcriptionJobsRouter from './routes/transcription-jobs.js';
 import downloadRouter from './routes/download.js';
 import translateRouter from './routes/translate.js';
+import captionIdeasRouter from './routes/caption-ideas.js';
 import { requestObservability, apiErrorHandler } from './middleware/observability.js';
 import { startDiarizationJobWorker } from './services/diarization-jobs.js';
+import { startCaptionIdeaMaintenance } from './services/caption-idea-store.js';
 import { validateTossKeyPair } from './services/toss-payments.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -98,6 +100,13 @@ const translateLimiter = rateLimit({
   handler: rateLimitHandler,
 });
 
+// 자막 아이디어 생성: IP당 분당 5회. 상태 조회에는 적용하지 않는다.
+const captionIdeasLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  handler: rateLimitHandler,
+});
+
 // /api/auth/reset-password: IP당 분당 3회
 const resetPasswordLimiter = rateLimit({
   windowMs: 60 * 1000,
@@ -155,6 +164,8 @@ app.use('/api/transcribe/jobs', generalLimiter, transcriptionJobsRouter);
 app.use('/api/transcribe', transcribeLimiter, transcribeRouter);
 app.use('/api/download', downloadLimiter, downloadRouter);
 app.use('/api/translate', translateLimiter, translateRouter);
+app.post('/api/caption-ideas', captionIdeasLimiter);
+app.use('/api/caption-ideas', generalLimiter, captionIdeasRouter);
 app.use(apiErrorHandler);
 
 // Unknown API paths must not fall through to the SPA HTML fallback.
@@ -178,4 +189,5 @@ if (existsSync(distPath)) {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   startDiarizationJobWorker();
+  startCaptionIdeaMaintenance();
 });

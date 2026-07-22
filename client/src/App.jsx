@@ -14,6 +14,7 @@ import UsagePage from './pages/UsagePage.jsx';
 import RedownloadPage from './pages/RedownloadPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import PasswordResetPage from './pages/PasswordResetPage.jsx';
+import CaptionIdeasPage from './pages/CaptionIdeasPage.jsx';
 
 function App() {
   return (
@@ -21,6 +22,7 @@ function App() {
       <Routes>
         <Route path="/" element={<IntroPage />} />
         <Route path="/transcribe" element={<HomePage />} />
+        <Route path="/caption-ideas" element={<CaptionIdeasPage />} />
         <Route path="/result" element={<ResultPage />} />
         <Route path="/intro" element={<Navigate to="/" replace />} />
         <Route path="/guide" element={<GuidePage />} />
