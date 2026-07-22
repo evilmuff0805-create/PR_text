@@ -21,6 +21,7 @@ test('caption ideas UI exposes the agreed five-use flow and accessible controls'
   const page = await read('client/src/pages/CaptionIdeasPage.jsx');
 
   assert.match(page, /maxLength=\{500\}/);
+  assert.match(page, /useState\('entertainment'\)/);
   assert.match(page, /role="radiogroup"/);
   assert.match(page, /role="radio"/);
   assert.match(page, /event\.key === 'ArrowRight'/);
