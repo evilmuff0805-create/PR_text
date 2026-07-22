@@ -87,6 +87,37 @@ export default function GuidePage() {
         ))}
       </section>
 
+      <section className="guide-ideas" aria-labelledby="guide-ideas-title">
+        <div className="guide-ideas__heading">
+          <div>
+            <p className="info-callout__label">CAPTION IDEAS</p>
+            <h2 id="guide-ideas-title">장면에 어울리는 짧은 자막이 필요할 때</h2>
+            <p>장면이나 말자막을 입력하면 선택한 유형에 맞는 서로 다른 후보 3개를 제안합니다.</p>
+          </div>
+          <Link className="button button--primary" to="/caption-ideas">아이디어 만들기</Link>
+        </div>
+
+        <dl className="guide-idea-modes">
+          <div>
+            <dt>예능</dt>
+            <dd>댓글형 구어체와 가벼운 반전으로 재미를 살립니다.</dd>
+          </div>
+          <div>
+            <dt>상황</dt>
+            <dd>화면에서 보이는 사실을 짧고 명확하게 정리합니다.</dd>
+          </div>
+          <div>
+            <dt>감성</dt>
+            <dd>장면의 감정을 따뜻하고 여운 있는 문장으로 표현합니다.</dd>
+          </div>
+        </dl>
+
+        <p className="guide-ideas__policy">
+          성공한 생성 5회당 변환 시간 1분이 차감됩니다. 실패한 생성은 차감하지 않으며,
+          완성된 후보는 사용 내역에서 최근 90일 동안 다시 확인하고 복사할 수 있습니다.
+        </p>
+      </section>
+
       <section className="info-callout" aria-labelledby="guide-credit-title">
         <div>
           <p className="info-callout__label">CREDIT CHECK</p>

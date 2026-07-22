@@ -193,6 +193,10 @@ export default function PaymentPage() {
           <strong>음성 길이 1분당 1분 차감</strong>
         </div>
         <div>
+          <span>자막 아이디어</span>
+          <strong>성공 5회당 1분 차감 · 실패 무차감</strong>
+        </div>
+        <div>
           <span>가성비</span>
           <strong>{bestPlan.name} {Math.round(bestPlan.salePrice / bestPlan.credits).toLocaleString()}원/분</strong>
         </div>

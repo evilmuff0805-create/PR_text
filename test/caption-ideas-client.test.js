@@ -84,6 +84,25 @@ test('terms and privacy disclose pack billing and 90-day result history retentio
   assert.match(usage, /action === 'caption_ideas'/);
 });
 
+test('public guidance consistently explains caption idea modes, billing, and history', async () => {
+  const [intro, guide, payment] = await Promise.all([
+    read('client/src/pages/IntroPage.jsx'),
+    read('client/src/pages/GuidePage.jsx'),
+    read('client/src/pages/PaymentPage.jsx'),
+  ]);
+
+  assert.match(intro, /예능, 상황, 감성/);
+  assert.match(intro, /자막 후보 3개/);
+  assert.match(guide, /to="\/caption-ideas"/);
+  assert.match(guide, /<dt>예능<\/dt>/);
+  assert.match(guide, /<dt>상황<\/dt>/);
+  assert.match(guide, /<dt>감성<\/dt>/);
+  assert.match(guide, /성공한 생성 5회당 변환 시간 1분/);
+  assert.match(guide, /실패한 생성은 차감하지 않으며/);
+  assert.match(guide, /최근 90일 동안 다시 확인하고 복사/);
+  assert.match(payment, /성공 5회당 1분 차감 · 실패 무차감/);
+});
+
 test('usage page exposes user-scoped caption idea history with copy controls', async () => {
   const [page, route, store] = await Promise.all([
     read('client/src/pages/UsagePage.jsx'),
