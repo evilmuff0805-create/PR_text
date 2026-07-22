@@ -17,6 +17,11 @@ const featureRows = [
     title: '작업에 맞는 파일로 끝냅니다',
     description: 'SRT, TXT, ASS를 지원해 영상 편집, 원고 정리, 스타일 자막 작업까지 하나의 흐름으로 이어집니다.',
   },
+  {
+    index: '04',
+    title: '장면에 맞는 자막을 제안합니다',
+    description: '장면이나 대사를 입력하면 예능, 상황, 감성의 결에 맞춘 서로 다른 짧은 자막 후보 3개를 제안합니다.',
+  },
 ];
 
 const workflow = [

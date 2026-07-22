@@ -1168,7 +1168,7 @@ textarea:focus-visible {
   border: 1px solid var(--border-color);
   border-radius: 8px;
   background: var(--bg-secondary);
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .payment-brief > div {
@@ -1819,6 +1819,84 @@ textarea:focus-visible {
 
 .info-callout .button {
   flex: 0 0 auto;
+}
+
+.guide-ideas {
+  margin-top: 52px;
+  padding: 34px 0;
+  border-top: 1px solid var(--border-strong);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.guide-ideas__heading {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 28px;
+}
+
+.guide-ideas__heading > div {
+  min-width: 0;
+}
+
+.guide-ideas__heading h2 {
+  margin-top: 6px;
+  color: var(--text-primary);
+  font-size: 1.3rem;
+  line-height: 1.4;
+}
+
+.guide-ideas__heading p:not(.info-callout__label),
+.guide-ideas__policy {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.7;
+  word-break: keep-all;
+}
+
+.guide-ideas__heading p:not(.info-callout__label) {
+  margin-top: 8px;
+}
+
+.guide-idea-modes {
+  display: grid;
+  margin-top: 28px;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.guide-idea-modes > div {
+  min-width: 0;
+  padding: 20px 24px 20px 0;
+  border-right: 1px solid var(--border-color);
+}
+
+.guide-idea-modes > div:not(:first-child) {
+  padding-left: 24px;
+}
+
+.guide-idea-modes > div:last-child {
+  padding-right: 0;
+  border-right: 0;
+}
+
+.guide-idea-modes dt {
+  color: var(--accent);
+  font-size: 0.86rem;
+  font-weight: 800;
+}
+
+.guide-idea-modes dd {
+  margin-top: 7px;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+  line-height: 1.65;
+  word-break: keep-all;
+}
+
+.guide-ideas__policy {
+  margin-top: 18px;
 }
 
 .support-contact {
@@ -4339,6 +4417,36 @@ textarea:focus-visible {
 
   .guide-step__summary {
     min-height: 0;
+  }
+
+  .guide-ideas {
+    margin-top: 38px;
+    padding: 28px 0;
+  }
+
+  .guide-ideas__heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 18px;
+  }
+
+  .guide-ideas__heading .button {
+    width: 100%;
+  }
+
+  .guide-idea-modes {
+    grid-template-columns: 1fr;
+  }
+
+  .guide-idea-modes > div,
+  .guide-idea-modes > div:not(:first-child) {
+    padding: 16px 0;
+    border-right: 0;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .guide-idea-modes > div:last-child {
+    border-bottom: 0;
   }
 
   .info-callout {
