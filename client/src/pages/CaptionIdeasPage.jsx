@@ -209,7 +209,15 @@ export default function CaptionIdeasPage() {
         <p className="workspace-description">장면과 대사의 결을 살린 짧은 자막을 제안합니다.</p>
       </header>
 
-      <div className="caption-ideas-visual" aria-hidden="true" />
+      <div className="caption-ideas-visual">
+        <img
+          src="/caption-ideas-example.webp"
+          alt="밤 11시 야근 장면을 예능, 상황, 감성 자막으로 다르게 표현한 예시"
+          width="1600"
+          height="893"
+          decoding="async"
+        />
+      </div>
 
       <section className="caption-ideas-tool" aria-labelledby="caption-ideas-input-title">
         <div className="caption-ideas-field-heading">
