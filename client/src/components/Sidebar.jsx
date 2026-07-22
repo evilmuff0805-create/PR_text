@@ -146,6 +146,9 @@ export default function Sidebar({ isOpen, isMobile, onClose, triggerRef }) {
           <NavLink to="/transcribe" style={navLinkStyle} onClick={isMobile ? onClose : undefined}>
             🎬 프리뷰_자막
           </NavLink>
+          <NavLink to="/caption-ideas" style={navLinkStyle} onClick={isMobile ? onClose : undefined}>
+            💡 자막_아이디어
+          </NavLink>
           <NavLink to="/usage" style={navLinkStyle} onClick={isMobile ? onClose : undefined}>
             📊 사용 내역
           </NavLink>

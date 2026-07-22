@@ -7,10 +7,12 @@ import {
   safeAuthReturnPath,
 } from '../client/src/utils/auth-navigation.js';
 
-test('allows only the account settings page as an OAuth return path', () => {
+test('allows only approved application pages as OAuth return paths', () => {
   assert.equal(safeAuthReturnPath('/settings'), '/settings');
+  assert.equal(safeAuthReturnPath('/caption-ideas'), '/caption-ideas');
   assert.equal(safeAuthReturnPath('https://attacker.example'), '/');
   assert.equal(authReturnPathFromSearch('?next=%2Fsettings'), '/settings');
+  assert.equal(authReturnPathFromSearch('?next=%2Fcaption-ideas'), '/caption-ideas');
   assert.equal(authReturnPathFromSearch('?next=%2F%2Fattacker.example'), '/');
 });
 

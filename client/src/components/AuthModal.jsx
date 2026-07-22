@@ -2,7 +2,7 @@ import { useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useDialogAccessibility } from '../utils/use-dialog-accessibility.js';
 
-export default function AuthModal({ isOpen, onClose, restoreFocusRef }) {
+export default function AuthModal({ isOpen, onClose, restoreFocusRef, returnPath = '/' }) {
   const { login, signup, loginWithGoogle } = useAuth();
   const [mode, setMode] = useState('login'); // 'login' | 'signup' | 'reset'
   const [email, setEmail] = useState('');
@@ -134,7 +134,7 @@ export default function AuthModal({ isOpen, onClose, restoreFocusRef }) {
         </h2>
 
         <form onSubmit={handleSubmit}>
-          <button type="button" onClick={() => loginWithGoogle()} style={{
+          <button type="button" onClick={() => loginWithGoogle(returnPath)} style={{
             width: '100%', padding: '12px', marginBottom: '16px',
             background: '#fff', color: '#333', border: '1px solid #ddd',
             borderRadius: '8px', fontSize: '0.9rem', fontWeight: 600,

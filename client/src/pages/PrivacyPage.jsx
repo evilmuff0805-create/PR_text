@@ -30,7 +30,7 @@ export default function PrivacyPage() {
           </div>
           <Link className="button button--secondary" to="/support">개인정보 문의</Link>
         </div>
-        <p className="info-heading__meta">시행일: 2026년 7월 16일</p>
+        <p className="info-heading__meta">시행일: 2026년 7월 22일</p>
       </header>
 
       <div className="document-layout">
@@ -53,6 +53,7 @@ export default function PrivacyPage() {
               <li>회원 정보: 이메일 주소, 서비스 사용자 식별자</li>
               <li>변환 정보: 업로드 파일명, 길이, 언어 설정, 변환 텍스트 및 세그먼트</li>
               <li>이용 정보: 사용 크레딧, 변환 횟수와 시간, 이용 시각</li>
+              <li>자막 아이디어 정보: 선택한 유형, 생성 결과, 모델 사용량과 처리 시각</li>
               <li>결제 정보: 주문 번호, 상품명, 결제 금액, 결제 상태 및 결제 식별값</li>
               <li>
                 무료 혜택 중복 지급 방지 정보: 이메일 또는 OAuth 제공자 식별자의 원문을 저장하지 않는
@@ -71,6 +72,11 @@ export default function PrivacyPage() {
               <li>
                 업로드한 원본 음성 파일은 변환 처리에만 사용합니다. 서비스 데이터베이스에 영구 저장하지 않으며,
                 변환 과정에서 생긴 임시 파일은 처리가 끝난 뒤 삭제합니다.
+              </li>
+              <li>
+                자막 아이디어에 입력한 장면과 대사는 서비스 데이터베이스에 저장하지 않습니다. 생성 결과 3개는
+                네트워크 오류 시 같은 요청을 복구하기 위해 24시간 보관한 뒤 삭제하며, 요청 식별값과 모델 사용량 등
+                원문을 포함하지 않는 운영 기록은 안정적인 서비스 제공을 위해 최대 90일 보관합니다.
               </li>
               <li>
                 회원 정보, 변환 이력, 이용 및 결제 기록은 서비스 제공과 분쟁 대응에 필요한 기간 동안 보관하며,
@@ -95,12 +101,13 @@ export default function PrivacyPage() {
             </p>
             <ul>
               <li>Supabase: 회원 인증, 계정 및 서비스 이용 기록 저장</li>
-              <li>OpenAI: 업로드 음성의 텍스트 변환 및 화자 구분 처리</li>
+              <li>OpenAI: 업로드 음성의 텍스트 변환, 화자 구분 및 자막 아이디어 생성 처리</li>
               <li>Toss Payments: 결제 승인 및 결제 결과 확인</li>
             </ul>
             <p>
               외부 서비스는 각 서비스 제공에 필요한 범위에서만 정보를 처리합니다. 결제수단의 상세 정보는
-              PR_text 서버에 저장하지 않습니다.
+              PR_text 서버에 저장하지 않습니다. 자막 아이디어 입력문은 생성 처리를 위해 OpenAI에 전송되며,
+              외부 서비스에서의 처리는 해당 제공자의 데이터 처리 기준을 따릅니다.
             </p>
           </section>
 

@@ -236,6 +236,8 @@ textarea:focus-visible {
   inset: 0 0 auto;
   z-index: 150;
   display: flex;
+  width: 100%;
+  min-width: 0;
   flex-direction: column;
   border-bottom: 1px solid var(--border-color);
   background: rgba(21, 25, 34, 0.94);
@@ -246,12 +248,15 @@ textarea:focus-visible {
 .mobile-header__brand-row {
   display: flex;
   height: 44px;
+  min-width: 0;
+  flex: 0 0 44px;
   align-items: center;
   gap: 10px;
   padding: 0 12px;
 }
 
 .mobile-menu-button {
+  flex: 0 0 36px;
   font-size: 1.25rem;
 }
 
@@ -266,26 +271,35 @@ textarea:focus-visible {
 }
 
 .mobile-brand {
+  min-width: 0;
+  overflow: hidden;
   color: var(--text-primary);
   font-size: 0.95rem;
   font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .mobile-tabs {
   display: flex;
   height: 48px;
+  width: 100%;
+  min-width: 0;
+  flex: 0 0 48px;
   align-items: stretch;
   border-top: 1px solid var(--border-color);
 }
 
 .mobile-tab {
   display: flex;
+  min-width: 0;
   flex: 1;
   align-items: center;
   justify-content: center;
   border-bottom: 2px solid transparent;
   color: var(--text-secondary);
   font-size: 0.84rem;
+  white-space: nowrap;
 }
 
 .mobile-tab.is-active {
@@ -3669,6 +3683,231 @@ textarea:focus-visible {
   width: 100%;
 }
 
+/* Caption ideas workspace */
+
+.caption-ideas-page {
+  width: min(100%, 760px);
+  margin: 0 auto;
+  padding: 36px 0 56px;
+}
+
+.caption-ideas-visual {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  margin-bottom: 28px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: #11161e;
+}
+
+.caption-ideas-tool {
+  padding: 26px 0 28px;
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.caption-ideas-field-heading,
+.caption-ideas-results-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.caption-ideas-field-heading {
+  margin-bottom: 10px;
+}
+
+.caption-ideas-field-heading label {
+  color: var(--text-primary);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.caption-ideas-field-heading span,
+.caption-ideas-results-heading > span {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.caption-ideas-tool textarea {
+  display: block;
+  width: 100%;
+  min-height: 142px;
+  resize: vertical;
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.92rem;
+  line-height: 1.7;
+}
+
+.caption-ideas-tool textarea::placeholder {
+  color: var(--text-muted);
+}
+
+.caption-ideas-mode {
+  display: grid;
+  width: 100%;
+  height: 46px;
+  margin-top: 16px;
+  padding: 3px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius);
+  background: #10151c;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.caption-ideas-mode button {
+  min-width: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.caption-ideas-mode button.is-active {
+  background: var(--bg-tertiary);
+  color: var(--accent);
+}
+
+.caption-ideas-mode button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.caption-ideas-generate {
+  width: 100%;
+  margin-top: 16px;
+}
+
+.caption-ideas-balance {
+  margin-top: 12px;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-align: center;
+}
+
+.caption-ideas-balance strong {
+  color: var(--cyan);
+  font-family: var(--font-mono);
+}
+
+.caption-ideas-error {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--danger);
+  background: rgba(255, 107, 114, 0.07);
+  color: #ff858b;
+  font-size: 0.82rem;
+}
+
+.caption-ideas-results {
+  margin-top: 34px;
+}
+
+.caption-ideas-results-heading {
+  margin-bottom: 14px;
+}
+
+.caption-ideas-results-heading .workspace-kicker {
+  margin-bottom: 3px;
+}
+
+.caption-ideas-results-heading h2 {
+  font-size: 1.2rem;
+}
+
+.caption-ideas-results ol {
+  border-top: 1px solid var(--border-color);
+  list-style: none;
+}
+
+.caption-ideas-results li {
+  display: grid;
+  min-height: 72px;
+  padding: 14px 2px;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--border-color);
+  grid-template-columns: 38px minmax(0, 1fr) 52px;
+}
+
+.caption-ideas-number {
+  color: var(--cyan);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.caption-ideas-results li strong {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 1rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.caption-ideas-copy {
+  min-width: 52px;
+  min-height: 38px;
+  padding: 0 8px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.76rem;
+}
+
+.caption-ideas-copy:hover {
+  border-color: var(--border-strong);
+  color: var(--text-primary);
+}
+
+.caption-ideas-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  padding: 20px;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+}
+
+.caption-ideas-dialog {
+  width: min(100%, 460px);
+  padding: 28px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--border-radius);
+  background: var(--bg-secondary);
+}
+
+.caption-ideas-dialog h2 {
+  font-size: 1.28rem;
+  line-height: 1.4;
+}
+
+.caption-ideas-dialog > p:not(.workspace-kicker) {
+  margin-top: 12px;
+  color: var(--text-secondary);
+  font-size: 0.88rem;
+  line-height: 1.7;
+}
+
+.caption-ideas-dialog-actions {
+  display: flex;
+  margin-top: 24px;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 @keyframes stage-enter {
   from {
     opacity: 0;
@@ -3942,6 +4181,27 @@ textarea:focus-visible {
 
   .workspace-title {
     font-size: 1.62rem;
+  }
+
+  .caption-ideas-page {
+    padding: 24px 0 40px;
+  }
+
+  .caption-ideas-visual {
+    margin-bottom: 22px;
+  }
+
+  .caption-ideas-tool {
+    padding-top: 22px;
+  }
+
+  .caption-ideas-results li {
+    gap: 10px;
+    grid-template-columns: 30px minmax(0, 1fr) 50px;
+  }
+
+  .caption-ideas-dialog {
+    padding: 24px;
   }
 
   .info-page {
@@ -4403,6 +4663,18 @@ textarea:focus-visible {
 }
 
 @media (max-width: 430px) {
+  .caption-ideas-dialog-actions {
+    flex-direction: column-reverse;
+  }
+
+  .caption-ideas-dialog-actions .button {
+    width: 100%;
+  }
+
+  .caption-ideas-results li strong {
+    font-size: 0.92rem;
+  }
+
   .landing-brand__mark {
     width: 28px;
     height: 28px;
