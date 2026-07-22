@@ -2989,6 +2989,89 @@ textarea:focus-visible {
   opacity: 0.55;
 }
 
+.caption-history-description {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 0.76rem;
+  line-height: 1.6;
+}
+
+.caption-history-list {
+  display: grid;
+  margin-top: 14px;
+  gap: 12px;
+}
+
+.caption-history-item {
+  overflow: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.caption-history-item__header {
+  display: flex;
+  min-height: 48px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-color);
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.caption-history-item__header time {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+}
+
+.caption-history-mode {
+  padding: 4px 9px;
+  border: 1px solid rgba(61, 242, 116, 0.24);
+  border-radius: 999px;
+  background: rgba(61, 242, 116, 0.08);
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.caption-history-item ol {
+  list-style: none;
+}
+
+.caption-history-item li {
+  display: grid;
+  min-height: 54px;
+  padding: 10px 16px;
+  align-items: center;
+  gap: 12px;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+}
+
+.caption-history-item li + li {
+  border-top: 1px solid var(--border-color);
+}
+
+.caption-history-number {
+  color: var(--accent);
+  font-family: var(--font-mono);
+  font-size: 0.67rem;
+  font-weight: 700;
+}
+
+.caption-history-item li strong {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 0.86rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.caption-history-copy {
+  min-width: 54px;
+}
+
 .usage-mobile-label {
   display: none;
 }
@@ -4579,6 +4662,20 @@ textarea:focus-visible {
   .usage-downloads button {
     min-height: 40px;
     font-size: 0.72rem;
+  }
+
+  .caption-history-item__header {
+    padding: 11px 14px;
+  }
+
+  .caption-history-item li {
+    padding: 12px 14px;
+    gap: 10px;
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+  }
+
+  .caption-history-copy {
+    min-width: 48px;
   }
 
   .result-heading {

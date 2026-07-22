@@ -9,6 +9,7 @@ import {
   completeCaptionIdeaRequest,
   findCompletedCaptionIdeaRequest,
   getCaptionIdeaStatus,
+  listCaptionIdeaHistory,
 } from '../services/caption-idea-store.js';
 
 const router = Router();
@@ -48,6 +49,32 @@ router.get('/status', featureEnabled, authMiddleware, async (req, res) => {
       message: error.message,
     }));
     return res.status(503).json({ error: '자막 아이디어 사용 정보를 확인하지 못했습니다.' });
+  }
+});
+
+router.get('/history', featureEnabled, authMiddleware, async (req, res) => {
+  const page = Number(req.query.page || 1);
+  const limit = Number(req.query.limit || 20);
+
+  if (!Number.isInteger(page) || page < 1 || !Number.isInteger(limit) || limit < 1 || limit > 50) {
+    return res.status(400).json({ error: '조회 범위가 올바르지 않습니다.' });
+  }
+
+  try {
+    const history = await listCaptionIdeaHistory(req.user.id, { page, limit });
+    return res.json({
+      ...history,
+      page,
+      limit,
+      retentionDays: 90,
+    });
+  } catch (error) {
+    console.error('[caption_ideas.history_failed]', JSON.stringify({
+      requestId: req.requestId,
+      userId: req.user.id,
+      message: error.message,
+    }));
+    return res.status(503).json({ error: '자막 아이디어 내역을 확인하지 못했습니다.' });
   }
 });
 
