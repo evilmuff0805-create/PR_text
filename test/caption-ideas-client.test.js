@@ -36,6 +36,21 @@ test('caption ideas UI exposes the agreed five-use flow and accessible controls'
   assert.match(page, /generationError\.status === 409/);
 });
 
+test('caption ideas page shows the optimized three-mode example image', async () => {
+  const [page, asset] = await Promise.all([
+    read('client/src/pages/CaptionIdeasPage.jsx'),
+    readFile(new URL('../client/public/caption-ideas-example.webp', import.meta.url)),
+  ]);
+
+  assert.match(page, /src="\/caption-ideas-example\.webp"/);
+  assert.match(page, /alt="밤 11시 야근 장면을 예능, 상황, 감성 자막으로 다르게 표현한 예시"/);
+  assert.match(page, /width="1600"/);
+  assert.match(page, /height="893"/);
+  assert.equal(asset.subarray(0, 4).toString('ascii'), 'RIFF');
+  assert.equal(asset.subarray(8, 12).toString('ascii'), 'WEBP');
+  assert.ok(asset.byteLength < 100_000, `example image is too large: ${asset.byteLength} bytes`);
+});
+
 test('server rate limits only generation requests and completes billing after model success', async () => {
   const [server, route, store] = await Promise.all([
     read('src/server.js'),
