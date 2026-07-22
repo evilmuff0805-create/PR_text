@@ -31,6 +31,20 @@ test('Luna caption request requires three short structured ideas without samplin
   assert.match(request.messages[1].content, /<scene_text>/);
 });
 
+test('entertainment mode uses a distinct community-style rhythm while situation stays factual', () => {
+  const entertainment = buildCaptionIdeaRequest('촬영 시작과 동시에 대사를 잊었다', 'entertainment');
+  const situation = buildCaptionIdeaRequest('촬영 시작과 동시에 대사를 잊었다', 'situation');
+  const entertainmentPrompt = entertainment.messages[0].content;
+  const situationPrompt = situation.messages[0].content;
+
+  assert.match(entertainmentPrompt, /온라인 댓글처럼/);
+  assert.match(entertainmentPrompt, /가벼운 과장, 엉뚱한 비유, 반전, 자조/);
+  assert.match(entertainmentPrompt, /세 후보 중 최소 두 개에는 웃음 장치/);
+  assert.match(entertainmentPrompt, /특정 커뮤니티만 아는 은어/);
+  assert.match(situationPrompt, /댓글체, 밈, 과장, 농담과 감정 해석을 사용하지 말고/);
+  assert.doesNotMatch(situationPrompt, /세 후보 중 최소 두 개에는 웃음 장치/);
+});
+
 test('caption result validation rejects duplicates and ideas over 28 characters', () => {
   assert.deepEqual(normalizeCaptionIdeas(['첫 번째 자막', '두 번째 자막', '세 번째 자막']), [
     '첫 번째 자막',
