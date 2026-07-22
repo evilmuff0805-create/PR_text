@@ -6,6 +6,10 @@ const migrationUrl = new URL(
   '../supabase/migrations/20260722090000_caption_ideas.sql',
   import.meta.url,
 );
+const historyMigrationUrl = new URL(
+  '../supabase/migrations/20260722100000_caption_idea_history.sql',
+  import.meta.url,
+);
 
 test('caption idea tables are private service-only records with cascading account deletion', async () => {
   const sql = await readFile(migrationUrl, 'utf8');
@@ -55,4 +59,14 @@ test('temporary ideas are cleared after 24 hours and request metrics after 90 da
   assert.match(sql, /ideas_expires_at timestamptz not null default \(now\(\) \+ interval '24 hours'\)/i);
   assert.match(sql, /set ideas = null[\s\S]*ideas_expires_at <= now\(\)/i);
   assert.match(sql, /created_at < now\(\) - interval '90 days'/i);
+});
+
+test('caption idea history extends available results to 90 days without changing table access', async () => {
+  const sql = await readFile(historyMigrationUrl, 'utf8');
+
+  assert.match(sql, /alter column ideas_expires_at set default \(now\(\) \+ interval '90 days'\)/i);
+  assert.match(sql, /set ideas_expires_at = created_at \+ interval '90 days'/i);
+  assert.match(sql, /where ideas is not null/i);
+  assert.doesNotMatch(sql, /grant .* (anon|authenticated)/i);
+  assert.doesNotMatch(sql, /disable row level security/i);
 });

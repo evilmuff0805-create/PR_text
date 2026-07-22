@@ -55,7 +55,7 @@ test('server rate limits only generation requests and completes billing after mo
   assert.doesNotMatch(route, /console\.[a-z]+\([^\n]*(req\.body|normalizedText|generation\.ideas)/i);
 });
 
-test('terms and privacy disclose pack billing and temporary result retention', async () => {
+test('terms and privacy disclose pack billing and 90-day result history retention', async () => {
   const [terms, privacy, usage] = await Promise.all([
     read('client/src/pages/TermsPage.jsx'),
     read('client/src/pages/PrivacyPage.jsx'),
@@ -65,6 +65,23 @@ test('terms and privacy disclose pack billing and temporary result retention', a
   assert.match(terms, /생성 5회를 한 묶음/);
   assert.match(terms, /실패한[\s\S]*차감하지 않습니다/);
   assert.match(privacy, /서비스 데이터베이스에 저장하지 않습니다/);
-  assert.match(privacy, /24시간 보관한 뒤 삭제/);
+  assert.match(privacy, /생성 결과 3개는[\s\S]*최대 90일 보관한 뒤 삭제/);
   assert.match(usage, /action === 'caption_ideas'/);
+});
+
+test('usage page exposes user-scoped caption idea history with copy controls', async () => {
+  const [page, route, store] = await Promise.all([
+    read('client/src/pages/UsagePage.jsx'),
+    read('src/routes/caption-ideas.js'),
+    read('src/services/caption-idea-store.js'),
+  ]);
+
+  assert.match(route, /router\.get\('\/history', featureEnabled, authMiddleware/);
+  assert.match(route, /listCaptionIdeaHistory\(req\.user\.id/);
+  assert.match(store, /\.eq\('user_id', userId\)/);
+  assert.match(store, /\.gt\('ideas_expires_at'/);
+  assert.match(page, /자막 아이디어 내역/);
+  assert.match(page, /최근 90일 동안 생성한/);
+  assert.match(page, /navigator\.clipboard\.writeText\(idea\)/);
+  assert.match(page, /getCaptionModeLabel/);
 });

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
 const LIMIT = 20;
@@ -10,17 +10,46 @@ export default function UsagePage() {
   const [usagePage, setUsagePage] = useState(1);
   const [loadingMoreUsage, setLoadingMoreUsage] = useState(false);
 
+  const [captionIdeas, setCaptionIdeas] = useState([]);
+  const [captionIdeasTotal, setCaptionIdeasTotal] = useState(0);
+  const [captionIdeasPage, setCaptionIdeasPage] = useState(1);
+  const [captionIdeasLoading, setCaptionIdeasLoading] = useState(true);
+  const [loadingMoreCaptionIdeas, setLoadingMoreCaptionIdeas] = useState(false);
+  const [captionIdeasError, setCaptionIdeasError] = useState(null);
+  const [copiedIdeaKey, setCopiedIdeaKey] = useState(null);
+  const [announcement, setAnnouncement] = useState('');
+  const copyTimerRef = useRef(null);
+  const activeTokenRef = useRef(token);
+  activeTokenRef.current = token;
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    setUsageLogs([]);
+    setUsageTotal(0);
+    setUsagePage(1);
+    setCaptionIdeas([]);
+    setCaptionIdeasTotal(0);
+    setCaptionIdeasPage(1);
+    setError(null);
+    setCaptionIdeasError(null);
+    setCopiedIdeaKey(null);
+    setAnnouncement('');
+
     if (!token) {
       setLoading(false);
+      setCaptionIdeasLoading(false);
       return;
     }
 
+    setLoading(true);
+    setCaptionIdeasLoading(true);
+    const controller = new AbortController();
+
     fetch(`/api/auth/usage-logs?page=1&limit=${LIMIT}&type=usage`, {
       headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
     })
       .then((r) => {
         if (!r.ok) throw new Error(`서버 오류 (${r.status})`);
@@ -31,8 +60,37 @@ export default function UsagePage() {
         setUsageLogs(data.usageLogs || []);
         setUsageTotal(data.usageTotal || 0);
       })
-      .catch((err) => setError(err.message))
-      .finally(() => setLoading(false));
+      .catch((err) => {
+        if (err.name !== 'AbortError') setError(err.message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+
+    fetch(`/api/caption-ideas/history?page=1&limit=${LIMIT}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      signal: controller.signal,
+    })
+      .then((r) => {
+        if (!r.ok) throw new Error(`서버 오류 (${r.status})`);
+        return r.json();
+      })
+      .then((data) => {
+        if (data.error) throw new Error(data.error);
+        setCaptionIdeas(data.items || []);
+        setCaptionIdeasTotal(data.total || 0);
+      })
+      .catch((err) => {
+        if (err.name !== 'AbortError') setCaptionIdeasError(err.message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setCaptionIdeasLoading(false);
+      });
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(copyTimerRef.current);
+    };
   }, [token]);
 
   async function loadMoreUsage() {
@@ -44,6 +102,7 @@ export default function UsagePage() {
       });
       if (!r.ok) throw new Error(`서버 오류 (${r.status})`);
       const data = await r.json();
+      if (activeTokenRef.current !== token) return;
       setUsageLogs((prev) => [...prev, ...(data.usageLogs || [])]);
       setUsageTotal(data.usageTotal || 0);
       setUsagePage(nextPage);
@@ -51,6 +110,41 @@ export default function UsagePage() {
       alert(err.message);
     } finally {
       setLoadingMoreUsage(false);
+    }
+  }
+
+  async function loadMoreCaptionIdeas() {
+    setLoadingMoreCaptionIdeas(true);
+    setCaptionIdeasError(null);
+    const nextPage = captionIdeasPage + 1;
+    try {
+      const response = await fetch(`/api/caption-ideas/history?page=${nextPage}&limit=${LIMIT}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error(`서버 오류 (${response.status})`);
+      const data = await response.json();
+      if (data.error) throw new Error(data.error);
+      if (activeTokenRef.current !== token) return;
+      setCaptionIdeas((previous) => [...previous, ...(data.items || [])]);
+      setCaptionIdeasTotal(data.total || 0);
+      setCaptionIdeasPage(nextPage);
+    } catch (err) {
+      setCaptionIdeasError(err.message);
+    } finally {
+      setLoadingMoreCaptionIdeas(false);
+    }
+  }
+
+  async function copyCaptionIdea(idea, itemId, index) {
+    const key = `${itemId}-${index}`;
+    try {
+      await navigator.clipboard.writeText(idea);
+      setCopiedIdeaKey(key);
+      setAnnouncement(`${index + 1}번 자막을 복사했습니다.`);
+      window.clearTimeout(copyTimerRef.current);
+      copyTimerRef.current = window.setTimeout(() => setCopiedIdeaKey(null), 1600);
+    } catch {
+      setCaptionIdeasError('클립보드에 복사하지 못했습니다.');
     }
   }
 
@@ -159,10 +253,92 @@ export default function UsagePage() {
             )}
           </section>
 
+          <section className="usage-section" aria-labelledby="caption-idea-history-title">
+            <div className="usage-section__heading">
+              <div>
+                <p className="usage-section__kicker">CAPTION IDEAS</p>
+                <h2 id="caption-idea-history-title">자막 아이디어 내역</h2>
+              </div>
+              <span>{captionIdeasTotal}건</span>
+            </div>
+            <p className="caption-history-description">
+              최근 90일 동안 생성한 예능·상황·감성 자막 추천을 다시 확인할 수 있습니다.
+            </p>
+
+            {captionIdeasLoading && (
+              <p className="usage-state usage-state--panel" role="status">자막 아이디어 내역을 불러오는 중...</p>
+            )}
+
+            {!captionIdeasLoading && captionIdeasError && (
+              <p className="usage-state usage-state--error usage-state--panel" role="alert">{captionIdeasError}</p>
+            )}
+
+            {!captionIdeasLoading && !captionIdeasError && captionIdeas.length === 0 && (
+              <p className="usage-state usage-state--panel">생성한 자막 아이디어가 없습니다.</p>
+            )}
+
+            {!captionIdeasLoading && captionIdeas.length > 0 && (
+              <>
+                <div className="caption-history-list">
+                  {captionIdeas.map((item) => (
+                    <article className="caption-history-item" key={item.id}>
+                      <header className="caption-history-item__header">
+                        <time dateTime={item.completed_at}>{formatDate(item.completed_at)}</time>
+                        <span className="caption-history-mode">{getCaptionModeLabel(item.mode)}</span>
+                      </header>
+                      <ol>
+                        {(item.ideas || []).map((idea, index) => {
+                          const copyKey = `${item.id}-${index}`;
+                          return (
+                            <li key={copyKey}>
+                              <span className="caption-history-number">{String(index + 1).padStart(2, '0')}</span>
+                              <strong>{idea}</strong>
+                              <button
+                                className="caption-ideas-copy caption-history-copy"
+                                type="button"
+                                aria-label={`${index + 1}번 자막 복사`}
+                                title={`${index + 1}번 자막 복사`}
+                                onClick={() => copyCaptionIdea(idea, item.id, index)}
+                              >
+                                {copiedIdeaKey === copyKey ? '완료' : '복사'}
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ol>
+                    </article>
+                  ))}
+                </div>
+
+                {captionIdeas.length < captionIdeasTotal && (
+                  <button
+                    className="usage-load-more"
+                    type="button"
+                    onClick={loadMoreCaptionIdeas}
+                    disabled={loadingMoreCaptionIdeas}
+                  >
+                    {loadingMoreCaptionIdeas
+                      ? '불러오는 중...'
+                      : `더 보기 (${captionIdeas.length} / ${captionIdeasTotal})`}
+                  </button>
+                )}
+              </>
+            )}
+
+            <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
+          </section>
+
         </div>
       )}
     </div>
   );
+}
+
+function getCaptionModeLabel(mode) {
+  if (mode === 'entertainment') return '예능';
+  if (mode === 'situation') return '상황';
+  if (mode === 'emotion') return '감성';
+  return '자막';
 }
 
 function getUsageActionLabel(action) {
