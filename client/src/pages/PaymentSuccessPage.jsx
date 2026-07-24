@@ -81,14 +81,14 @@ export default function PaymentSuccessPage() {
         {status === 'processing' && (
           <>
             <p className="payment-status-card__icon" aria-hidden="true">...</p>
-            <h2>결제 처리 중</h2>
+            <h1>결제 처리 중</h1>
             <p>{message}</p>
           </>
         )}
         {status === 'success' && (
           <>
             <p className="payment-status-card__icon payment-status-card__icon--success" aria-hidden="true">OK</p>
-            <h2 className="payment-status-card__title--success">충전 완료</h2>
+            <h1 className="payment-status-card__title--success">충전 완료</h1>
             <p>{message}</p>
             <p className="payment-status-card__note">
               {countdown}초 후 자동으로 이동합니다...
@@ -101,7 +101,7 @@ export default function PaymentSuccessPage() {
         {status === 'error' && (
           <>
             <p className="payment-status-card__icon payment-status-card__icon--error" aria-hidden="true">!</p>
-            <h2 className="payment-status-card__title--error">결제 실패</h2>
+            <h1 className="payment-status-card__title--error">결제 실패</h1>
             <p>{message}</p>
             <button className="gradient-btn payment-status-card__button" onClick={() => navigate('/payment')} type="button">
               다시 시도
@@ -111,7 +111,7 @@ export default function PaymentSuccessPage() {
         {status === 'retry' && (
           <>
             <p className="payment-status-card__icon payment-status-card__icon--warn" aria-hidden="true">!</p>
-            <h2 className="payment-status-card__title--warn">결제 확인 필요</h2>
+            <h1 className="payment-status-card__title--warn">결제 확인 필요</h1>
             <p>{message}</p>
             <button className="gradient-btn payment-status-card__button" onClick={() => confirmRef.current?.()} type="button">
               결제 다시 확인

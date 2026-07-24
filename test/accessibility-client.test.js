@@ -86,3 +86,25 @@ test('muted text meets normal-text contrast on shared dark surfaces', () => {
     assert.ok(contrastRatio(muted, background) >= 4.5);
   }
 });
+
+test('payment pages keep a single top-level heading and touch targets stay usable', async () => {
+  const [payment, paymentSuccess, paymentFail, styles] = await Promise.all([
+    clientFile('pages/PaymentPage.jsx'),
+    clientFile('pages/PaymentSuccessPage.jsx'),
+    clientFile('pages/PaymentFailPage.jsx'),
+    clientFile('global.css'),
+  ]);
+
+  assert.match(payment, /<h1 id="payment-title"/);
+  assert.match(payment, /<h2>\{plan\.name\}<\/h2>/);
+  assert.match(payment, /<h2 id="payment-orders-title">/);
+  assert.doesNotMatch(payment, /<h3/);
+  assert.doesNotMatch(paymentSuccess, /<h2/);
+  assert.doesNotMatch(paymentFail, /<h2/);
+  assert.match(paymentSuccess, /<h1>결제 처리 중<\/h1>/);
+  assert.match(paymentFail, /<h1 className="payment-status-card__title--error">/);
+  assert.match(paymentFail, /role="alert"/);
+  assert.match(paymentFail, /aria-atomic="true"/);
+  assert.match(styles, /\.icon-button\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/);
+  assert.match(styles, /\.mobile-menu-button\s*\{[\s\S]*?flex:\s*0 0 44px;/);
+});
