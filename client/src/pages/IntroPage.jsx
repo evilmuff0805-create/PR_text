@@ -203,8 +203,8 @@ export default function IntroPage() {
             자막에서 자유롭고 싶은 편집자라면?
           </p>
           <p className="landing-hero__description">
-            유튜브 편집부터 휴대폰 녹음까지, 빠르면 1분 안에 자막을 완성하세요.
-            원문의 말투를 살리고 맞춤법까지 다듬은 파일을 바로 편집하고 내려받을 수 있습니다.
+            유튜브 편집부터 휴대폰 녹음까지, 1분 안에 자막을 완성하세요.
+            정확도 95% 이상! 맞춤법 교정까지 된 파일을 바로 편집하고 다운로드 할 수 있습니다.
           </p>
 
           <div className="landing-hero__actions">
