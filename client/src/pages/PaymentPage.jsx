@@ -171,7 +171,7 @@ export default function PaymentPage() {
         <p className="workspace-kicker">PAYMENT</p>
         <div className="payment-heading__row">
           <div>
-            <h2 id="payment-title" className="workspace-title">변환 시간 충전</h2>
+            <h1 id="payment-title" className="workspace-title">변환 시간 충전</h1>
             <p className="workspace-description">
               결제한 시간은 분 단위로 차감되며, 충전된 시간은 만료되지 않습니다.
             </p>
@@ -225,7 +225,7 @@ export default function PaymentPage() {
               <span className={`payment-plan__mark payment-plan__mark--${plan.tone}`} aria-hidden="true" />
               <span>{plan.detail}</span>
             </div>
-            <h3>{plan.name}</h3>
+            <h2>{plan.name}</h2>
             <p className="payment-plan__summary">{plan.summary}</p>
             <div className="payment-plan__credits">
               <strong>{plan.credits.toLocaleString()}</strong>
@@ -265,7 +265,7 @@ export default function PaymentPage() {
           <div className="payment-orders__heading">
             <div>
               <p className="workspace-kicker">PAYMENT HISTORY</p>
-              <h3 id="payment-orders-title">최근 결제</h3>
+              <h2 id="payment-orders-title">최근 결제</h2>
             </div>
             <span>최근 {orders.length}건</span>
           </div>

@@ -173,8 +173,8 @@ textarea:focus-visible {
 
 .icon-button {
   display: inline-flex;
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   align-items: center;
   justify-content: center;
   border: 0;
@@ -256,7 +256,7 @@ textarea:focus-visible {
 }
 
 .mobile-menu-button {
-  flex: 0 0 36px;
+  flex: 0 0 44px;
   font-size: 1.25rem;
 }
 
@@ -1278,7 +1278,7 @@ textarea:focus-visible {
   background: #ff8a7a;
 }
 
-.payment-plan h3 {
+.payment-plan h2 {
   margin-top: 18px;
   color: var(--text-primary);
   font-size: 1.08rem;
@@ -1379,7 +1379,7 @@ textarea:focus-visible {
   gap: 18px;
 }
 
-.payment-orders__heading h3 {
+.payment-orders__heading h2 {
   margin-top: 4px;
   color: var(--text-primary);
   font-size: 1.08rem;
@@ -1575,7 +1575,7 @@ textarea:focus-visible {
   color: #f5b84b;
 }
 
-.payment-status-card h2 {
+.payment-status-card h1 {
   color: var(--text-primary);
   font-size: 1.45rem;
   line-height: 1.3;

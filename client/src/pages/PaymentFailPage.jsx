@@ -9,9 +9,14 @@ export default function PaymentFailPage() {
 
   return (
     <div className="payment-status-page">
-      <div className="payment-status-card">
+      <div
+        className="payment-status-card"
+        role="alert"
+        aria-live="assertive"
+        aria-atomic="true"
+      >
         <p className="payment-status-card__icon payment-status-card__icon--error" aria-hidden="true">!</p>
-        <h2 className="payment-status-card__title--error">결제 실패</h2>
+        <h1 className="payment-status-card__title--error">결제 실패</h1>
         <p>{message}</p>
         <p className="payment-status-card__note">
           오류 코드: {code}
