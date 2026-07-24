@@ -203,8 +203,8 @@ export default function IntroPage() {
             자막에서 자유롭고 싶은 편집자라면?
           </p>
           <p className="landing-hero__description">
-            원문의 말투는 그대로. 휴대폰 녹음부터 인터뷰 영상까지
-            바로 편집하고 내려받을 수 있는 자막으로 완성하세요.
+            유튜브 편집부터 휴대폰 녹음까지, 빠르면 1분 안에 자막을 완성하세요.
+            원문의 말투를 살리고 맞춤법까지 다듬은 파일을 바로 편집하고 내려받을 수 있습니다.
           </p>
 
           <div className="landing-hero__actions">
