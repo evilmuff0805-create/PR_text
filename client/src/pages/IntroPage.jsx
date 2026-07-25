@@ -289,8 +289,8 @@ export default function IntroPage() {
         <div className="format-table" role="table" aria-label="자막 결과 형식">
           <div className="format-row" role="row">
             <strong role="cell">SRT</strong>
-            <span role="cell">Premiere Pro, YouTube 등 편집·업로드용 표준 자막</span>
-            <span role="cell">타임코드 포함</span>
+            <span role="cell">Premiere Pro, CapCut, YouTube 등 편집·업로드용 표준 자막</span>
+            <span role="cell">CapCut 타임코드 호환 확인</span>
           </div>
           <div className="format-row" role="row">
             <strong role="cell">TXT</strong>

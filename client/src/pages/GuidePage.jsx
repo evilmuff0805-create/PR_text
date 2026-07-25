@@ -38,6 +38,7 @@ const steps = [
     summary: '편집을 마친 결과를 필요한 형식으로 내려받습니다.',
     details: [
       'SRT와 ASS는 타임스탬프를 포함하고, TXT는 텍스트만 포함합니다.',
+      'SRT는 Premiere Pro, CapCut, YouTube 등에 가져올 수 있으며, CapCut에서 자막과 타임코드 호환을 확인했습니다.',
       'ASS는 프리셋, 글자 크기, 화자 색상을 확인한 뒤 다운로드할 수 있습니다.',
     ],
   },
