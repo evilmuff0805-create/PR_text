@@ -3,6 +3,8 @@ import { readFile, stat } from 'node:fs/promises';
 import test from 'node:test';
 
 const indexUrl = new URL('../client/index.html', import.meta.url);
+const introUrl = new URL('../client/src/pages/IntroPage.jsx', import.meta.url);
+const guideUrl = new URL('../client/src/pages/GuidePage.jsx', import.meta.url);
 const ogImageUrl = new URL('../client/public/og-image.jpg', import.meta.url);
 const robotsUrl = new URL('../client/public/robots.txt', import.meta.url);
 const sitemapUrl = new URL('../client/public/sitemap.xml', import.meta.url);
@@ -14,6 +16,18 @@ test('landing metadata matches the no-translation product behavior', async () =>
   assert.doesNotMatch(html, /영어 번역 지원|자동 번역/);
   assert.equal((html.match(/name="naver-site-verification"/g) || []).length, 1);
   assert.equal((html.match(/name="google-site-verification"/g) || []).length, 1);
+});
+
+test('public guidance documents verified CapCut SRT compatibility', async () => {
+  const [html, intro, guide] = await Promise.all([
+    readFile(indexUrl, 'utf8'),
+    readFile(introUrl, 'utf8'),
+    readFile(guideUrl, 'utf8'),
+  ]);
+
+  assert.match(html, /CapCut SRT/);
+  assert.match(intro, /CapCut 타임코드 호환 확인/);
+  assert.match(guide, /CapCut에서 자막과 타임코드 호환을 확인했습니다/);
 });
 
 test('social metadata references a real 1200 by 630 JPEG preview', async () => {
