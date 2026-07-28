@@ -13,7 +13,7 @@ import {
 } from '../services/toss-payments.js';
 
 export const PLANS = {
-  basic: { credits: 100, price: 4900, name: '베이직 100분' },
+  basic: { credits: 100, price: 5900, name: '베이직 100분' },
   pro: { credits: 300, price: 12900, name: '프로 300분' },
   creator: { credits: 1000, price: 34900, name: '크리에이터 1000분' },
 };
