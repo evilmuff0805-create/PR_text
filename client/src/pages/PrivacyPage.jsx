@@ -119,8 +119,7 @@ export default function PrivacyPage() {
               보관될 수 있습니다.
             </p>
             <p>
-              이메일: codemeet@naver.com<br />
-              전화: 010-4901-1421
+              이메일: codemeet@naver.com
             </p>
           </section>
 
