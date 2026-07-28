@@ -73,3 +73,36 @@
 - `npm run build`: passed with 58 modules transformed.
 - `git diff --check`: passed.
 - CI and production deployment are pending.
+
+# Public personal phone removal
+
+## Acceptance criteria
+
+- [x] The site footer no longer displays the owner's personal mobile number.
+- [x] The privacy policy no longer displays the owner's personal mobile number.
+- [x] The customer support email remains available in both locations.
+- [x] Regression coverage prevents a Korean mobile number from being reintroduced in these public views.
+- [x] Local tests and the production build pass.
+- [ ] CI and production deployment pass.
+
+## Checklist
+
+- [x] Search the public client for mobile-number and contact references.
+- [x] Remove only the personal phone fields without leaving duplicate separators.
+- [x] Add regression coverage.
+- [x] Run the full test suite, production build, and diff checks.
+- [ ] Deploy and verify the production footer, privacy page, and health endpoint.
+
+## Working notes
+
+- The personal mobile number appeared only in `Layout.jsx` and `PrivacyPage.jsx`.
+- Email remains the public privacy and customer-support contact channel.
+- Before commercial launch, replace the removed number with a dedicated business/customer-service number to satisfy applicable online-sales disclosure requirements.
+
+## Results
+
+- `npm test`: 136 passed, 0 failed.
+- `npm run build`: passed with 58 modules transformed.
+- `git diff --check`: passed.
+- Current client source and production build contain no Korean mobile-number pattern.
+- CI and production deployment are pending.
