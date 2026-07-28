@@ -6,7 +6,7 @@ import { resolve } from 'path';
 export const MODELS = ['gpt-4o', 'gpt-5.6-luna'];
 
 const PLAN_REVENUE_KRW_PER_MINUTE = {
-  basic: 49,
+  basic: 59,
   pro: 43,
   creator: 34.9,
 };

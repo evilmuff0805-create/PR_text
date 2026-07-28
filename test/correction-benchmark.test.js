@@ -47,7 +47,7 @@ test('calculates correction-only margin for a real audio duration', () => {
 
   assert.equal(scenario.basic.audioMinutes, 10);
   assert.equal(scenario.basic.correctionCostKrw, 70);
-  assert.equal(scenario.basic.revenueKrw, 490);
-  assert.equal(scenario.basic.marginBeforeOtherCostsKrw, 420);
+  assert.equal(scenario.basic.revenueKrw, 590);
+  assert.equal(scenario.basic.marginBeforeOtherCostsKrw, 520);
 });
 

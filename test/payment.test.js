@@ -338,9 +338,9 @@ test('creates orders from the server plan catalog and ignores client-supplied pr
   });
 
   assert.equal(response.status, 200);
-  assert.equal(response.data.amount, 4900);
+  assert.equal(response.data.amount, 5900);
   assert.equal(response.data.credits, 100);
-  assert.equal(created.amount, 4900);
+  assert.equal(created.amount, 5900);
   assert.equal(created.credits, 100);
   assert.equal(created.user_id, USER.id);
   assert.equal(created.payment_environment, 'test');

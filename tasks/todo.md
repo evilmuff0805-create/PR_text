@@ -41,3 +41,35 @@
 - Production migration applied before the app deployment; existing payment rows were unchanged.
 - Database verification: payment FK uses `ON DELETE SET NULL`, deletion RLS is enabled, browser RPC access is denied, and `service_role` access is enabled.
 - Supabase advisors reported only intentional no-policy RLS notices plus pre-existing leaked-password protection and unused-index notices.
+
+# Basic plan price adjustment
+
+## Acceptance criteria
+
+- [x] New Basic orders are created for 5,900 KRW and 100 minutes.
+- [x] The payment page shows 5,900 KRW, 40% off, and 59 KRW per minute.
+- [x] Margin calculations use 59 KRW per minute for the Basic plan.
+- [x] Existing orders keep their stored amount for confirmation and refunds.
+- [x] Local tests and the production build pass.
+- [ ] CI and production deployment pass.
+
+## Checklist
+
+- [x] Locate the server catalog, client display, benchmark, and payment tests.
+- [x] Update the new-order price without rewriting historical order amounts.
+- [x] Add regression coverage for server/client/benchmark price alignment.
+- [x] Run the full test suite and production build.
+- [ ] Review the final diff and deploy.
+
+## Working notes
+
+- The server plan catalog is authoritative for new Toss orders.
+- Confirmation and refund paths use the amount stored on each order, so pre-change 4,900 KRW orders remain valid.
+- The 9,900 KRW reference price remains unchanged; the displayed discount changes from 50% to 40%.
+
+## Results
+
+- `npm test`: 135 passed, 0 failed.
+- `npm run build`: passed with 58 modules transformed.
+- `git diff --check`: passed.
+- CI and production deployment are pending.
