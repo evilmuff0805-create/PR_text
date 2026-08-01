@@ -9,7 +9,8 @@ export const DEFAULT_SPEAKER_COLORS = [
 
 export const SUBTITLE_MAX_CHARS = 28;
 
-const SENTENCE_END = /[다요죠까!?]$/;
+const SENTENCE_END = /[다요죠까]$/;
+const SENTENCE_PUNCTUATION = /[!?]$/;
 const CONJUNCTIVE = /[면고서며]$|지만$|는데$|니까$|므로$|거나$|든지$/;
 const POSTPOSITION = /[은는이가을를에도로]$/;
 
@@ -19,7 +20,10 @@ function cleanText(text) {
 
 function findCutAt(text, maxLen) {
   for (let cutAt = maxLen; cutAt >= 1; cutAt--) {
-    if (SENTENCE_END.test(text[cutAt - 1])) return cutAt;
+    const character = text[cutAt - 1];
+    const nextCharacter = text[cutAt];
+    if (SENTENCE_PUNCTUATION.test(character)) return cutAt;
+    if (SENTENCE_END.test(character) && (!nextCharacter || /\s/.test(nextCharacter))) return cutAt;
   }
   for (let i = maxLen; i >= 1; i--) {
     if (text[i] === ' ' && CONJUNCTIVE.test(text.slice(0, i).trimEnd())) return i;

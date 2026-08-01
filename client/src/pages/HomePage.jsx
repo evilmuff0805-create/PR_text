@@ -1,10 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import { useTranscription } from '../contexts/TranscriptionContext.jsx';
 import AuthModal from '../components/AuthModal.jsx';
 import { UPLOAD_ACCEPT, validateUploadFile } from '../utils/upload-validation.js';
-
-const pendingJobStorageKey = (userId) => `pendingDiarizationJob:${userId}`;
 
 function getAudioDuration(file) {
   return new Promise((resolve) => {
@@ -36,65 +35,30 @@ function getAudioDuration(file) {
   });
 }
 
-function formatElapsedTime(totalSeconds) {
-  const seconds = Math.max(0, Math.floor(totalSeconds));
-  const minutes = Math.floor(seconds / 60);
-  const remainingSeconds = seconds % 60;
-  return minutes > 0 ? `${minutes}분 ${remainingSeconds}초` : `${remainingSeconds}초`;
-}
-
-function estimateDiarizationSeconds(durationSeconds) {
-  if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return null;
-  return Math.max(60, Math.round(durationSeconds * 0.35));
-}
-
-function uploadTranscription({ formData, token, onProgress, onUploadComplete }) {
-  return new Promise((resolve, reject) => {
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/transcribe');
-    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
-    xhr.responseType = 'json';
-
-    xhr.upload.onprogress = (event) => {
-      if (event.lengthComputable) onProgress(event.loaded / event.total);
-    };
-    xhr.upload.onload = onUploadComplete;
-    xhr.onerror = () => reject(new Error('서버 연결 중 오류가 발생했습니다.'));
-    xhr.onload = () => {
-      const data = xhr.response && typeof xhr.response === 'object'
-        ? xhr.response
-        : (() => {
-          try { return JSON.parse(xhr.responseText); } catch { return {}; }
-        })();
-      resolve({
-        status: xhr.status,
-        ok: xhr.status >= 200 && xhr.status < 300,
-        data,
-        requestId: xhr.getResponseHeader('X-Request-Id'),
-      });
-    };
-    xhr.send(formData);
-  });
-}
-
 export default function HomePage() {
-  const { user, token, updateCredits, getToken } = useAuth();
+  const { user } = useAuth();
+  const {
+    status,
+    progress,
+    error: transcriptionError,
+    activeJobId,
+    result,
+    isBusy,
+    isCancelling,
+    startTranscription,
+    cancelDiarization,
+    clearError,
+    openResult,
+  } = useTranscription();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [file, setFile] = useState(null);
   const [language, setLanguage] = useState('');
-  const [status, setStatus] = useState('idle');
-  const [progress, setProgress] = useState('');
-  const [error, setError] = useState('');
+  const [formError, setFormError] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
   const [diarize, setDiarize] = useState(false);
   const [estimatedCredits, setEstimatedCredits] = useState(null);
   const [durationSeconds, setDurationSeconds] = useState(null);
   const [isReadingDuration, setIsReadingDuration] = useState(false);
-  const [activeDiarize, setActiveDiarize] = useState(false);
-  const [activeJobId, setActiveJobId] = useState(null);
-  const [transcriptionStartedAt, setTranscriptionStartedAt] = useState(null);
-  const [elapsedSeconds, setElapsedSeconds] = useState(0);
-  const [isCancellingJob, setIsCancellingJob] = useState(false);
 
   const fileInputRef = useRef(null);
   const fileSelectionRef = useRef(0);
@@ -116,8 +80,7 @@ export default function HomePage() {
       setEstimatedCredits(null);
       setDurationSeconds(null);
       setIsReadingDuration(false);
-      setStatus('error');
-      setError(validationError);
+      setFormError(validationError);
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
@@ -127,8 +90,8 @@ export default function HomePage() {
     setEstimatedCredits(null);
     setDurationSeconds(null);
     setIsReadingDuration(true);
-    setStatus('idle');
-    setError('');
+    setFormError('');
+    clearError();
 
     const duration = await getAudioDuration(selected);
     if (selectionId !== fileSelectionRef.current) return;
@@ -169,8 +132,8 @@ export default function HomePage() {
     setDurationSeconds(null);
     setIsReadingDuration(false);
     fileInputRef.current.value = '';
-    setStatus('idle');
-    setError('');
+    setFormError('');
+    clearError();
   }
 
   async function handleSubmit() {
@@ -178,214 +141,33 @@ export default function HomePage() {
 
     const validationError = validateUploadFile(file);
     if (validationError) {
-      setStatus('error');
-      setError(validationError);
+      setFormError(validationError);
       return;
     }
 
     if (!user) {
-      setError('로그인이 필요합니다. 좌측 사이드바에서 로그인해주세요.');
+      setFormError('로그인이 필요합니다. 좌측 사이드바에서 로그인해주세요.');
       return;
     }
 
     if (estimatedCredits !== null && user.credits < estimatedCredits) {
-      setError(`변환 가능 시간이 부족합니다. 필요: ${estimatedCredits}분, 보유: ${user.credits}분. 결제 페이지에서 충전해주세요.`);
+      setFormError(`변환 가능 시간이 부족합니다. 필요: ${estimatedCredits}분, 보유: ${user.credits}분. 결제 페이지에서 충전해주세요.`);
       return;
     }
 
-    setError('');
-    setActiveDiarize(diarize);
-    setTranscriptionStartedAt(null);
-    setElapsedSeconds(0);
-    setStatus('uploading');
-    setProgress('파일 업로드 중...');
-
-    try {
-      const formData = new FormData();
-      formData.append('audio', file);
-      if (language) formData.append('language', language);
-      if (diarize) formData.append('diarize', 'true');
-
-      const token = getToken();
-      const { status: responseStatus, ok, data, requestId } = await uploadTranscription({
-        formData,
-        token,
-        onProgress: (ratio) => setProgress(`파일 업로드 중... ${Math.min(Math.round(ratio * 100), 100)}%`),
-        onUploadComplete: () => {
-          setStatus('transcribing');
-          setTranscriptionStartedAt(Date.now());
-          setProgress(diarize
-            ? '파일 전송 완료. 화자 분석과 자막 생성을 진행 중입니다...'
-            : '파일 전송 완료. 음성 전사와 맞춤법 교정을 진행 중입니다...');
-        },
-      });
-
-      if (responseStatus === 401) {
-        setStatus('error');
-        setError('로그인이 필요합니다. 좌측 사이드바에서 로그인해주세요.');
-        return;
-      }
-
-      if (responseStatus === 402) {
-        setStatus('error');
-        setError(`변환 가능 시간이 부족합니다. 필요: ${data.creditsNeeded}분, 보유: ${data.creditsHave}분. 결제 페이지에서 충전해주세요.`);
-        return;
-      }
-
-      if (!ok) {
-        const message = data.error || '변환 요청 실패';
-        throw new Error(requestId ? `${message} (오류 코드: ${requestId})` : message);
-      }
-
-      if (data.creditsRemaining !== undefined) {
-        updateCredits(data.creditsRemaining);
-      }
-
-      if (responseStatus === 202 && data.jobId) {
-        localStorage.setItem(pendingJobStorageKey(user.id), data.jobId);
-        setActiveJobId(data.jobId);
-        setStatus('queued');
-        setProgress('파일 전송 완료. 다화자 분석 작업을 대기열에 등록했습니다...');
-        return;
-      }
-
-      navigate('/result', { state: { text: data.text, segments: data.segments, language: data.language, diarize: data.diarize } });
-    } catch (err) {
-      setStatus('error');
-      setError(err.message || '오류가 발생했습니다.');
-    }
+    setFormError('');
+    clearError();
+    await startTranscription({ file, language, diarize });
   }
 
   async function handleCancelDiarizationJob() {
-    if (!activeJobId || !token || !user?.id || isCancellingJob) return;
+    if (!activeJobId || isCancelling) return;
     if (!window.confirm('진행 중인 다화자 작업을 취소하고 예약한 변환 시간을 환불할까요?')) return;
-
-    setIsCancellingJob(true);
-    try {
-      const response = await fetch(`/api/transcribe/jobs/${activeJobId}`, {
-        method: 'DELETE',
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || '작업을 취소하지 못했습니다.');
-
-      if (data.creditsRemaining !== undefined) updateCredits(data.creditsRemaining);
-      localStorage.removeItem(pendingJobStorageKey(user.id));
-      setActiveJobId(null);
-      setStatus('error');
-      setError('작업을 취소하고 예약한 변환 시간을 환불했습니다.');
-    } catch (err) {
-      setProgress(err.message || '작업 취소 중 오류가 발생했습니다.');
-    } finally {
-      setIsCancellingJob(false);
-    }
+    await cancelDiarization();
   }
 
-  const isLoading = status !== 'idle' && status !== 'error';
-  const shouldWarnBeforeUnload = status === 'uploading' || (status === 'transcribing' && !activeJobId);
-
-  // 원본을 전송하는 중에만 이탈을 경고합니다. 대기열 작업은 서버에서 계속됩니다.
-  useEffect(() => {
-    if (!shouldWarnBeforeUnload) return;
-    const handleBeforeUnload = (e) => {
-      e.preventDefault();
-      e.returnValue = '';
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [shouldWarnBeforeUnload]);
-
-  useEffect(() => {
-    if ((status !== 'transcribing' && status !== 'queued') || !transcriptionStartedAt) return;
-
-    const updateElapsedTime = () => {
-      setElapsedSeconds((Date.now() - transcriptionStartedAt) / 1000);
-    };
-
-    updateElapsedTime();
-    const intervalId = window.setInterval(updateElapsedTime, 1_000);
-    return () => window.clearInterval(intervalId);
-  }, [status, transcriptionStartedAt]);
-
-  useEffect(() => {
-    if (!user?.id || !token || activeJobId) return;
-
-    const savedJobId = localStorage.getItem(pendingJobStorageKey(user.id));
-    if (!savedJobId) return;
-
-    setActiveJobId(savedJobId);
-    setActiveDiarize(true);
-    setStatus('queued');
-    setProgress('이전 다화자 분석 작업 상태를 확인 중입니다...');
-    setTranscriptionStartedAt(Date.now());
-  }, [user?.id, token, activeJobId]);
-
-  useEffect(() => {
-    if (!activeJobId || !token || !user?.id) return;
-
-    let cancelled = false;
-
-    async function pollJob() {
-      try {
-        const response = await fetch(`/api/transcribe/jobs/${activeJobId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        const data = await response.json();
-        if (!response.ok) throw new Error(data.error || '다화자 작업 상태를 확인하지 못했습니다.');
-        if (cancelled) return;
-
-        if (data.creditsRemaining !== undefined) updateCredits(data.creditsRemaining);
-
-        if (data.status === 'completed') {
-          localStorage.removeItem(pendingJobStorageKey(user.id));
-          setActiveJobId(null);
-          navigate('/result', {
-            state: {
-              text: data.text,
-              segments: data.segments,
-              language: data.language,
-              diarize: true,
-            },
-          });
-          return;
-        }
-
-        if (data.status === 'failed') {
-          localStorage.removeItem(pendingJobStorageKey(user.id));
-          setActiveJobId(null);
-          setStatus('error');
-          setError(data.error || '변환에 실패했지만 예약한 변환 시간은 자동 환불되었습니다.');
-          return;
-        }
-
-        setStatus(data.status === 'running' ? 'transcribing' : 'queued');
-        setProgress(data.status === 'running'
-          ? '화자 분석과 자막 생성을 진행 중입니다...'
-          : '다화자 분석 작업을 대기열에서 기다리고 있습니다...');
-      } catch (err) {
-        if (!cancelled) {
-          setStatus('queued');
-          setProgress('작업 상태를 다시 확인 중입니다...');
-        }
-      }
-    }
-
-    pollJob();
-    const intervalId = window.setInterval(pollJob, 5_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(intervalId);
-    };
-  }, [activeJobId, navigate, token, updateCredits, user?.id]);
-
-  const isDiarizationProcessing = activeDiarize && (status === 'queued' || status === 'transcribing');
-  const estimatedDiarizationSeconds = estimateDiarizationSeconds(durationSeconds);
-  const estimatedDiarizationLabel = estimatedDiarizationSeconds === null
-    ? '파일 길이에 따라 달라집니다'
-    : `약 ${Math.ceil(estimatedDiarizationSeconds / 60)}분`;
-  const estimatedProgress = estimatedDiarizationSeconds === null
-    ? 0.12
-    : Math.min(0.92, Math.max(0.12, elapsedSeconds / estimatedDiarizationSeconds));
+  const isProcessing = status === 'queued' || status === 'processing';
+  const displayError = formError || transcriptionError;
 
   return (
     <div className="upload-workspace">
@@ -453,7 +235,7 @@ export default function HomePage() {
             type="button"
             onClick={() => {
               if (!user) {
-                setError('로그인이 필요합니다.');
+                setFormError('로그인이 필요합니다.');
                 setShowAuthModal(true);
                 return;
               }
@@ -525,90 +307,66 @@ export default function HomePage() {
       <button
         className="gradient-btn conversion-submit"
         onClick={handleSubmit}
-        disabled={!file || isLoading}
+        disabled={!file || isBusy}
         style={{
-          opacity: !file || isLoading ? 0.5 : 1,
-          cursor: !file || isLoading ? 'not-allowed' : 'pointer',
+          opacity: !file || isBusy ? 0.5 : 1,
+          cursor: !file || isBusy ? 'not-allowed' : 'pointer',
         }}
       >
-        {isLoading ? progress : '변환 시작'}
+        {status === 'uploading' ? progress : isProcessing ? 'PROCESSING' : '변환 시작'}
       </button>
 
-      {/* 진행 상태 */}
-      {status !== 'idle' && status !== 'error' && (
-        <p role="status" aria-live="polite" style={{ marginTop: '16px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+      {status === 'uploading' && (
+        <p className="transcription-upload-status" role="status" aria-live="polite">
           {progress}
         </p>
       )}
 
-      {isDiarizationProcessing && (
-        <section
-          aria-live="polite"
-          style={{
-            marginTop: '16px',
-            padding: '16px 0',
-            borderTop: '1px solid var(--border-color)',
-            borderBottom: '1px solid var(--border-color)',
-          }}
-        >
-          <p style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.95rem', margin: 0 }}>
-            {status === 'queued' ? '화자 분석 작업을 대기열에서 기다리고 있습니다' : '화자 분석과 자막 생성을 진행 중입니다'}
-          </p>
-          <p style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', margin: '6px 0 12px' }}>
-            경과 {formatElapsedTime(elapsedSeconds)} · 예상 {estimatedDiarizationLabel}
-          </p>
-          <div
-            aria-label="다화자 전사 예상 진행 상태"
-            aria-valuemax={100}
-            aria-valuemin={0}
-            aria-valuenow={Math.round(estimatedProgress * 100)}
-            role="progressbar"
-            style={{
-              height: '6px',
-              overflow: 'hidden',
-              background: 'var(--bg-tertiary)',
-              borderRadius: '3px',
-            }}
-          >
-            <div
-              style={{
-                width: `${Math.round(estimatedProgress * 100)}%`,
-                height: '100%',
-                background: 'var(--gradient)',
-                transition: 'width 1s linear',
-              }}
-            />
+      {isProcessing && (
+        <section className="transcription-processing" role="status" aria-live="polite" aria-atomic="true">
+          <div className="transcription-processing__heading">
+            <span className="transcription-processing__spinner" aria-hidden="true" />
+            <div>
+              <p className="transcription-processing__label">PROCESSING</p>
+              <h2>{progress}</h2>
+            </div>
           </div>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.78rem', lineHeight: '1.5', margin: '10px 0 0' }}>
-            실제 완료 시점은 파일 길이와 화자 수에 따라 달라집니다.
+          <p className="transcription-processing__notice">
+            변환이 완료되면 알림을 보내드립니다.
           </p>
-          <button
-            type="button"
-            onClick={handleCancelDiarizationJob}
-            disabled={isCancellingJob}
-            style={{
-              marginTop: '14px',
-              padding: '8px 12px',
-              border: '1px solid #FF6666',
-              borderRadius: 'var(--border-radius)',
-              background: 'transparent',
-              color: '#FF8888',
-              fontFamily: 'var(--font-family)',
-              fontSize: '0.82rem',
-              cursor: isCancellingJob ? 'wait' : 'pointer',
-              opacity: isCancellingJob ? 0.6 : 1,
-            }}
-          >
-            {isCancellingJob ? '취소 처리 중...' : '작업 취소'}
+          <p className="transcription-processing__detail">
+            다른 메뉴로 이동해도 변환은 계속됩니다.
+          </p>
+          {activeJobId && (
+            <button
+              type="button"
+              className="transcription-processing__cancel"
+              onClick={handleCancelDiarizationJob}
+              disabled={isCancelling}
+            >
+              {isCancelling ? '취소 처리 중...' : '작업 취소'}
+            </button>
+          )}
+        </section>
+      )}
+
+      {status === 'completed' && result && (
+        <section className="transcription-complete-inline" role="status">
+          <div>
+            <strong>변환이 완료되었습니다.</strong>
+            <p>결과 화면에서 자막을 확인하고 내려받을 수 있습니다.</p>
+          </div>
+          <button type="button" className="button button--primary" onClick={openResult}>
+            결과 보기
           </button>
         </section>
       )}
 
       {/* 에러 메시지 */}
-      {status === 'error' && (
+      {displayError && (
         <div style={{ marginTop: '16px', textAlign: 'center' }}>
-          <p role="alert" style={{ color: '#FF6B72', fontSize: '0.9rem' }}>{error}</p>
-          {(error.includes('시간이 부족') || error.includes('충전')) && (
+          <p role="alert" style={{ color: '#FF6B72', fontSize: '0.9rem' }}>{displayError}</p>
+          {(displayError.includes('시간이 부족') || displayError.includes('충전')) && (
             <button
               onClick={() => navigate('/payment')}
               style={{
@@ -627,7 +385,7 @@ export default function HomePage() {
               변환 시간 충전하기
             </button>
           )}
-          {error.includes('연결') && (
+          {displayError.includes('연결') && (
             <button
               onClick={handleSubmit}
               style={{

@@ -59,6 +59,22 @@ test('limits SRT and ASS display text to 28 characters', () => {
   assert.ok(assTexts.every((line) => line.length <= SUBTITLE_MAX_CHARS));
 });
 
+test('keeps Korean words intact when selecting a subtitle line boundary', () => {
+  const sentence = '안녕하세요 오늘은 다른 옷을 입고 오셨네요, 너무 예뻐요!';
+  const srt = generateSRT([{ start: 0, end: 8, text: sentence }]);
+  const lines = srt.split('\n\n').map((block) => block.split('\n').slice(2).join('\n'));
+
+  assert.ok(lines.length > 1);
+  assert.ok(lines.every((line) => line.length <= SUBTITLE_MAX_CHARS));
+  assert.equal(lines.join(' '), sentence);
+  assert.equal(lines.some((line, index) => (
+    line.endsWith('다') && lines[index + 1]?.startsWith('른')
+  )), false);
+  assert.equal(lines.some((line, index) => (
+    line.endsWith('예') && lines[index + 1]?.startsWith('뻐요')
+  )), false);
+});
+
 test('preserves the original timeline when long subtitle text is split', () => {
   const longSegment = [{
     start: 3.25,

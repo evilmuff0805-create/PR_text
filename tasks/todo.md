@@ -106,3 +106,45 @@
 - `git diff --check`: passed.
 - Current client source and production build contain no Korean mobile-number pattern.
 - CI and production deployment are pending.
+
+# Persistent transcription status and word-safe subtitles
+
+## Acceptance criteria
+
+- [x] Audio-to-text processing stays visibly active when navigating between app tabs.
+- [x] Processing uses an indeterminate spinner instead of a fabricated ETA or percentage.
+- [x] The processing view says that the app will notify the user when conversion completes.
+- [x] Completion shows a non-disruptive in-app notification with a result action.
+- [x] Existing durable diarization jobs still restore after a refresh and remain cancellable.
+- [x] SRT and ASS lines remain at most 28 characters without splitting Korean words when a whitespace boundary is available.
+- [x] Existing timing and speaker metadata remain intact.
+- [ ] Tests, production build, responsive visual checks, CI, and production health pass.
+
+## Checklist
+
+- [x] Trace current HomePage state, polling, persistence, and subtitle splitting behavior.
+- [x] Confirm the server job continues independently while the HomePage display timer restarts on remount.
+- [x] Move transcription upload, polling, completion, and cancellation into an app-level provider.
+- [x] Add processing and completion notification UI with accessible reduced-motion behavior.
+- [x] Add word-boundary subtitle reflow and regression tests for the reported Korean sentence.
+- [x] Run targeted and full tests, build, responsive screenshots, and diff checks.
+- [ ] Commit, open and merge the PR, then verify Railway and `/api/health`.
+
+## Working notes
+
+- The current fake progress is calculated from a component-local `Date.now()` value and restarts after route remount.
+- The queued diarization worker is already server-side and keyed in local storage, so no database migration is required.
+- Standard transcription stays in one HTTP request; keeping that request in an app-level provider preserves it across SPA route changes, but not a full browser close.
+- The 28-character product rule remains unchanged. The fix must prefer whitespace boundaries and retain the original segment timeline.
+
+## Results
+
+- Targeted regression tests: 9 passed, 0 failed.
+- `npm test`: 140 passed, 0 failed.
+- `npm run build`: passed with 59 modules transformed.
+- `git diff --check`: passed.
+- Local browser QA confirmed that a standard transcription continued after navigating to Caption Ideas, completed without forcing a route change, and opened the result from the notification action.
+- Desktop and 390px mobile processing/notification layouts rendered without horizontal overflow.
+- Browser console review found no errors from this change; only pre-existing React Router v7 future-flag warnings were present.
+- A read-only production data check confirmed completed server-side transcription jobs; no schema migration is required for this change.
+- CI, merged deployment, and production health verification are pending.
