@@ -148,3 +148,35 @@
 - Browser console review found no errors from this change; only pre-existing React Router v7 future-flag warnings were present.
 - A read-only production data check confirmed completed server-side transcription jobs; no schema migration is required for this change.
 - CI, merged deployment, and production health verification are pending.
+
+# Caption idea history relocation
+
+## Acceptance criteria
+
+- [x] Usage shows only credit and time changes, including caption-idea credit charges.
+- [x] Caption Ideas exposes a collapsed history control below the creation workflow.
+- [x] History loads only after the user opens the control.
+- [x] Existing 90-day history, copy, pagination, empty, loading, and error states remain available.
+- [x] A successful generation refreshes the history on its next render.
+- [x] Local tests, production build, and responsive browser checks pass.
+- [ ] CI and production health pass after merge.
+
+## Checklist
+
+- [x] Trace the current history endpoint, user scoping, UsagePage ownership, and styles.
+- [x] Move history state and rendering into a focused component.
+- [x] Add an accessible disclosure to CaptionIdeasPage.
+- [x] Remove the history fetch and section from UsagePage.
+- [x] Add regression coverage for lazy ownership and removal from UsagePage.
+- [x] Run tests, build, responsive browser checks, and diff review.
+- [ ] Commit, open and merge the PR, then verify Railway and `/api/health`.
+
+## Working notes
+
+- The existing authenticated `/api/caption-ideas/history` endpoint and database policies remain unchanged.
+- The panel is conditionally mounted, so the history request is not sent while it is collapsed.
+- The usage ledger keeps the `caption_ideas` action label because the one-minute pack charge is still a real time change.
+- Targeted tests passed 9/9; the full suite passed 140/140 with `--test-isolation=none` because this Windows runner blocks the default child-process isolation with `spawn EPERM`.
+- The production build passed with 60 modules transformed.
+- Local browser QA confirmed zero history requests before opening, one request on first open, no duplicate request after closing and reopening, and no horizontal overflow at 390 x 844.
+- Usage retained the caption-idea credit ledger row but no longer rendered the caption-idea history section.

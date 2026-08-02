@@ -103,8 +103,10 @@ test('public guidance consistently explains caption idea modes, billing, and his
   assert.match(payment, /성공 5회당 1분 차감 · 실패 무차감/);
 });
 
-test('usage page exposes user-scoped caption idea history with copy controls', async () => {
-  const [page, route, store] = await Promise.all([
+test('caption ideas page exposes lazy user-scoped history with copy controls', async () => {
+  const [page, history, usage, route, store] = await Promise.all([
+    read('client/src/pages/CaptionIdeasPage.jsx'),
+    read('client/src/components/CaptionIdeaHistory.jsx'),
     read('client/src/pages/UsagePage.jsx'),
     read('src/routes/caption-ideas.js'),
     read('src/services/caption-idea-store.js'),
@@ -115,7 +117,15 @@ test('usage page exposes user-scoped caption idea history with copy controls', a
   assert.match(store, /\.eq\('user_id', userId\)/);
   assert.match(store, /\.gt\('ideas_expires_at'/);
   assert.match(page, /자막 아이디어 내역/);
-  assert.match(page, /최근 90일 동안 생성한/);
-  assert.match(page, /navigator\.clipboard\.writeText\(idea\)/);
-  assert.match(page, /getCaptionModeLabel/);
+  assert.match(page, /aria-expanded=\{historyOpen\}/);
+  assert.match(page, /aria-controls="caption-history-panel"/);
+  assert.match(page, /historyMounted && \(/);
+  assert.match(page, /hidden=\{!historyOpen\}/);
+  assert.match(page, /<CaptionIdeaHistory refreshKey=\{historyRefreshKey\} \/>/);
+  assert.match(history, /\/api\/caption-ideas\/history\?page=1/);
+  assert.match(history, /최근 90일 동안 생성한/);
+  assert.match(history, /navigator\.clipboard\.writeText\(idea\)/);
+  assert.match(history, /getCaptionModeLabel/);
+  assert.doesNotMatch(usage, /\/api\/caption-ideas\/history/);
+  assert.doesNotMatch(usage, /자막 아이디어 내역/);
 });
