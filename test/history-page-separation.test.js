@@ -27,6 +27,7 @@ test('each history page requests only the records it renders', async () => {
 
   assert.match(usagePage, /type=usage/);
   assert.doesNotMatch(usagePage, /type=all|type=transcription|transcriptionLogs/);
+  assert.doesNotMatch(usagePage, /\/api\/caption-ideas\/history|자막 아이디어 내역/);
 
   assert.match(redownloadPage, /type=transcription/);
   assert.doesNotMatch(redownloadPage, /type=all|type=usage/);

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import AuthModal from '../components/AuthModal.jsx';
+import CaptionIdeaHistory from '../components/CaptionIdeaHistory.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useDialogAccessibility } from '../utils/use-dialog-accessibility.js';
 
@@ -34,6 +35,9 @@ export default function CaptionIdeasPage() {
   const [copiedIndex, setCopiedIndex] = useState(null);
   const [authOpen, setAuthOpen] = useState(false);
   const [confirmationOpen, setConfirmationOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyMounted, setHistoryMounted] = useState(false);
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0);
   const modeRefs = useRef([]);
   const confirmationDialogRef = useRef(null);
   const confirmationCancelRef = useRef(null);
@@ -55,6 +59,11 @@ export default function CaptionIdeasPage() {
   });
 
   useEffect(() => () => window.clearTimeout(copyTimerRef.current), []);
+
+  useEffect(() => {
+    setHistoryOpen(false);
+    setHistoryMounted(false);
+  }, [user?.id]);
 
   useEffect(() => {
     if (!user) {
@@ -139,6 +148,7 @@ export default function CaptionIdeasPage() {
       setRemainingUses(Number(data.remainingUses || 0));
       updateCredits(Number(data.creditsRemaining || 0));
       setAnnouncement(`자막 아이디어 3개가 완성되었습니다. ${data.remainingUses}회 남았습니다.`);
+      setHistoryRefreshKey((current) => current + 1);
     } catch (generationError) {
       if (generationError.status === 409) pendingRequestRef.current = null;
       setError(generationError.message || '자막 아이디어를 만들지 못했습니다.');
@@ -189,6 +199,15 @@ export default function CaptionIdeasPage() {
     } catch {
       setError('클립보드에 복사하지 못했습니다.');
     }
+  };
+
+  const toggleHistory = () => {
+    if (!user) {
+      setAuthOpen(true);
+      return;
+    }
+    if (!historyOpen) setHistoryMounted(true);
+    setHistoryOpen((current) => !current);
   };
 
   const generateLabel = !user
@@ -302,6 +321,39 @@ export default function CaptionIdeasPage() {
           </ol>
         </section>
       )}
+
+      <section className={historyOpen ? 'caption-history-disclosure is-open' : 'caption-history-disclosure'}>
+        <button
+          id="caption-history-toggle"
+          className="caption-history-toggle"
+          type="button"
+          aria-expanded={historyOpen}
+          aria-controls="caption-history-panel"
+          onClick={toggleHistory}
+        >
+          <span className="caption-history-toggle__copy">
+            <span className="workspace-kicker">HISTORY</span>
+            <strong>자막 아이디어 내역</strong>
+            <span>이전에 만든 예능·상황·감성 자막을 다시 확인합니다.</span>
+          </span>
+          <span className="caption-history-toggle__action">
+            {historyOpen ? '접기' : '보기'}
+            <span className="caption-history-toggle__chevron" aria-hidden="true" />
+          </span>
+        </button>
+
+        {historyMounted && (
+          <div
+            id="caption-history-panel"
+            className="caption-history-panel"
+            role="region"
+            aria-labelledby="caption-history-toggle"
+            hidden={!historyOpen}
+          >
+            <CaptionIdeaHistory refreshKey={historyRefreshKey} />
+          </div>
+        )}
+      </section>
 
       <p className="sr-only" aria-live="polite" aria-atomic="true">{announcement}</p>
 
