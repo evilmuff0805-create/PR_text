@@ -180,3 +180,43 @@
 - The production build passed with 60 modules transformed.
 - Local browser QA confirmed zero history requests before opening, one request on first open, no duplicate request after closing and reopening, and no horizontal overflow at 390 x 844.
 - Usage retained the caption-idea credit ledger row but no longer rendered the caption-idea history section.
+
+# Upload guidance and period-free transcriptions
+
+## Acceptance criteria
+
+- [x] Current public upload guidance remains truthful at 150MB until large WAV preprocessing ships.
+- [x] The planned guidance distinguishes WAV originals up to 500MB from other files up to 150MB.
+- [x] Final transcription segments never contain ASCII, ideographic, or full-width period characters.
+- [x] The invariant holds after GPT correction, correction fallback, and non-Korean processing.
+- [x] SRT, TXT, and ASS exports remain period-free.
+- [x] Tests and the production client build pass before release.
+
+## Checklist
+
+- [x] Trace client, Multer, processing, correction, history, and export boundaries.
+- [x] Confirm periods were removed only during export, not from API result segments.
+- [x] Add one authoritative caption-punctuation normalizer at the shared processing boundary.
+- [x] Reinforce the correction prompt without relying on the model for enforcement.
+- [x] Add regression coverage for success, fallback, non-Korean, and export paths.
+- [x] Run targeted tests, the full suite, the production build, and diff checks.
+- [x] Record the product decision and invariant in Notion.
+
+## Working notes
+
+- The live implementation currently accepts at most 150MB in both client validation and Multer memory storage.
+- Advertising 250MB before client-side WAV optimization exists would create a false promise and increase server memory risk.
+- After the WAV optimizer ships, the intended source-file limits are WAV up to 500MB and all other supported files up to 150MB.
+- A 28-minute PCM WAV is about 283MB at 44.1kHz/16-bit/stereo, 308MB at 48kHz/16-bit/stereo, and 461MB at 48kHz/24-bit/stereo, so a 250MB source limit would still reject common files.
+- `processTranscriptionSegments` is shared by standard and diarized transcription, so it is the narrowest reliable enforcement boundary.
+
+## Results
+
+- Added shared period removal for `.`, `。`, `．`, and `｡` after correction and before API response/history persistence.
+- Kept existing comma removal and reinforced the correction prompt against adding commas or periods.
+- Applied the same period rule to SRT, TXT, and ASS exports, including manually edited segment text.
+- Targeted regression tests: 16 passed, 0 failed.
+- Full regression suite: 144 passed, 0 failed with `--test-isolation=none`.
+- Production client build passed with 60 modules transformed.
+- `git diff --check` passed; only the repository's existing Windows line-ending warnings were reported.
+- Updated and re-searched the existing `PR_text 작업 관리` Notion page with the upload guidance and period-free transcription invariant.
