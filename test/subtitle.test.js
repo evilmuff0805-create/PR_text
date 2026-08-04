@@ -8,7 +8,7 @@ import {
 } from '../src/services/subtitle.js';
 
 const segments = [
-  { start: 0, end: 1.25, text: '안녕하세요.', speaker: 0 },
+  { start: 0, end: 1.25, text: '안녕하세요。', speaker: 0 },
   { start: 1.25, end: 2.5, text: '반갑습니다', speaker: 1 },
 ];
 
@@ -16,6 +16,7 @@ test('generates SRT and TXT with expected text handling', () => {
   const srt = generateSRT(segments, { 0: '#FFFFFF', 1: '#39FF14' });
 
   assert.match(srt, /00:00:00,000 --> 00:00:01,250/);
+  assert.doesNotMatch(srt, /안녕하세요[.。．｡]/);
   assert.match(srt, /<font color="#39FF14">반갑습니다<\/font>/);
   assert.equal(generateTXT(segments), '안녕하세요 반갑습니다');
 });
@@ -32,6 +33,7 @@ test('generates ASS with selected style and speaker styles', () => {
   assert.match(ass, /Style: Speaker1,Noto Sans KR,24,&H0014FF39/);
   assert.match(ass, /,8,10,10,10,1/);
   assert.match(ass, /Dialogue: 0,0:00:00.00,0:00:01.25,Speaker0/);
+  assert.doesNotMatch(ass, /안녕하세요[.。．｡]/);
 });
 
 function parseSrtTime(value) {

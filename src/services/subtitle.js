@@ -1,3 +1,5 @@
+import { removeCaptionPeriods } from './caption-text.js';
+
 export const DEFAULT_SPEAKER_COLORS = [
   '#FFFFFF', // 0: 흰색
   '#39FF14', // 1: 형광 그린
@@ -15,7 +17,7 @@ const CONJUNCTIVE = /[면고서며]$|지만$|는데$|니까$|므로$|거나$|든
 const POSTPOSITION = /[은는이가을를에도로]$/;
 
 function cleanText(text) {
-  return text.trim().replace(/\./g, '');
+  return removeCaptionPeriods(text.trim());
 }
 
 function findCutAt(text, maxLen) {

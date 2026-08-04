@@ -11,6 +11,7 @@ test('Luna correction request uses model-default sampling', () => {
   assert.equal(request.model, 'gpt-5.6-luna');
   assert.equal('temperature' in request, false);
   assert.equal(request.messages[1].content, '테스트 자막');
+  assert.match(request.messages[0].content, /쉼표\(,\)와 마침표\(\.\)를 새로 추가하지 말고/);
 });
 
 test('gpt-4o correction request preserves the existing temperature', () => {

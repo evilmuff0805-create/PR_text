@@ -1,5 +1,6 @@
 import { performance } from 'perf_hooks';
 import { processSegmentsWithTiming } from './postprocess.js';
+import { removeCaptionPeriods } from './caption-text.js';
 
 export function filterSilentSegments(segments) {
   return segments.filter((segment) => {
@@ -17,14 +18,14 @@ export function removeCommas(text) {
   return text.replace(/,/g, '').replace(/，/g, '');
 }
 
-export async function processTranscriptionSegments(segments, language) {
+export async function processTranscriptionSegments(segments, language, correct) {
   const filteredSegments = filterSilentSegments(segments);
   const correctionStartedAt = performance.now();
   let processedSegments;
   let correctionTimings;
 
   try {
-    const correctionResult = await processSegmentsWithTiming(filteredSegments, language);
+    const correctionResult = await processSegmentsWithTiming(filteredSegments, language, correct);
     processedSegments = correctionResult.segments;
     correctionTimings = correctionResult.timings;
   } catch (error) {
@@ -35,7 +36,7 @@ export async function processTranscriptionSegments(segments, language) {
   return {
     segments: processedSegments.map((segment) => ({
       ...segment,
-      text: removeCommas(segment.text),
+      text: removeCaptionPeriods(removeCommas(segment.text)),
     })),
     correctionTimings,
     correctionMs: performance.now() - correctionStartedAt,
