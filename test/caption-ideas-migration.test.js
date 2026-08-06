@@ -10,6 +10,10 @@ const historyMigrationUrl = new URL(
   '../supabase/migrations/20260722100000_caption_idea_history.sql',
   import.meta.url,
 );
+const emphasisMigrationUrl = new URL(
+  '../supabase/migrations/20260806060000_caption_idea_emphasis_mode.sql',
+  import.meta.url,
+);
 
 test('caption idea tables are private service-only records with cascading account deletion', async () => {
   const sql = await readFile(migrationUrl, 'utf8');
@@ -69,4 +73,24 @@ test('caption idea history extends available results to 90 days without changing
   assert.match(sql, /where ideas is not null/i);
   assert.doesNotMatch(sql, /grant .* (anon|authenticated)/i);
   assert.doesNotMatch(sql, /disable row level security/i);
+});
+
+test('emphasis mode is accepted by both the table constraint and the charging function', async () => {
+  const sql = await readFile(emphasisMigrationUrl, 'utf8');
+
+  // 테이블 제약과 RPC 검증 두 곳 모두에서 네 가지 모드를 허용해야 한다.
+  assert.match(
+    sql,
+    /add constraint caption_idea_requests_mode_check[\s\S]*check \(mode in \('entertainment', 'situation', 'emphasis', 'emotion'\)\)/i,
+  );
+  assert.match(
+    sql,
+    /p_mode not in \('entertainment', 'situation', 'emphasis', 'emotion'\)/i,
+  );
+  assert.match(sql, /create or replace function public\.complete_caption_idea_request\(/i);
+  // 기존 과금·크레딧 로직은 그대로 유지된다.
+  assert.match(sql, /errcode = 'CI002'/);
+  assert.match(sql, /v_remaining := 4;/);
+  assert.doesNotMatch(sql, /grant .* (anon|authenticated)/i);
+  assert.doesNotMatch(sql, /drop table|disable row level security/i);
 });

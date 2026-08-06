@@ -91,11 +91,12 @@ test('public guidance consistently explains caption idea modes, billing, and his
     read('client/src/pages/PaymentPage.jsx'),
   ]);
 
-  assert.match(intro, /예능, 상황, 감성/);
+  assert.match(intro, /예능, 상황, 강조, 감성/);
   assert.match(intro, /자막 후보 3개/);
   assert.match(guide, /to="\/caption-ideas"/);
   assert.match(guide, /<dt>예능<\/dt>/);
   assert.match(guide, /<dt>상황<\/dt>/);
+  assert.match(guide, /<dt>강조<\/dt>/);
   assert.match(guide, /<dt>감성<\/dt>/);
   assert.match(guide, /성공한 생성 5회당 변환 시간 1분/);
   assert.match(guide, /실패한 생성은 차감하지 않으며/);

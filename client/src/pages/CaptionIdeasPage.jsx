@@ -8,6 +8,7 @@ import { useDialogAccessibility } from '../utils/use-dialog-accessibility.js';
 const MODES = [
   { id: 'entertainment', label: '예능' },
   { id: 'situation', label: '상황' },
+  { id: 'emphasis', label: '강조' },
   { id: 'emotion', label: '감성' },
 ];
 
@@ -334,7 +335,7 @@ export default function CaptionIdeasPage() {
           <span className="caption-history-toggle__copy">
             <span className="workspace-kicker">HISTORY</span>
             <strong>자막 아이디어 내역</strong>
-            <span>이전에 만든 예능·상황·감성 자막을 다시 확인합니다.</span>
+            <span>이전에 만든 예능·상황·강조·감성 자막을 다시 확인합니다.</span>
           </span>
           <span className="caption-history-toggle__action">
             {historyOpen ? '접기' : '보기'}

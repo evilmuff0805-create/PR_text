@@ -10,7 +10,25 @@ export const CAPTION_IDEA_MODES = Object.freeze({
   },
   situation: {
     label: '상황',
-    direction: '관찰자가 장면을 정리하듯 확인되는 사실만 간결하게 요약하세요. 댓글체, 밈, 과장, 농담과 감정 해석을 사용하지 말고 인물의 의도나 보이지 않는 사실을 추측하지 마세요.',
+    direction: '관찰자가 장면을 정리하듯 확인되는 사실만 간결하게 요약하세요. 서술형 문장보다 명사구로 눌러 담고, 가능하면 명사형으로 끝맺으세요. 한자어를 활용해 압축하되 13자 내외로 짧게 쓰세요. 댓글체, 밈, 과장, 농담과 감정 해석을 사용하지 말고 인물의 의도나 보이지 않는 사실을 추측하지 마세요. 느낌표로 감정을 싣지 마세요.',
+    examples: [
+      '보기 드문 착한 손주',
+      '전입신고 만능키였던 시절',
+      '주민센터에 사실 조사 요청',
+      '경찰서로 찾아온 80대 할아버지',
+      '재산을 돌려받기 어려운 상황',
+    ],
+  },
+  emphasis: {
+    label: '강조',
+    direction: '장면의 충격이나 반전을 단정적으로 못 박는 자막입니다. 사실을 전달하되 강도 높은 한자어 평가 어휘로 눌러 담고, 짧고 끊어지게 쓰세요. 느낌표는 강도를 올릴 때만 절제해서 사용하세요. 상황 자막과 달리 감정의 무게를 실어도 되지만, 입력에 없는 사실을 지어내거나 농담·밈·구어체 댓글투로 흐르지는 마세요.',
+    examples: [
+      '천인공노할 행동들에 경악',
+      '악행에 큰 충격!',
+      '재산을 뺏겠다는 선언',
+      '실형 선고를 받은 가짜 손주',
+      '인류애 잃은 사람 속출',
+    ],
   },
   emotion: {
     label: '감성',
@@ -46,6 +64,10 @@ export function buildCaptionIdeaRequest(text, mode, model = getCaptionIdeasModel
     throw new CaptionIdeaError('INVALID_MODE', '자막 유형이 올바르지 않습니다.', 400);
   }
 
+  const exampleBlock = modeConfig.examples?.length
+    ? `\n\n말투 참고 예시(실제 방송 자막):\n${modeConfig.examples.map((example) => `- ${example}`).join('\n')}\n위 예시는 어조와 길이 감각을 익히기 위한 참고입니다. 표현이나 소재를 그대로 가져다 쓰지 말고, 입력된 장면에 맞는 새 문구를 만드세요.`
+    : '';
+
   return {
     model,
     messages: [
@@ -54,7 +76,7 @@ export function buildCaptionIdeaRequest(text, mode, model = getCaptionIdeasModel
         content: `당신은 한국 방송과 영상 편집에 쓰이는 짧은 자막 문구를 제안하는 편집 도우미입니다.
 
 작업 유형: ${modeConfig.label} 자막
-방향: ${modeConfig.direction}
+방향: ${modeConfig.direction}${exampleBlock}
 
 반드시 지킬 규칙:
 1. 서로 표현과 관점이 다른 한국어 후보를 정확히 3개 만드세요.
