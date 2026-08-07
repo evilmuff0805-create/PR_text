@@ -17,6 +17,7 @@ function formatDate(iso) {
 function getCaptionModeLabel(mode) {
   if (mode === 'entertainment') return '예능';
   if (mode === 'situation') return '상황';
+  if (mode === 'emphasis') return '강조';
   if (mode === 'emotion') return '감성';
   return '자막';
 }

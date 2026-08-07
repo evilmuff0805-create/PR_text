@@ -4,6 +4,7 @@ import test from 'node:test';
 process.env.OPENAI_API_KEY ||= 'test-key';
 
 const {
+  CAPTION_IDEA_MODES,
   CaptionIdeaError,
   buildCaptionIdeaRequest,
   estimateCaptionIdeaCostUsd,
@@ -43,6 +44,42 @@ test('entertainment mode uses a distinct community-style rhythm while situation 
   assert.match(entertainmentPrompt, /특정 커뮤니티만 아는 은어/);
   assert.match(situationPrompt, /댓글체, 밈, 과장, 농담과 감정 해석을 사용하지 말고/);
   assert.doesNotMatch(situationPrompt, /세 후보 중 최소 두 개에는 웃음 장치/);
+});
+
+test('situation mode carries the noun-phrase tone reference without emotive punctuation', () => {
+  const prompt = buildCaptionIdeaRequest('할머니가 주민센터를 찾아갔다', 'situation').messages[0].content;
+
+  assert.match(prompt, /명사구로 눌러 담고/);
+  assert.match(prompt, /느낌표로 감정을 싣지 마세요/);
+  assert.match(prompt, /말투 참고 예시\(실제 방송 자막\)/);
+  assert.match(prompt, /- 주민센터에 사실 조사 요청/);
+  assert.match(prompt, /표현이나 소재를 그대로 가져다 쓰지 말고/);
+});
+
+test('emphasis mode allows weighted wording while staying distinct from situation and entertainment', () => {
+  const emphasis = buildCaptionIdeaRequest('가해자가 실형을 선고받았다', 'emphasis');
+  const prompt = emphasis.messages[0].content;
+
+  assert.equal(CAPTION_IDEA_MODES.emphasis.label, '강조');
+  assert.match(prompt, /작업 유형: 강조 자막/);
+  assert.match(prompt, /충격이나 반전을 단정적으로 못 박는/);
+  assert.match(prompt, /감정의 무게를 실어도 되지만/);
+  assert.match(prompt, /- 천인공노할 행동들에 경악/);
+  // 강조는 상황의 감정 금지 규칙도, 예능의 웃음 장치 규칙도 물려받지 않는다.
+  assert.doesNotMatch(prompt, /감정 해석을 사용하지 말고/);
+  assert.doesNotMatch(prompt, /세 후보 중 최소 두 개에는 웃음 장치/);
+});
+
+test('every caption mode example stays inside the 28 character subtitle limit', () => {
+  for (const [mode, config] of Object.entries(CAPTION_IDEA_MODES)) {
+    for (const example of config.examples || []) {
+      assert.ok(
+        Array.from(example).length <= 28,
+        `${mode} 예시가 28자를 넘습니다: ${example}`,
+      );
+      assert.doesNotMatch(example, /\./, `${mode} 예시에 마침표가 있습니다: ${example}`);
+    }
+  }
 });
 
 test('caption result validation rejects duplicates and ideas over 28 characters', () => {

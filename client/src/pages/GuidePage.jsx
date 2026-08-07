@@ -108,6 +108,10 @@ export default function GuidePage() {
             <dd>화면에서 보이는 사실을 짧고 명확하게 정리합니다.</dd>
           </div>
           <div>
+            <dt>강조</dt>
+            <dd>장면의 충격이나 반전을 단정적인 문구로 못 박습니다.</dd>
+          </div>
+          <div>
             <dt>감성</dt>
             <dd>장면의 감정을 따뜻하고 여운 있는 문장으로 표현합니다.</dd>
           </div>
