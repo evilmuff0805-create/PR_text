@@ -57,7 +57,8 @@ function validateAssOptions(assOptions) {
     return 'ASS 폰트명이 올바르지 않습니다.';
   }
   if (fontColor !== undefined && (typeof fontColor !== 'string' || !HEX_COLOR.test(fontColor))) return 'ASS 글자 색상이 올바르지 않습니다.';
-  if (fontSize !== undefined && (!Number.isFinite(fontSize) || fontSize < 8 || fontSize > 120)) return 'ASS 글자 크기가 올바르지 않습니다.';
+  // 1920x1080 좌표계 기준이라 상한이 120이면 큰 자막을 만들 수 없다.
+  if (fontSize !== undefined && (!Number.isFinite(fontSize) || fontSize < 8 || fontSize > 200)) return 'ASS 글자 크기가 올바르지 않습니다.';
 
   return null;
 }

@@ -9,13 +9,31 @@ export const DEFAULT_SPEAKER_COLORS = [
 
 export const SUBTITLE_MAX_CHARS = 28;
 
+// ASS 기준 해상도. Fontsize와 여백은 이 좌표계의 픽셀로 해석된다.
+export const ASS_PLAY_RES_X = 1920;
+export const ASS_PLAY_RES_Y = 1080;
+export const ASS_DEFAULT_FONT_SIZE = 48;
+
 const SENTENCE_END = /[다요죠까]$/;
 const SENTENCE_PUNCTUATION = /[!?]$/;
 const CONJUNCTIVE = /[면고서며]$|지만$|는데$|니까$|므로$|거나$|든지$/;
 const POSTPOSITION = /[은는이가을를에도로]$/;
 
+// 문장 끝 마침표만 지운다. 숫자와 영문 사이의 마침표는 의미가 있으므로 남긴다.
+// (예: "3.5초"가 "35초"로, "www.naver.com"이 "wwwnavercom"으로 뭉개지던 문제)
+const DECORATIVE_PERIOD = /\.(?![0-9A-Za-z])|(?<![0-9A-Za-z])\./g;
+
 function cleanText(text) {
-  return text.trim().replace(/\./g, '');
+  return text.trim().replace(DECORATIVE_PERIOD, '');
+}
+
+// ASS는 중괄호를 스타일 오버라이드로, 줄바꿈을 라인 구분자로 해석한다.
+// 자막 본문에 그대로 들어가면 Dialogue 라인이 깨지므로 무해한 형태로 바꾼다.
+function escapeASSText(text) {
+  return String(text ?? '')
+    .replace(/\{/g, '(')
+    .replace(/\}/g, ')')
+    .replace(/\r\n?|\n/g, '\\N');
 }
 
 function findCutAt(text, maxLen) {
@@ -113,7 +131,7 @@ export function generateASS(segments, options = {}, speakerColors = null) {
     position = 'bottom',
     fontFamily = 'Pretendard',
     fontColor = '#FFFFFF',
-    fontSize = 20,
+    fontSize = ASS_DEFAULT_FONT_SIZE,
   } = options;
 
   // ASS Alignment: 하단(2), 중간(5), 상단(8)
@@ -132,13 +150,19 @@ export function generateASS(segments, options = {}, speakerColors = null) {
   const primaryColour = hexToASS(fontColor);
   const styleFormat = 'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding';
   const makeStyleLine = (name, color) =>
-    `Style: ${name},${fontFamily},${fontSize},${hexToASS(color)},&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,2,1,${alignment},10,10,10,1`;
+    `Style: ${name},${fontFamily},${fontSize},${hexToASS(color)},&H000000FF,&H00000000,&H00000000,0,0,0,0,100,100,0,0,1,3,1,${alignment},60,60,50,1`;
 
+  // PlayResX/Y가 없으면 libass·VSFilter가 384x288을 가정해서 1080p 영상에서 글자가
+  // 약 3.75배로 확대된다. 기준 해상도를 명시해 Fontsize를 1080p 픽셀로 해석하게 한다.
   const scriptInfo = [
     '[Script Info]',
     'Title: 프리뷰 자막 머신',
     'ScriptType: v4.00+',
     'Collisions: Normal',
+    `PlayResX: ${ASS_PLAY_RES_X}`,
+    `PlayResY: ${ASS_PLAY_RES_Y}`,
+    'ScaledBorderAndShadow: yes',
+    'WrapStyle: 0',
     'PlayDepth: 0',
     '',
   ].join('\n');
@@ -164,7 +188,7 @@ export function generateASS(segments, options = {}, speakerColors = null) {
       const styleName = speakerColors && seg.speaker !== undefined
         ? `Speaker${seg.speaker}`
         : 'Default';
-      return `Dialogue: 0,${formatASS(seg.start)},${formatASS(seg.end)},${styleName},,0,0,0,,${seg.text}`;
+      return `Dialogue: 0,${formatASS(seg.start)},${formatASS(seg.end)},${styleName},,0,0,0,,${escapeASSText(seg.text)}`;
     }),
   ].join('\n');
 
