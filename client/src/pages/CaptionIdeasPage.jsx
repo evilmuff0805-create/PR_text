@@ -4,22 +4,7 @@ import AuthModal from '../components/AuthModal.jsx';
 import CaptionIdeaHistory from '../components/CaptionIdeaHistory.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useDialogAccessibility } from '../utils/use-dialog-accessibility.js';
-
-const MODES = [
-  { id: 'entertainment', label: '예능' },
-  { id: 'situation', label: '상황' },
-  { id: 'emphasis', label: '강조' },
-  { id: 'emotion', label: '감성' },
-];
-
-function createRequestId() {
-  if (window.crypto?.randomUUID) return window.crypto.randomUUID();
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (value) => {
-    const random = Math.floor(Math.random() * 16);
-    const nibble = value === 'x' ? random : (random & 0x3) | 0x8;
-    return nibble.toString(16);
-  });
-}
+import { CAPTION_IDEA_MODES as MODES, createRequestId } from '../utils/caption-ideas.js';
 
 export default function CaptionIdeasPage() {
   const { user, getToken, updateCredits } = useAuth();

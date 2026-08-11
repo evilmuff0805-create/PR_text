@@ -1,6 +1,11 @@
 import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import {
+  buildSceneText,
+  CAPTION_IDEA_MODES,
+  createRequestId,
+} from '../utils/caption-ideas.js';
 
 function splitTextLines(value) {
   return String(value ?? '')
@@ -218,6 +223,59 @@ export default function ResultPage() {
       // 저장 공간이 없으면 보존만 포기하고 편집은 계속할 수 있게 둔다.
     }
   }, [editedSegments, speakerColors, segments]);
+
+  // 구간에서 바로 뽑는 자막 아이디어. 장면을 다시 타이핑하지 않아도 되게 한다.
+  const [ideaIndex, setIdeaIndex] = useState(null);
+  const [ideaMode, setIdeaMode] = useState('situation');
+  const [ideaResults, setIdeaResults] = useState([]);
+  const [ideaLoading, setIdeaLoading] = useState(false);
+  const [ideaError, setIdeaError] = useState('');
+  const [copiedIdea, setCopiedIdea] = useState('');
+
+  function openIdeaPanel(index) {
+    setIdeaIndex((current) => (current === index ? null : index));
+    setIdeaResults([]);
+    setIdeaError('');
+    setCopiedIdea('');
+  }
+
+  async function generateIdeas() {
+    const sceneText = buildSceneText(editedSegments, ideaIndex);
+    if (!sceneText) {
+      setIdeaError('이 구간에는 내용이 없습니다.');
+      return;
+    }
+
+    setIdeaLoading(true);
+    setIdeaError('');
+    setIdeaResults([]);
+    try {
+      const res = await fetch('/api/caption-ideas', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ requestId: createRequestId(), mode: ideaMode, text: sceneText }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || '자막 아이디어를 만들지 못했습니다.');
+      setIdeaResults(data.ideas || []);
+    } catch (error) {
+      setIdeaError(error.message || '자막 아이디어를 만들지 못했습니다.');
+    } finally {
+      setIdeaLoading(false);
+    }
+  }
+
+  async function copyIdea(idea) {
+    try {
+      await navigator.clipboard.writeText(idea);
+      setCopiedIdea(idea);
+    } catch {
+      setIdeaError('복사하지 못했습니다. 직접 선택해 복사해주세요.');
+    }
+  }
 
   // 영어 번역 상태
   const [showTranslation, setShowTranslation] = useState(false);
@@ -549,6 +607,14 @@ export default function ResultPage() {
                         인물 {Number(segment.speaker) + 1}
                       </span>
                     )}
+                    <button
+                      aria-expanded={ideaIndex === index}
+                      className="result-segment-idea-toggle"
+                      onClick={() => openIdeaPanel(index)}
+                      type="button"
+                    >
+                      자막 아이디어
+                    </button>
                   </div>
                   <textarea
                     aria-label={`자막 구간 ${index + 1}`}
@@ -556,6 +622,49 @@ export default function ResultPage() {
                     rows={2}
                     value={segment.text}
                   />
+                  {ideaIndex === index && (
+                    <div className="segment-idea-panel">
+                      <p className="segment-idea-panel__hint">
+                        앞뒤 대사를 함께 넘겨 이 구간에 어울리는 자막 문구를 제안합니다.
+                      </p>
+                      <div className="segment-idea-panel__modes" role="radiogroup" aria-label="자막 유형">
+                        {CAPTION_IDEA_MODES.map((item) => (
+                          <button
+                            aria-checked={ideaMode === item.id}
+                            className={ideaMode === item.id ? 'is-active' : ''}
+                            key={item.id}
+                            onClick={() => setIdeaMode(item.id)}
+                            role="radio"
+                            type="button"
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        className="gradient-btn segment-idea-panel__run"
+                        disabled={ideaLoading}
+                        onClick={generateIdeas}
+                        type="button"
+                      >
+                        {ideaLoading ? '만드는 중...' : '아이디어 3개 만들기'}
+                      </button>
+                      <p className="segment-idea-panel__cost">성공 5회당 변환 시간 1분이 차감됩니다</p>
+                      {ideaError && <p className="segment-idea-panel__error" role="alert">{ideaError}</p>}
+                      {ideaResults.length > 0 && (
+                        <ul className="segment-idea-panel__results">
+                          {ideaResults.map((idea) => (
+                            <li key={idea}>
+                              <span>{idea}</span>
+                              <button onClick={() => copyIdea(idea)} type="button">
+                                {copiedIdea === idea ? '복사됨' : '복사'}
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
+                  )}
                 </article>
               ))}
             </div>
