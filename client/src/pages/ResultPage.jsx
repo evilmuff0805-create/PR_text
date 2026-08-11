@@ -166,7 +166,13 @@ export default function ResultPage() {
     try { return JSON.parse(sessionStorage.getItem('lastResult')); } catch { return null; }
   })();
 
-  const { text = '', segments = [], language = '', diarize = false } = resolved || {};
+  const {
+    text = '',
+    segments = [],
+    language = '',
+    diarize = false,
+    transcriptionLogId = null,
+  } = resolved || {};
 
   const [editedSegments, setEditedSegments] = useState(() => {
     const restored = readStoredEdits(segments);
@@ -223,6 +229,38 @@ export default function ResultPage() {
       // 저장 공간이 없으면 보존만 포기하고 편집은 계속할 수 있게 둔다.
     }
   }, [editedSegments, speakerColors, segments]);
+
+  // 편집본을 서버에도 보관한다. sessionStorage만으로는 창을 닫으면 사라지고,
+  // 재다운로드가 다듬기 전 원본을 내려주는 문제가 남는다.
+  const [saveState, setSaveState] = useState('idle');
+
+  useEffect(() => {
+    if (!transcriptionLogId || !token) return;
+    if (editedSegments.length === 0) return;
+    // 줄 수가 어긋난 상태는 화면에서도 반영을 보류하므로 저장하지 않는다.
+    if (lineCountMismatch) return;
+    // 원본 그대로면 저장할 것이 없다.
+    if (editedSegments.every((segment, index) => segment.text === segments[index]?.text)) return;
+
+    const timer = setTimeout(async () => {
+      setSaveState('saving');
+      try {
+        const res = await fetch(`/api/auth/transcription/${transcriptionLogId}/segments`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ segments: editedSegments }),
+        });
+        setSaveState(res.ok ? 'saved' : 'failed');
+      } catch {
+        setSaveState('failed');
+      }
+    }, 1500);
+
+    return () => clearTimeout(timer);
+  }, [editedSegments, transcriptionLogId, token, lineCountMismatch, segments]);
 
   // 구간에서 바로 뽑는 자막 아이디어. 장면을 다시 타이핑하지 않아도 되게 한다.
   const [ideaIndex, setIdeaIndex] = useState(null);
@@ -560,6 +598,14 @@ export default function ResultPage() {
               </button>
             ))}
           </div>
+
+          {saveState !== 'idle' && (
+            <p className={`result-save-state result-save-state--${saveState}`} role="status">
+              {saveState === 'saving' && '편집 내용 저장 중...'}
+              {saveState === 'saved' && '편집 내용이 저장되었습니다. 재다운로드에도 반영됩니다.'}
+              {saveState === 'failed' && '편집 내용을 저장하지 못했습니다. 이 창에서는 그대로 다운로드할 수 있습니다.'}
+            </p>
+          )}
 
           {editorMode === 'text' ? (
             <div

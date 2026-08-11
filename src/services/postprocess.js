@@ -1,4 +1,5 @@
 import { performance } from 'perf_hooks';
+import { isKoreanLanguage, normalizeLanguage, UNKNOWN_LANGUAGE } from './language.js';
 
 const CHUNK_SIZE = 30;
 const DEFAULT_CONCURRENCY = 4;
@@ -82,9 +83,9 @@ function hasMostlyKoreanText(segments) {
 
 export async function processSegmentsWithTiming(segments, detectedLang, correct) {
   const startedAt = performance.now();
-  const language = (detectedLang || '').toLowerCase();
-  const detectedKorean = language.includes('korean') || language === 'ko' || language === 'kor';
-  const inferredKorean = language === 'unknown' && hasMostlyKoreanText(segments);
+  const language = normalizeLanguage(detectedLang);
+  const detectedKorean = isKoreanLanguage(language);
+  const inferredKorean = language === UNKNOWN_LANGUAGE && hasMostlyKoreanText(segments);
   const shouldCorrectKorean = detectedKorean || inferredKorean;
 
   if (!shouldCorrectKorean) {

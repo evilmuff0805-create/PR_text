@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { normalizeLanguage } from './language.js';
 import { performance } from 'perf_hooks';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { transcribeWithDiarization } from './whisper.js';
@@ -35,6 +36,8 @@ export function toClientDiarizationJob(job, creditsRemaining) {
     text: completed ? job.result_text : undefined,
     segments: completed ? job.result_segments : undefined,
     language: completed ? job.result_language : undefined,
+    // 편집기가 다듬은 자막을 되돌려 저장할 대상.
+    transcriptionLogId: completed ? job.transcription_log_id : undefined,
     error: failed ? '변환에 실패해 예약한 변환 시간이 자동 환불되었습니다.' : undefined,
   };
 }
@@ -336,7 +339,7 @@ async function storeCompletedJob(job, workerToken, result) {
       user_id: job.user_id,
       filename: job.filename,
       duration_seconds: job.duration_seconds,
-      language: result.language,
+      language: normalizeLanguage(result.language),
       segments_count: result.segments.length,
       text_preview: result.text.slice(0, 200),
       segments: result.segments,
@@ -352,7 +355,7 @@ async function storeCompletedJob(job, workerToken, result) {
     p_worker_token: workerToken,
     p_result_text: result.text,
     p_result_segments: result.segments,
-    p_result_language: result.language,
+    p_result_language: normalizeLanguage(result.language),
     p_transcription_log_id: transcriptionLog.id,
   });
 
@@ -504,4 +507,4 @@ export function startDiarizationJobWorker() {
     console.error(`[diarization.job] worker 초기화 오류: ${error.message}`);
   });
 }
-
+

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import uploadMiddleware from '../middleware/upload.js';
 import { prepareDiarizationAudioForStorage, probeAudioDuration, transcribe } from '../services/whisper.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { normalizeLanguage } from '../services/language.js';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { randomUUID } from 'crypto';
 import { performance } from 'perf_hooks';
@@ -315,15 +316,20 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
 
     // 변환 이력 기록
     const historyStartedAt = performance.now();
-    const { error: logErr } = await supabaseAdmin.from('transcription_logs').insert({
+    // Whisper가 'ko'와 'korean'을 섞어 주므로 저장 전에 표준 코드로 맞춘다.
+    const resultLanguage = normalizeLanguage(result.language);
+
+    const { data: logRow, error: logErr } = await supabaseAdmin.from('transcription_logs').insert({
       user_id: req.user.id,
       filename: originalname,
       duration_seconds: totalSeconds,
-      language: result.language,
+      language: resultLanguage,
       segments_count: processedSegments.length,
       text_preview: processedText.slice(0, 200),
       segments: processedSegments,
-    });
+    })
+      .select('id')
+      .maybeSingle();
     req.transcriptionTiming.historyMs = performance.now() - historyStartedAt;
     if (logErr) console.error('[transcription_logs] 기록 실패:', logErr.message);
 
@@ -331,7 +337,9 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
     res.json({
       text: processedText,
       segments: processedSegments,
-      language: result.language,
+      language: resultLanguage,
+      // 편집기가 다듬은 자막을 되돌려 저장할 대상.
+      transcriptionLogId: logRow?.id ?? null,
       creditsUsed: creditsNeeded,
       creditsRemaining: newCredits,
       diarize,
