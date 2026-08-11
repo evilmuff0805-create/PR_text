@@ -305,7 +305,49 @@ router.get('/transcription/:id', authMiddleware, async (req, res) => {
     return res.status(404).json({ error: '변환 기록을 찾을 수 없습니다.' });
   }
 
-  res.json(data);
+  // 편집본이 있으면 그걸 내려준다. 재다운로드가 다듬기 전 원본을 주던 문제를 막는다.
+  const { edited_segments: editedSegments, ...log } = data;
+  res.json({
+    ...log,
+    segments: editedSegments || log.segments,
+    hasEdits: Boolean(editedSegments),
+  });
+});
+
+// 편집한 자막을 보관한다. 창을 닫아도 다듬은 내용이 남는다.
+router.put('/transcription/:id/segments', authMiddleware, async (req, res) => {
+  const logId = Number(req.params.id);
+  const { segments } = req.body ?? {};
+
+  if (!Number.isInteger(logId) || logId <= 0) {
+    return res.status(400).json({ error: '변환 기록 식별값이 올바르지 않습니다.' });
+  }
+  if (!Array.isArray(segments) || segments.length === 0) {
+    return res.status(400).json({ error: '저장할 자막이 없습니다.' });
+  }
+
+  const { data, error } = await supabaseAdmin.rpc('save_transcription_edits', {
+    p_log_id: logId,
+    p_user_id: req.user.id,
+    p_segments: segments,
+  });
+
+  if (error) {
+    const status = error.code === 'TE002' ? 404 : ['TE001', 'TE003'].includes(error.code) ? 400 : 500;
+    if (status === 500) {
+      console.error('[transcription.save_edits]', JSON.stringify({
+        requestId: req.requestId,
+        logId,
+        message: error.message,
+      }));
+    }
+    return res.status(status).json({
+      error: status === 500 ? '편집 내용을 저장하지 못했습니다.' : error.message,
+    });
+  }
+
+  const result = data?.[0];
+  return res.json({ saved: result?.saved_count ?? segments.length, editedAt: result?.edited_at ?? null });
 });
 
 export default router;
