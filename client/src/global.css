@@ -3744,22 +3744,45 @@ textarea:focus-visible {
   line-height: 1.75;
 }
 
+.result-editor-tip {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border: 1px solid rgba(57, 255, 20, 0.28);
+  border-radius: 12px;
+  background: rgba(57, 255, 20, 0.06);
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.6;
+}
+
+.result-editor-tip__link {
+  margin: 0 4px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: #39FF14;
+  font-size: inherit;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
 .result-segment-idea-toggle {
   margin-left: auto;
-  padding: 4px 10px;
-  border: 1px solid var(--border);
+  padding: 4px 12px;
+  border: 1px solid rgba(57, 255, 20, 0.45);
   border-radius: 999px;
-  background: transparent;
-  color: var(--text-secondary);
+  background: rgba(57, 255, 20, 0.08);
+  color: #39FF14;
   font-size: 0.74rem;
   cursor: pointer;
-  transition: border-color 0.2s ease, color 0.2s ease;
+  transition: background 0.2s ease, border-color 0.2s ease;
 }
 
 .result-segment-idea-toggle:hover,
 .result-segment-idea-toggle[aria-expanded="true"] {
   border-color: #39FF14;
-  color: #39FF14;
+  background: rgba(57, 255, 20, 0.18);
 }
 
 .segment-idea-panel {
