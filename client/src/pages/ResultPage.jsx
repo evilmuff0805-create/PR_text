@@ -2,32 +2,58 @@ import { useState, useEffect } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
+function splitTextLines(value) {
+  return String(value ?? '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\n+$/g, '')
+    .split('\n');
+}
+
+// 줄 하나를 지우거나 더하면 그 뒤 자막이 전부 한 칸씩 밀려 타임코드와 어긋난다.
+// 그래서 줄 수가 자막 수와 정확히 같을 때만 반영한다. 판정은 buildEditedSegments를
+// 호출하는 쪽에서 하고, 여기서는 1:1로 맞는 입력만 받는다.
+function canApplyFullText(segments, editedText) {
+  if (!Array.isArray(segments) || segments.length === 0) return false;
+  return splitTextLines(editedText).length === segments.length;
+}
+
 function buildEditedSegments(segments, editedText) {
   if (!Array.isArray(segments) || segments.length === 0) return [];
 
-  const normalizedText = String(editedText ?? '')
-    .replace(/\r\n/g, '\n')
-    .replace(/\r/g, '\n')
-    .replace(/\n+$/g, '');
-  const lines = normalizedText.split('\n');
+  const lines = splitTextLines(editedText);
 
-  const nextSegments = segments.map((segment, index) => ({
+  return segments.map((segment, index) => ({
     ...segment,
-    text: lines[index] ?? '',
+    text: lines[index] ?? segment.text ?? '',
   }));
+}
 
-  if (lines.length > segments.length) {
-    const lastIndex = nextSegments.length - 1;
-    const overflowText = lines.slice(segments.length).join('\n').trim();
-    if (overflowText) {
-      nextSegments[lastIndex] = {
-        ...nextSegments[lastIndex],
-        text: [nextSegments[lastIndex].text, overflowText].filter(Boolean).join('\n'),
-      };
-    }
+function joinSegmentLines(segments) {
+  return segments.map((segment) => segment.text).join('\n');
+}
+
+// 다른 변환 결과의 편집본이 섞이지 않도록 결과를 식별한다.
+function resultSignature(segments) {
+  if (!Array.isArray(segments) || segments.length === 0) return '';
+  const first = segments[0];
+  const last = segments[segments.length - 1];
+  return `${segments.length}:${first?.start ?? ''}:${last?.end ?? ''}`;
+}
+
+const EDITS_STORAGE_KEY = 'lastResultEdits';
+
+function readStoredEdits(segments) {
+  try {
+    const raw = sessionStorage.getItem(EDITS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed?.signature !== resultSignature(segments)) return null;
+    if (!Array.isArray(parsed.segments) || parsed.segments.length !== segments.length) return null;
+    return parsed;
+  } catch {
+    return null;
   }
-
-  return nextSegments;
 }
 
 function formatSegmentTime(seconds) {
@@ -38,6 +64,12 @@ function formatSegmentTime(seconds) {
   return `${String(minutes).padStart(2, '0')}:${String(wholeSeconds).padStart(2, '0')}.${tenths}`;
 }
 
+// ASS 기준 해상도(src/services/subtitle.js와 동일). 글자 크기는 이 좌표계의 픽셀이다.
+const ASS_PLAY_RES_X = 1920;
+const ASS_DEFAULT_FONT_SIZE = 48;
+// 미리보기 박스는 1920px 폭을 축소해서 보여주므로 같은 비율로 글자도 줄인다.
+const ASS_PREVIEW_WIDTH = 560;
+
 const ASS_PRESETS = [
   {
     id: 'youtube',
@@ -45,7 +77,7 @@ const ASS_PRESETS = [
     position: 'bottom',
     fontFamily: 'Pretendard',
     fontColor: '#FFFFFF',
-    fontSize: 20,
+    fontSize: 48,
   },
   {
     id: 'highlight',
@@ -53,7 +85,7 @@ const ASS_PRESETS = [
     position: 'bottom',
     fontFamily: 'Noto Sans KR',
     fontColor: '#FFFF00',
-    fontSize: 24,
+    fontSize: 58,
   },
   {
     id: 'caption',
@@ -61,7 +93,7 @@ const ASS_PRESETS = [
     position: 'top',
     fontFamily: 'Pretendard',
     fontColor: '#FFFFFF',
-    fontSize: 18,
+    fontSize: 44,
   },
   {
     id: 'interview',
@@ -69,7 +101,7 @@ const ASS_PRESETS = [
     position: 'middle',
     fontFamily: 'Nanum Gothic',
     fontColor: '#FFFFFF',
-    fontSize: 22,
+    fontSize: 54,
   },
 ];
 
@@ -131,10 +163,22 @@ export default function ResultPage() {
 
   const { text = '', segments = [], language = '', diarize = false } = resolved || {};
 
-  const [editedSegments, setEditedSegments] = useState(() => buildEditedSegments(segments, text));
+  const [editedSegments, setEditedSegments] = useState(() => {
+    const restored = readStoredEdits(segments);
+    if (restored) return restored.segments;
+    return buildEditedSegments(segments, text);
+  });
+  // 사용자가 입력한 원문 그대로. 줄 수가 맞지 않아 아직 반영하지 못한 상태도 담는다.
+  const [fullTextDraft, setFullTextDraft] = useState(() => {
+    const restored = readStoredEdits(segments);
+    if (restored) return joinSegmentLines(restored.segments);
+    return joinSegmentLines(buildEditedSegments(segments, text));
+  });
   const [editorMode, setEditorMode] = useState('text');
   const [downloading, setDownloading] = useState(false);
-  const editedText = editedSegments.map(segment => segment.text).join('\n');
+
+  const draftLineCount = splitTextLines(fullTextDraft).length;
+  const lineCountMismatch = editedSegments.length > 0 && draftLineCount !== editedSegments.length;
 
   const handleEditorTabKeyDown = (event, index) => {
     let nextIndex = null;
@@ -157,8 +201,23 @@ export default function ResultPage() {
   const [speakerColors, setSpeakerColors] = useState(() => {
     const init = {};
     speakerIds.forEach(id => { init[String(id)] = DEFAULT_SPEAKER_COLORS[id] ?? '#39FF14'; });
-    return init;
+    const restored = readStoredEdits(segments);
+    return restored?.speakerColors ? { ...init, ...restored.speakerColors } : init;
   });
+
+  // 편집한 내용과 화자 색상을 보존한다. 새로고침해도 작업이 사라지지 않는다.
+  useEffect(() => {
+    if (editedSegments.length === 0) return;
+    try {
+      sessionStorage.setItem(EDITS_STORAGE_KEY, JSON.stringify({
+        signature: resultSignature(segments),
+        segments: editedSegments,
+        speakerColors,
+      }));
+    } catch {
+      // 저장 공간이 없으면 보존만 포기하고 편집은 계속할 수 있게 둔다.
+    }
+  }, [editedSegments, speakerColors, segments]);
 
   // 영어 번역 상태
   const [showTranslation, setShowTranslation] = useState(false);
@@ -179,7 +238,7 @@ export default function ResultPage() {
   const [assPosition, setAssPosition] = useState('bottom');
   const [assFontFamily, setAssFontFamily] = useState('Pretendard');
   const [assFontColor, setAssFontColor] = useState('#FFFFFF');
-  const [assFontSize, setAssFontSize] = useState(20);
+  const [assFontSize, setAssFontSize] = useState(ASS_DEFAULT_FONT_SIZE);
 
   const fontOptions = [
     { value: 'Pretendard', label: 'Pretendard (기본)' },
@@ -223,13 +282,19 @@ export default function ResultPage() {
   }
 
   function updateSegmentText(index, nextText) {
-    setEditedSegments(previous => previous.map((segment, segmentIndex) => (
+    const next = editedSegments.map((segment, segmentIndex) => (
       segmentIndex === index ? { ...segment, text: nextText } : segment
-    )));
+    ));
+    setEditedSegments(next);
+    setFullTextDraft(joinSegmentLines(next));
   }
 
   function updateFullText(nextText) {
-    setEditedSegments(buildEditedSegments(segments, nextText));
+    setFullTextDraft(nextText);
+    // 줄 수가 맞을 때만 자막에 반영한다. 어긋난 상태는 경고로 알리고 보류한다.
+    if (canApplyFullText(editedSegments, nextText)) {
+      setEditedSegments(buildEditedSegments(editedSegments, nextText));
+    }
   }
 
   function applyAssPreset(preset) {
@@ -248,6 +313,8 @@ export default function ResultPage() {
   }
 
   async function doDownload(format, options) {
+    // 버튼은 비활성화돼 있지만, 어긋난 상태로는 어떤 경로로도 파일이 나가지 않게 막는다.
+    if (lineCountMismatch) return;
     setDownloading(true);
     try {
       const body = { segments: editedSegments, format };
@@ -445,10 +512,20 @@ export default function ResultPage() {
             >
               <label className="sr-only" htmlFor="full-transcript">전체 변환 텍스트</label>
               <textarea
+                aria-describedby={lineCountMismatch ? 'full-transcript-warning' : undefined}
+                aria-invalid={lineCountMismatch || undefined}
                 id="full-transcript"
                 onChange={(event) => updateFullText(event.target.value)}
-                value={editedText}
+                value={fullTextDraft}
               />
+              {lineCountMismatch && (
+                <p className="result-edit-warning" id="full-transcript-warning" role="alert">
+                  줄 수가 자막 수와 다릅니다 (현재 {draftLineCount}줄 / 자막 {editedSegments.length}개).
+                  줄을 추가하거나 지우면 뒤쪽 자막이 전부 밀려 타임코드가 어긋나기 때문에,
+                  줄 수를 맞추기 전까지 편집 내용을 반영하지 않고 다운로드도 막아둡니다.
+                  한 줄이 곧 자막 하나입니다.
+                </p>
+              )}
             </div>
           ) : (
             <div
@@ -496,7 +573,7 @@ export default function ResultPage() {
               {DOWNLOAD_FORMATS.map((format) => (
                 <button
                   className={format.id === 'ass' && showAssPanel ? 'export-option is-active' : 'export-option'}
-                  disabled={downloading}
+                  disabled={downloading || lineCountMismatch}
                   key={format.id}
                   onClick={() => handleDownload(format.id)}
                   type="button"
@@ -600,7 +677,7 @@ export default function ResultPage() {
               <p style={{
                 color: assFontColor,
                 fontFamily: assFontFamily,
-                fontSize: `${Math.max(assFontSize * 0.8, 12)}px`,
+                fontSize: `${Math.max(assFontSize * (ASS_PREVIEW_WIDTH / ASS_PLAY_RES_X), 9).toFixed(1)}px`,
               }}>
                 {previewText}
               </p>
@@ -656,8 +733,8 @@ export default function ResultPage() {
               <label className="ass-size-control">
                 <span>글자 크기 <strong>{assFontSize}px</strong></span>
                 <input
-                  max="48"
-                  min="12"
+                  max="96"
+                  min="24"
                   onChange={(event) => setAssFontSize(Number(event.target.value))}
                   type="range"
                   value={assFontSize}

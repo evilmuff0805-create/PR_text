@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  ASS_DEFAULT_FONT_SIZE,
   generateASS,
   generateSRT,
   generateTXT,
@@ -30,8 +31,39 @@ test('generates ASS with selected style and speaker styles', () => {
 
   assert.match(ass, /Style: Default,Noto Sans KR,24,&H0000FFFF/);
   assert.match(ass, /Style: Speaker1,Noto Sans KR,24,&H0014FF39/);
-  assert.match(ass, /,8,10,10,10,1/);
+  assert.match(ass, /,8,60,60,50,1/);
   assert.match(ass, /Dialogue: 0,0:00:00.00,0:00:01.25,Speaker0/);
+});
+
+test('ASS declares a 1080p canvas so font size is not scaled up by the player', () => {
+  // PlayResX/Y가 없으면 libass가 384x288을 가정해 1080p에서 글자가 약 3.75배가 된다.
+  const ass = generateASS(segments);
+
+  assert.match(ass, /^PlayResX: 1920$/m);
+  assert.match(ass, /^PlayResY: 1080$/m);
+  assert.match(ass, /^ScaledBorderAndShadow: yes$/m);
+  assert.match(ass, new RegExp(`Style: Default,Pretendard,${ASS_DEFAULT_FONT_SIZE},`));
+});
+
+test('ASS text cannot break the Dialogue line with braces or newlines', () => {
+  const ass = generateASS([
+    { start: 0, end: 1, text: '앞줄\n뒷줄 {b1}' },
+  ]);
+
+  const dialogue = ass.split('\n').filter((line) => line.startsWith('Dialogue:'));
+  assert.equal(dialogue.length, 1);
+  assert.match(dialogue[0], /앞줄\\N뒷줄 \(b1\)/);
+  assert.doesNotMatch(dialogue[0], /[{}]/);
+});
+
+test('keeps periods that carry meaning and drops sentence-ending ones', () => {
+  const kept = [
+    { start: 0, end: 1, text: '녹화는 3.5초 뒤에 시작합니다.' },
+    { start: 1, end: 2, text: 'www.naver.com 으로 접속하세요.' },
+  ];
+
+  // 숫자·영문 사이 마침표는 의미가 있으므로 남고, 문장 끝 마침표만 사라진다.
+  assert.equal(generateTXT(kept), '녹화는 3.5초 뒤에 시작합니다 www.naver.com 으로 접속하세요');
 });
 
 function parseSrtTime(value) {
