@@ -14,6 +14,9 @@ export const ASS_PLAY_RES_X = 1920;
 export const ASS_PLAY_RES_Y = 1080;
 export const ASS_DEFAULT_FONT_SIZE = 48;
 
+// 방송·유튜브 자막의 통상 하한. 이보다 짧으면 읽기 전에 사라진다.
+export const MIN_CUE_SECONDS = 0.8;
+
 const SENTENCE_END = /[다요죠까]$/;
 const SENTENCE_PUNCTUATION = /[!?]$/;
 const CONJUNCTIVE = /[면고서며]$|지만$|는데$|니까$|므로$|거나$|든지$/;
@@ -69,7 +72,14 @@ function splitSegment(segment, maxLen = SUBTITLE_MAX_CHARS) {
     if (!frontText || !backText) break;
 
     const total = frontText.length + backText.length;
-    const midTime = start + (end - start) * (frontText.length / total);
+    let midTime = start + (end - start) * (frontText.length / total);
+
+    // 글자 수 비례로만 나누면 "네!"처럼 짧은 앞부분이 수백 ms짜리 자막이 된다.
+    // 남은 시간이 두 조각을 모두 채울 만큼 있을 때만 최소 표시 시간을 확보한다.
+    if (end - start >= MIN_CUE_SECONDS * 2) {
+      midTime = Math.min(Math.max(midTime, start + MIN_CUE_SECONDS), end - MIN_CUE_SECONDS);
+    }
+
     split.push({ start, end: midTime, text: frontText, speaker: spk });
     start = midTime;
     text = backText;
@@ -77,6 +87,33 @@ function splitSegment(segment, maxLen = SUBTITLE_MAX_CHARS) {
 
   split.push({ start, end, text: text || '', speaker: spk });
   return split;
+}
+
+// 자막 큐가 겹치면 편집 프로그램에서 트랙이 어긋난다. 특히 다화자 동시 발화에서
+// 겹친 구간이 그대로 나온다. 시간순으로 정렬한 뒤 겹침을 잘라내고,
+// 뒤에 빈 시간이 있으면 너무 짧은 큐를 최소 표시 시간까지 늘린다.
+function normalizeCueTimeline(cues) {
+  const sorted = [...cues]
+    .map((cue) => ({ ...cue, end: Math.max(cue.end, cue.start) }))
+    .sort((a, b) => a.start - b.start || a.end - b.end);
+
+  for (let index = 0; index < sorted.length; index += 1) {
+    const cue = sorted[index];
+    const next = sorted[index + 1];
+    if (!next) break;
+
+    if (cue.end > next.start) cue.end = next.start;
+    if (cue.end - cue.start < MIN_CUE_SECONDS) {
+      cue.end = Math.min(cue.start + MIN_CUE_SECONDS, next.start);
+    }
+  }
+
+  return sorted;
+}
+
+function buildCues(segments) {
+  return normalizeCueTimeline(segments.flatMap((segment) => splitSegment(segment)))
+    .filter((cue) => cue.text.trim() !== '');
 }
 
 function formatSRT(seconds) {
@@ -99,7 +136,7 @@ function formatASS(seconds) {
 
 export function generateSRT(segments, speakerColors = null) {
   if (!segments || segments.length === 0) return '';
-  const split = segments.flatMap((seg) => splitSegment(seg));
+  const split = buildCues(segments);
   return split.map((seg, i) => {
     let line = seg.text;
     if (speakerColors && seg.speaker !== undefined) {
@@ -179,7 +216,7 @@ export function generateASS(segments, options = {}, speakerColors = null) {
     '',
   ].join('\n');
 
-  const split = segments.flatMap((seg) => splitSegment(seg));
+  const split = buildCues(segments);
 
   const events = [
     '[Events]',
