@@ -568,6 +568,14 @@ export default function ResultPage() {
               id="editor-panel-text"
               role="tabpanel"
             >
+              {/* 자막 아이디어 버튼은 구간별 편집에만 있다. 여기서 찾지 못하고 지나치기 쉬워 안내한다. */}
+              <p className="result-editor-tip">
+                구간마다 어울리는 자막 문구를 제안받으려면
+                <button className="result-editor-tip__link" onClick={() => setEditorMode('segments')} type="button">
+                  구간별 편집
+                </button>
+                으로 넘어가세요. 장면을 다시 입력할 필요 없이 앞뒤 대사를 문맥으로 넘겨 후보를 만듭니다.
+              </p>
               <label className="sr-only" htmlFor="full-transcript">전체 변환 텍스트</label>
               <textarea
                 aria-describedby={lineCountMismatch ? 'full-transcript-warning' : undefined}

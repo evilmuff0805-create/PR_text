@@ -73,6 +73,24 @@ test('the editor wires each segment to the existing caption idea endpoint', asyn
   assert.match(page, /성공 5회당 변환 시간 1분이 차감됩니다/);
 });
 
+test('the full text tab points to where the idea button lives', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const page = await readFile(new URL('../client/src/pages/ResultPage.jsx', import.meta.url), 'utf8');
+
+  // 버튼이 구간별 편집에만 있어 전체 텍스트 탭에서 그냥 지나치기 쉬웠다.
+  assert.match(page, /result-editor-tip/);
+  assert.match(page, /setEditorMode\('segments'\)/);
+});
+
+test('the idea panel spans the whole segment row instead of the narrow meta column', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const css = await readFile(new URL('../client/src/global.css', import.meta.url), 'utf8');
+  const panel = css.slice(css.indexOf('.segment-idea-panel {'), css.indexOf('.segment-idea-panel__hint'));
+
+  // 구간 행이 132px + 1fr 그리드라, 지정하지 않으면 패널이 132px 칸에 끼어 세로로 눌린다.
+  assert.match(panel, /grid-column: 1 \/ -1;/);
+});
+
 test('both screens share one mode list and request id helper', async () => {
   const { readFile } = await import('node:fs/promises');
   const standalone = await readFile(new URL('../client/src/pages/CaptionIdeasPage.jsx', import.meta.url), 'utf8');
