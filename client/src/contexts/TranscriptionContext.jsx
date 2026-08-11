@@ -60,6 +60,8 @@ function resultFromResponse(data, diarize) {
     text: data.text,
     segments: data.segments,
     language: data.language,
+    // 편집기가 다듬은 자막을 되돌려 저장할 대상. 빠뜨리면 편집본이 서버에 남지 않는다.
+    transcriptionLogId: data.transcriptionLogId ?? null,
     diarize,
   };
 }

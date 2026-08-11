@@ -83,3 +83,17 @@ test('both transcription paths hand the editor a log id to save against', async 
   assert.match(route, /transcriptionLogId: logRow\?\.id \?\? null/);
   assert.match(worker, /transcriptionLogId: completed \? job\.transcription_log_id : undefined/);
 });
+
+test('the log id survives the hand-off from the server response to the editor', async () => {
+  const context = await read('client/src/contexts/TranscriptionContext.jsx');
+  const mapper = context.slice(
+    context.indexOf('function resultFromResponse'),
+    context.indexOf('export function TranscriptionProvider'),
+  );
+
+  // 이 함수가 필드를 골라 넘기므로, 빠뜨리면 편집본이 서버에 저장되지 않는다.
+  assert.match(mapper, /transcriptionLogId: data\.transcriptionLogId/);
+  for (const field of ['text', 'segments', 'language']) {
+    assert.match(mapper, new RegExp(`${field}: data\\.${field}`), `${field}가 전달되지 않는다`);
+  }
+});
