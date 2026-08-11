@@ -5,6 +5,7 @@ import {
   generateASS,
   generateSRT,
   generateTXT,
+  MIN_CUE_SECONDS,
   SUBTITLE_MAX_CHARS,
 } from '../src/services/subtitle.js';
 
@@ -144,4 +145,59 @@ test('carries rounded subtitle timestamps into the next second', () => {
   const ass = generateASS(boundarySegment);
   assert.match(ass, /Dialogue: 0,0:01:00\.00,0:01:01\.00/);
   assert.doesNotMatch(ass, /\.100(?:,|$)/m);
+});
+
+test('short cues are stretched to a readable minimum when the gap allows', () => {
+  // "네!"가 0.2초짜리 자막이 되던 경우. 뒤에 빈 시간이 있으면 최소 길이까지 늘린다.
+  const srt = generateSRT([
+    { start: 0, end: 0.2, text: '네!' },
+    { start: 5, end: 6.5, text: '그렇게 하겠습니다' },
+  ]);
+  const [first] = srt.split('\n\n').map((block) => {
+    const [start, end] = block.split('\n')[1].split(' --> ').map(parseSrtTime);
+    return { start, end };
+  });
+
+  assert.equal(first.start, 0);
+  assert.equal(first.end, MIN_CUE_SECONDS * 1000);
+});
+
+test('a short cue never grows into the next one', () => {
+  const srt = generateSRT([
+    { start: 0, end: 0.2, text: '네!' },
+    { start: 0.4, end: 2, text: '바로 이어지는 말' },
+  ]);
+  const ranges = srt.split('\n\n').map((block) => {
+    const [start, end] = block.split('\n')[1].split(' --> ').map(parseSrtTime);
+    return { start, end };
+  });
+
+  assert.equal(ranges[0].end, 400);
+  assert.ok(ranges[0].end <= ranges[1].start);
+});
+
+test('overlapping speaker cues are trimmed so players do not desync', () => {
+  // 다화자 동시 발화에서 diarize 결과가 겹친 구간을 주는 경우.
+  const srt = generateSRT([
+    { start: 0, end: 4, text: '먼저 말한 사람', speaker: 0 },
+    { start: 2, end: 6, text: '끼어든 사람', speaker: 1 },
+  ]);
+  const ranges = srt.split('\n\n').map((block) => {
+    const [start, end] = block.split('\n')[1].split(' --> ').map(parseSrtTime);
+    return { start, end };
+  });
+
+  for (let index = 1; index < ranges.length; index += 1) {
+    assert.ok(ranges[index - 1].end <= ranges[index].start, '자막 큐가 겹치면 안 된다');
+  }
+});
+
+test('empty cues never reach the file', () => {
+  const srt = generateSRT([
+    { start: 0, end: 1, text: '' },
+    { start: 1, end: 2, text: '남는 자막' },
+  ]);
+
+  assert.equal(srt.split('\n\n').length, 1);
+  assert.match(srt, /남는 자막/);
 });
