@@ -8,7 +8,8 @@
     "build": "vite build --config client/vite.config.js",
     "benchmark:correction": "node scripts/compare-correction-models.js",
     "test": "node --test",
-    "start": "node src/server.js"
+    "start": "node src/server.js",
+    "measure:diarization": "node scripts/measure-diarization-limit.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.103.0",
