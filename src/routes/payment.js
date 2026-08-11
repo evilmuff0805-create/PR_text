@@ -7,6 +7,7 @@ import {
   confirmOrRecoverTossPayment,
   getTossPaymentByOrderId,
   isVerifiedCanceledTossPayment,
+  verifiedPartialCancelAmount,
   isVerifiedTossPayment,
   TossPaymentError,
   validateTossKeyPair,
@@ -376,7 +377,11 @@ export function createPaymentWebhookRouter({
   router.post('/', async (req, res) => {
     const { eventType, data } = req.body ?? {};
 
-    if (eventType !== 'PAYMENT_STATUS_CHANGED' || !['DONE', 'CANCELED'].includes(data?.status)) {
+    // PARTIAL_CANCELED를 무시하면 돈은 환불되고 크레딧은 그대로 남는다.
+    // 약관이 안내하는 부분 환불의 유일한 실행 경로가 토스 상점관리자 부분 취소라서
+    // 정상 CS 절차를 밟을 때마다 손실이 났다.
+    if (eventType !== 'PAYMENT_STATUS_CHANGED'
+      || !['DONE', 'CANCELED', 'PARTIAL_CANCELED'].includes(data?.status)) {
       return res.json({ received: true });
     }
 
@@ -390,6 +395,41 @@ export function createPaymentWebhookRouter({
       if (!order) {
         console.warn('[payment.webhook_unknown_order]', JSON.stringify({ orderId }));
         return res.json({ received: true });
+      }
+
+      if (data.status === 'PARTIAL_CANCELED') {
+        const payment = await getPayment({ orderId, secretKey: secretKey() });
+        const canceledAmount = verifiedPartialCancelAmount(payment, {
+          paymentKey,
+          orderId,
+          amount: order.amount,
+        });
+
+        if (!canceledAmount) {
+          console.error('[payment.webhook_partial_cancel_verification_failed]', JSON.stringify({
+            orderId,
+            status: payment?.status,
+          }));
+          return res.json({ received: true, ignored: true });
+        }
+
+        const result = await store.reconcilePartialCancellation({
+          orderId,
+          paymentKey,
+          canceledAmount,
+        });
+        console.log('[payment.webhook_partial_cancel]', JSON.stringify({
+          orderId,
+          canceledAmount,
+          reclaimed: result.reclaimed,
+          manualReview: result.manual_review,
+          alreadyHandled: result.already_handled,
+        }));
+        return res.json({
+          received: true,
+          reclaimed: result.reclaimed,
+          manualReview: result.manual_review,
+        });
       }
 
       if (data.status === 'CANCELED') {

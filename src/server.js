@@ -13,6 +13,7 @@ import captionIdeasRouter from './routes/caption-ideas.js';
 import { requestObservability, apiErrorHandler } from './middleware/observability.js';
 import { startDiarizationJobWorker } from './services/diarization-jobs.js';
 import { startCaptionIdeaMaintenance } from './services/caption-idea-store.js';
+import { startPaymentOrderMaintenance } from './services/payment-orders.js';
 import { validateTossKeyPair } from './services/toss-payments.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -190,4 +191,5 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   startDiarizationJobWorker();
   startCaptionIdeaMaintenance();
+  startPaymentOrderMaintenance();
 });

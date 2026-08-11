@@ -71,6 +71,29 @@ export function isVerifiedCanceledTossPayment(payment, expected) {
   );
 }
 
+// 부분 취소는 잔액이 남아 있고 상태가 PARTIAL_CANCELED다. 취소된 금액을 돌려준다.
+// 검증에 실패하거나 부분 취소가 아니면 0을 반환해 호출부가 처리하지 않게 한다.
+export function verifiedPartialCancelAmount(payment, expected) {
+  const canceledAmount = Array.isArray(payment?.cancels)
+    ? payment.cancels.reduce((sum, cancel) => sum + Number(cancel?.cancelAmount || 0), 0)
+    : 0;
+  const balanceAmount = Number(payment?.balanceAmount);
+
+  const verified = Boolean(
+    payment
+    && payment.paymentKey === expected.paymentKey
+    && payment.orderId === expected.orderId
+    && payment.totalAmount === expected.amount
+    && payment.status === 'PARTIAL_CANCELED'
+    && Number.isFinite(balanceAmount)
+    && balanceAmount > 0
+    && canceledAmount > 0
+    && canceledAmount + balanceAmount === expected.amount
+  );
+
+  return verified ? canceledAmount : 0;
+}
+
 function createAuthorization(secretKey) {
   return `Basic ${Buffer.from(`${secretKey}:`).toString('base64')}`;
 }
