@@ -72,6 +72,8 @@ test('the editor saves edits without blocking on a mismatched draft', async () =
   // 줄 수가 어긋난 상태는 화면에서도 보류하므로 저장하지 않는다.
   assert.match(page, /if \(lineCountMismatch\) return;/);
   assert.match(page, /result-save-state/);
+  // 저장 상태는 편집 영역을 밀어내지 않도록 패널 헤더 오른쪽에 둔다.
+  assert.match(page, /result-panel-heading__status/);
 });
 
 test('both transcription paths hand the editor a log id to save against', async () => {

@@ -577,7 +577,16 @@ export default function ResultPage() {
               <p className="result-section-kicker">EDITOR</p>
               <h2 id="result-editor-title">변환 결과</h2>
             </div>
-            <span>{editedSegments.length}개 구간</span>
+            <div className="result-panel-heading__status">
+              {saveState !== 'idle' && (
+                <span className={`result-save-state result-save-state--${saveState}`} role="status">
+                  {saveState === 'saving' && '저장 중...'}
+                  {saveState === 'saved' && '저장됨 · 재다운로드 반영'}
+                  {saveState === 'failed' && '저장 실패 · 이 창에서는 다운로드 가능'}
+                </span>
+              )}
+              <span>{editedSegments.length}개 구간</span>
+            </div>
           </div>
 
           <div className="result-editor-tabs" aria-label="자막 편집 방식" role="tablist">
@@ -598,14 +607,6 @@ export default function ResultPage() {
               </button>
             ))}
           </div>
-
-          {saveState !== 'idle' && (
-            <p className={`result-save-state result-save-state--${saveState}`} role="status">
-              {saveState === 'saving' && '편집 내용 저장 중...'}
-              {saveState === 'saved' && '편집 내용이 저장되었습니다. 재다운로드에도 반영됩니다.'}
-              {saveState === 'failed' && '편집 내용을 저장하지 못했습니다. 이 창에서는 그대로 다운로드할 수 있습니다.'}
-            </p>
-          )}
 
           {editorMode === 'text' ? (
             <div
