@@ -3744,10 +3744,19 @@ textarea:focus-visible {
   line-height: 1.75;
 }
 
+.result-panel-heading__status {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
 .result-save-state {
-  margin: 0 0 12px;
-  font-size: 0.78rem;
+  margin: 0;
+  font-size: 0.74rem;
   color: var(--text-secondary);
+  white-space: nowrap;
 }
 
 .result-save-state--saved {
