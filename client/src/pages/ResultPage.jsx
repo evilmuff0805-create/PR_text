@@ -38,22 +38,18 @@ function joinSegmentLines(segments) {
   return segments.map((segment) => segment.text).join('\n');
 }
 
-// 다른 변환 결과의 편집본이 섞이지 않도록 결과를 식별한다.
-function resultSignature(segments) {
-  if (!Array.isArray(segments) || segments.length === 0) return '';
-  const first = segments[0];
-  const last = segments[segments.length - 1];
-  return `${segments.length}:${first?.start ?? ''}:${last?.end ?? ''}`;
-}
-
 const EDITS_STORAGE_KEY = 'lastResultEdits';
 
-function readStoredEdits(segments) {
+// 변환 기록 ID로만 편집본을 식별한다. 세그먼트 개수와 앞뒤 시간으로 식별하던 때는
+// 같은 파일을 다시 올리면 값이 똑같아서, 새로 분석한 결과에 이전 편집본이 덮어씌워졌다.
+// 새 변환은 항상 새 ID를 받으므로 겹칠 수 없다. ID가 없으면 복원하지 않는다.
+function readStoredEdits(logId, segments) {
+  if (!logId) return null;
   try {
     const raw = sessionStorage.getItem(EDITS_STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
-    if (parsed?.signature !== resultSignature(segments)) return null;
+    if (parsed?.logId !== logId) return null;
     if (!Array.isArray(parsed.segments) || parsed.segments.length !== segments.length) return null;
     return parsed;
   } catch {
@@ -175,13 +171,13 @@ export default function ResultPage() {
   } = resolved || {};
 
   const [editedSegments, setEditedSegments] = useState(() => {
-    const restored = readStoredEdits(segments);
+    const restored = readStoredEdits(transcriptionLogId, segments);
     if (restored) return restored.segments;
     return buildEditedSegments(segments, text);
   });
   // 사용자가 입력한 원문 그대로. 줄 수가 맞지 않아 아직 반영하지 못한 상태도 담는다.
   const [fullTextDraft, setFullTextDraft] = useState(() => {
-    const restored = readStoredEdits(segments);
+    const restored = readStoredEdits(transcriptionLogId, segments);
     if (restored) return joinSegmentLines(restored.segments);
     return joinSegmentLines(buildEditedSegments(segments, text));
   });
@@ -212,23 +208,23 @@ export default function ResultPage() {
   const [speakerColors, setSpeakerColors] = useState(() => {
     const init = {};
     speakerIds.forEach(id => { init[String(id)] = DEFAULT_SPEAKER_COLORS[id] ?? '#39FF14'; });
-    const restored = readStoredEdits(segments);
+    const restored = readStoredEdits(transcriptionLogId, segments);
     return restored?.speakerColors ? { ...init, ...restored.speakerColors } : init;
   });
 
   // 편집한 내용과 화자 색상을 보존한다. 새로고침해도 작업이 사라지지 않는다.
   useEffect(() => {
-    if (editedSegments.length === 0) return;
+    if (editedSegments.length === 0 || !transcriptionLogId) return;
     try {
       sessionStorage.setItem(EDITS_STORAGE_KEY, JSON.stringify({
-        signature: resultSignature(segments),
+        logId: transcriptionLogId,
         segments: editedSegments,
         speakerColors,
       }));
     } catch {
       // 저장 공간이 없으면 보존만 포기하고 편집은 계속할 수 있게 둔다.
     }
-  }, [editedSegments, speakerColors, segments]);
+  }, [editedSegments, speakerColors, transcriptionLogId]);
 
   // 편집본을 서버에도 보관한다. sessionStorage만으로는 창을 닫으면 사라지고,
   // 재다운로드가 다듬기 전 원본을 내려주는 문제가 남는다.

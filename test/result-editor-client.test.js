@@ -35,9 +35,9 @@ test('edits and speaker colors survive a page refresh', async () => {
 
   assert.match(page, /const EDITS_STORAGE_KEY = 'lastResultEdits';/);
   assert.match(page, /sessionStorage\.setItem\(EDITS_STORAGE_KEY/);
-  assert.match(page, /readStoredEdits\(segments\)/);
-  // 다른 변환 결과의 편집본이 섞이면 안 된다.
-  assert.match(page, /parsed\?\.signature !== resultSignature\(segments\)/);
+  assert.match(page, /readStoredEdits\(transcriptionLogId, segments\)/);
+  // 다른 변환 결과의 편집본이 섞이면 안 된다. 변환 기록 ID로 식별한다.
+  assert.match(page, /parsed\?\.logId !== logId/);
 });
 
 test('ASS controls speak the same 1080p coordinate system as the generator', async () => {

@@ -99,3 +99,17 @@ test('the log id survives the hand-off from the server response to the editor', 
     assert.match(mapper, new RegExp(`${field}: data\\.${field}`), `${field}가 전달되지 않는다`);
   }
 });
+
+test('re-analyzing the same file never inherits the previous edits', async () => {
+  const page = await read('client/src/pages/ResultPage.jsx');
+
+  // 세그먼트 개수와 앞뒤 시간으로 식별하면 같은 파일을 다시 올렸을 때 값이 똑같아서
+  // 새 분석 결과에 이전 편집본이 덮어씌워진다. 변환 기록 ID로만 식별해야 한다.
+  assert.doesNotMatch(page, /resultSignature/);
+  assert.match(page, /function readStoredEdits\(logId, segments\)/);
+  assert.match(page, /if \(!logId\) return null;/);
+  assert.match(page, /parsed\?\.logId !== logId/);
+  assert.match(page, /logId: transcriptionLogId,/);
+  // ID를 모르면 보관도 하지 않는다. 다음 변환에 새어 나갈 수 없다.
+  assert.match(page, /if \(editedSegments\.length === 0 \|\| !transcriptionLogId\) return;/);
+});
