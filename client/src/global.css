@@ -3768,7 +3768,8 @@ textarea:focus-visible {
 }
 
 .result-segment-idea-toggle {
-  margin-left: auto;
+  justify-self: start;
+  margin-top: 4px;
   padding: 4px 12px;
   border: 1px solid rgba(57, 255, 20, 0.45);
   border-radius: 999px;
@@ -3786,6 +3787,8 @@ textarea:focus-visible {
 }
 
 .segment-idea-panel {
+  /* 구간 행은 132px + 1fr 2열 그리드다. 지정하지 않으면 패널이 132px 칸에 끼어 세로로 눌린다. */
+  grid-column: 1 / -1;
   margin-top: 12px;
   padding: 14px;
   border: 1px solid var(--border);
@@ -3852,6 +3855,7 @@ textarea:focus-visible {
 .segment-idea-panel__results li {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   padding: 10px 12px;
   border: 1px solid var(--border);
@@ -3860,8 +3864,11 @@ textarea:focus-visible {
 }
 
 .segment-idea-panel__results span {
-  flex: 1;
+  /* min-width가 없으면 좁은 칸에서 글자가 한 자씩 세로로 쪼개진다. */
+  flex: 1 1 200px;
+  min-width: 0;
   font-size: 0.88rem;
+  line-height: 1.5;
 }
 
 .segment-idea-panel__results button {
