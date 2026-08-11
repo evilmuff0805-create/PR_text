@@ -11,10 +11,10 @@ export default function PaymentSuccessPage() {
   const [countdown, setCountdown] = useState(5);
   const timerRef = useRef(null);
   const confirmRef = useRef(null);
+  const orderId = searchParams.get('orderId');
 
   useEffect(() => {
     const paymentKey = searchParams.get('paymentKey');
-    const orderId = searchParams.get('orderId');
     const amount = searchParams.get('amount');
 
     if (!paymentKey || !orderId || !amount) {
@@ -42,6 +42,7 @@ export default function PaymentSuccessPage() {
         if (!res.ok) {
           const error = new Error(data.error || '결제 승인 실패');
           error.retryable = data.retryable === true;
+          error.needsLogin = res.status === 401;
           throw error;
         }
 
@@ -61,7 +62,9 @@ export default function PaymentSuccessPage() {
         }, 1000);
       } catch (err) {
         setStatus(err.retryable ? 'retry' : 'error');
-        setMessage(err.message || '결제 처리 중 오류가 발생했습니다.');
+        setMessage(err.needsLogin
+          ? '로그인이 풀려 결제를 확인하지 못했습니다. 다시 로그인한 뒤 아래 버튼을 눌러주세요.'
+          : (err.message || '결제 처리 중 오류가 발생했습니다.'));
       }
     };
 
@@ -101,10 +104,25 @@ export default function PaymentSuccessPage() {
         {status === 'error' && (
           <>
             <p className="payment-status-card__icon payment-status-card__icon--error" aria-hidden="true">!</p>
-            <h1 className="payment-status-card__title--error">결제 실패</h1>
+            <h1 className="payment-status-card__title--error">결제를 확인하지 못했습니다</h1>
             <p>{message}</p>
-            <button className="gradient-btn payment-status-card__button" onClick={() => navigate('/payment')} type="button">
-              다시 시도
+            {/*
+              여기서 결제 페이지로 보내면, 이미 승인된 카드에 대해 새 주문을 하나 더
+              만들어 이중결제가 된다. 같은 주문을 다시 확인하는 것만 제공한다.
+            */}
+            <p className="payment-status-card__warning">
+              카드 승인 문자를 받으셨다면 결제는 이미 완료됐을 수 있습니다.
+              <strong> 새로 결제하지 마시고</strong> 아래 버튼으로 다시 확인해주세요.
+              그래도 반영되지 않으면 아래 주문번호로 문의해주시면 바로 처리해드립니다.
+            </p>
+            {orderId && (
+              <p className="payment-status-card__note">주문번호: <code>{orderId}</code></p>
+            )}
+            <button className="gradient-btn payment-status-card__button" onClick={() => confirmRef.current?.()} type="button">
+              결제 다시 확인
+            </button>
+            <button className="payment-status-card__link" onClick={() => navigate('/support')} type="button">
+              고객센터 문의
             </button>
           </>
         )}

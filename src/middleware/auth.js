@@ -6,6 +6,8 @@ import {
   welcomeCreditStore,
 } from '../services/welcome-credits.js';
 
+// 일시적 장애는 retryable로 표시한다. 결제 승인 도중 이 응답을 받은 클라이언트가
+// "결제 실패"로 단정하고 새 주문을 만들면 이중결제가 된다.
 export async function authMiddleware(req, res, next) {
   const authHeader = req.headers['authorization'];
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -24,7 +26,7 @@ export async function authMiddleware(req, res, next) {
     welcomeIdentityHashes = getWelcomeIdentityHashes(user);
   } catch (identityError) {
     console.error('[auth.identity_hash_failed]', JSON.stringify({ userId: user.id }));
-    return res.status(503).json({ error: '계정 정보를 확인하지 못했습니다.' });
+    return res.status(503).json({ error: '계정 정보를 확인하지 못했습니다.', retryable: true });
   }
 
   let { data: profile, error: profileError } = await supabaseAdmin
@@ -34,7 +36,7 @@ export async function authMiddleware(req, res, next) {
     .maybeSingle();
 
   if (profileError) {
-    return res.status(503).json({ error: '계정 정보를 확인하지 못했습니다.' });
+    return res.status(503).json({ error: '계정 정보를 확인하지 못했습니다.', retryable: true });
   }
 
   if (!profile) {
@@ -45,7 +47,7 @@ export async function authMiddleware(req, res, next) {
       .maybeSingle();
 
     if (deletionError) {
-      return res.status(503).json({ error: '계정 상태를 확인하지 못했습니다.' });
+      return res.status(503).json({ error: '계정 상태를 확인하지 못했습니다.', retryable: true });
     }
     if (deletion) {
       return res.status(410).json({
@@ -58,7 +60,7 @@ export async function authMiddleware(req, res, next) {
       profile = await welcomeCreditStore.ensureProfile(user, welcomeIdentityHashes);
     } catch (createError) {
       console.error('[auth.profile_prepare_failed]', JSON.stringify({ userId: user.id }));
-      return res.status(503).json({ error: '계정 정보를 준비하지 못했습니다.' });
+      return res.status(503).json({ error: '계정 정보를 준비하지 못했습니다.', retryable: true });
     }
   }
 
