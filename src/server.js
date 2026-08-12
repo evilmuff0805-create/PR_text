@@ -11,7 +11,7 @@ import downloadRouter from './routes/download.js';
 import translateRouter from './routes/translate.js';
 import captionIdeasRouter from './routes/caption-ideas.js';
 import { requestObservability, apiErrorHandler } from './middleware/observability.js';
-import { startDiarizationJobWorker } from './services/diarization-jobs.js';
+import { startDiarizationJobWorker, stopDiarizationJobWorker } from './services/diarization-jobs.js';
 import { startCaptionIdeaMaintenance } from './services/caption-idea-store.js';
 import { startPaymentOrderMaintenance } from './services/payment-orders.js';
 import { validateTossKeyPair } from './services/toss-payments.js';
@@ -187,9 +187,33 @@ if (existsSync(distPath)) {
   });
 }
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   startDiarizationJobWorker();
   startCaptionIdeaMaintenance();
   startPaymentOrderMaintenance();
 });
+
+// Railway sends SIGTERM before replacing the container on every deploy. Hand the
+// in-flight diarization job back to the queue so the next container resumes it
+// immediately instead of waiting out the 3-minute lease.
+let shuttingDown = false;
+async function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[shutdown] ${signal} 수신. 진행 중 작업을 정리합니다.`);
+
+  server.close();
+
+  try {
+    await stopDiarizationJobWorker();
+  } catch (error) {
+    console.error(`[shutdown] 다화자 worker 정리 실패: ${error.message}`);
+  }
+
+  console.log('[shutdown] 정리 완료');
+  process.exit(0);
+}
+
+process.on('SIGTERM', () => { shutdown('SIGTERM'); });
+process.on('SIGINT', () => { shutdown('SIGINT'); });

@@ -22,6 +22,17 @@ const PARALLEL_TRANSCRIBE_CHUNK_SECONDS = 3 * 60;
 const PARALLEL_TRANSCRIBE_CONCURRENCY = 2;
 const PARALLEL_TRANSCRIBE_ENABLED = process.env.PARALLEL_TRANSCRIBE_ENABLED !== 'false';
 
+// The diarization model runs as a single un-chunked request, so its duration
+// scales with the audio. Measured on production jobs at roughly 27 seconds per
+// audio minute (worst case 31). The SDK default is a flat 10 minutes, which a
+// 20-minute file already reaches 89% of, so the budget is derived from the
+// audio length with about a 2x safety factor instead.
+const DIARIZATION_TIMEOUT_MS_PER_AUDIO_SECOND = 1_000;
+const DIARIZATION_MIN_TIMEOUT_MS = 5 * 60_000;
+// Retrying a request this long doubles both the wait and the OpenAI spend, so
+// the shared client's retry budget is narrowed for this call only.
+const DIARIZATION_MAX_RETRIES = 1;
+
 function getExtension(filename) {
   const dotIndex = filename.lastIndexOf('.');
   if (dotIndex === -1) return '';
@@ -94,6 +105,23 @@ async function compressAudio(buffer, originalname) {
 
 export function shouldCompressDiarizationAudioForStorage(byteLength) {
   return byteLength > DIARIZATION_STORAGE_SAFE_LIMIT;
+}
+
+function diarizationRequestTimeoutMs(durationSeconds) {
+  const seconds = Number(durationSeconds);
+  if (!Number.isFinite(seconds) || seconds <= 0) return DIARIZATION_MIN_TIMEOUT_MS;
+  return Math.max(
+    DIARIZATION_MIN_TIMEOUT_MS,
+    Math.round(seconds * DIARIZATION_TIMEOUT_MS_PER_AUDIO_SECOND),
+  );
+}
+
+export function buildDiarizationRequestOptions({ durationSeconds, signal } = {}) {
+  return {
+    timeout: diarizationRequestTimeoutMs(durationSeconds),
+    maxRetries: DIARIZATION_MAX_RETRIES,
+    signal,
+  };
 }
 
 export async function prepareDiarizationAudioForStorage({ buffer, originalname, contentType }) {
@@ -184,6 +212,7 @@ async function createTranscriptionWithFallback({
   originalname,
   params,
   logPrefix,
+  requestOptions,
 }) {
   let audioBuffer = buffer;
   let audioName = getSafeAudioName(originalname);
@@ -203,7 +232,7 @@ async function createTranscriptionWithFallback({
     let outcome = 'success';
     try {
       const file = await toFile(sourceBuffer, sourceName);
-      return await openai.audio.transcriptions.create({ ...params, file });
+      return await openai.audio.transcriptions.create({ ...params, file }, requestOptions);
     } catch (err) {
       outcome = 'error';
       throw err;
@@ -295,7 +324,12 @@ async function transcribeLongAudioInParallel({ buffer, originalname, params, dur
   };
 }
 
-export async function transcribeWithDiarization(buffer, originalname, language) {
+export async function transcribeWithDiarization(
+  buffer,
+  originalname,
+  language,
+  { durationSeconds, signal } = {},
+) {
   try {
     const params = {
       model: 'gpt-4o-transcribe-diarize',
@@ -313,6 +347,7 @@ export async function transcribeWithDiarization(buffer, originalname, language) 
       originalname,
       params,
       logPrefix: 'diarize',
+      requestOptions: buildDiarizationRequestOptions({ durationSeconds, signal }),
     });
 
     const rawSegments = response.segments ?? [];
@@ -339,6 +374,13 @@ export async function transcribeWithDiarization(buffer, originalname, language) 
     };
   } catch (err) {
     if (err.message.includes('최대 20분')) throw err;
+    // The worker aborts on cancellation, a lost lease, or container shutdown.
+    // Without this branch it would surface as a generic API failure.
+    if (err instanceof OpenAI.APIUserAbortError) {
+      const e = new Error('다화자 전사 요청이 중단되었습니다.');
+      e.code = 'ABORTED';
+      throw e;
+    }
     if (err instanceof OpenAI.APIConnectionError) {
       const e = new Error('OpenAI 서버 연결이 일시적으로 불안정합니다. 잠시 후 다시 시도해주세요.');
       e.code = 'CONNECTION';

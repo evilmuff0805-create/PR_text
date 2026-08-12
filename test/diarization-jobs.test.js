@@ -8,11 +8,15 @@ process.env.SUPABASE_SERVICE_ROLE_KEY ||= 'test-key';
 
 const {
   createDiarizationJobTimingLog,
+  estimateDiarizationCostUsd,
   isDiarizationJobId,
   storageFilenameForJob,
   toClientDiarizationJob,
 } = await import('../src/services/diarization-jobs.js');
-const { shouldCompressDiarizationAudioForStorage } = await import('../src/services/whisper.js');
+const {
+  buildDiarizationRequestOptions,
+  shouldCompressDiarizationAudioForStorage,
+} = await import('../src/services/whisper.js');
 
 const jobId = 'a8b1dc79-6f44-4a9d-9e7e-0c0f0f6a9de1';
 
@@ -119,4 +123,59 @@ test('summarizes diarization timings without treating nested persistence stages 
   assert.equal(timing.correction.estimatedCostUsd, 0.01234568);
   assert.equal(timing.timingMismatch.detected, false);
 });
-
+
+test('diarization requests set their own timeout instead of the SDK 10 minute default', () => {
+  // A single un-chunked call at the measured ~27s per audio minute reaches 89%
+  // of the SDK's flat 600s default at the current 20 minute cap.
+  const twentyMinutes = buildDiarizationRequestOptions({ durationSeconds: 20 * 60 });
+
+  assert.equal(twentyMinutes.timeout, 1_200_000);
+  assert.ok(twentyMinutes.timeout > 600_000);
+});
+
+test('diarization timeout keeps a floor for short audio and unusable durations', () => {
+  assert.equal(buildDiarizationRequestOptions({ durationSeconds: 30 }).timeout, 300_000);
+  assert.equal(buildDiarizationRequestOptions({ durationSeconds: 0 }).timeout, 300_000);
+  assert.equal(buildDiarizationRequestOptions({ durationSeconds: null }).timeout, 300_000);
+  assert.equal(buildDiarizationRequestOptions().timeout, 300_000);
+});
+
+test('diarization narrows the shared client retry budget and forwards the abort signal', () => {
+  const controller = new AbortController();
+  const options = buildDiarizationRequestOptions({
+    durationSeconds: 600,
+    signal: controller.signal,
+  });
+
+  // The shared client uses maxRetries 4, which would multiply a timed-out
+  // request into five full-length attempts.
+  assert.equal(options.maxRetries, 1);
+  assert.equal(options.signal, controller.signal);
+});
+
+test('estimates diarization transcription cost from audio duration', () => {
+  // gpt-4o-transcribe-diarize is billed at $0.006 per audio minute and its
+  // response carries no usage block.
+  assert.equal(estimateDiarizationCostUsd(600), 0.06);
+  assert.equal(estimateDiarizationCostUsd(666.3), 0.06663);
+  assert.equal(estimateDiarizationCostUsd(0), null);
+  assert.equal(estimateDiarizationCostUsd(null), null);
+});
+
+test('timing log records audio length and estimated transcription cost', () => {
+  const timing = createDiarizationJobTimingLog({
+    job: { id: jobId, attempt_count: 1, duration_seconds: 666.3 },
+    outcome: 'success',
+    startedAt: 100,
+    completedAt: 1_100,
+    wallStartedAt: 1_000,
+    wallCompletedAt: 2_000,
+    timings: { claimMs: 30, transcriptionMs: 900 },
+    segmentCount: 130,
+    language: 'ko',
+    creditsRefunded: false,
+  });
+
+  assert.equal(timing.audioSeconds, 666.3);
+  assert.equal(timing.transcriptionCostUsd, 0.06663);
+});
