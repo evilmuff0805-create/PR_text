@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { DIARIZATION_MAX_MINUTES } from '../utils/upload-validation.js';
 
 const steps = [
   {
@@ -18,7 +19,7 @@ const steps = [
     summary: '자동 감지를 사용하거나 원본 음성의 언어를 직접 선택합니다.',
     details: [
       '한국어, 영어, 일본어, 중국어를 선택할 수 있으며 자동 번역은 하지 않습니다.',
-      '여러 사람이 말하는 파일은 인물 여러 명을 켭니다. 다화자 모드는 최대 20분까지 지원합니다.',
+      `여러 사람이 말하는 파일은 인물 여러 명을 켭니다. 다화자 모드는 최대 ${DIARIZATION_MAX_MINUTES}분까지 지원합니다.`,
     ],
   },
   {

@@ -22,6 +22,27 @@ const PARALLEL_TRANSCRIBE_CHUNK_SECONDS = 3 * 60;
 const PARALLEL_TRANSCRIBE_CONCURRENCY = 2;
 const PARALLEL_TRANSCRIBE_ENABLED = process.env.PARALLEL_TRANSCRIBE_ENABLED !== 'false';
 
+// Diarization length cap. The upload gate and the post-response backstop used to
+// carry separate literals (1200 and 1400), so raising one without the other left
+// a band where a file passed the gate, paid for a full transcription, and then
+// failed. Both are derived from here.
+export const DIARIZATION_MAX_AUDIO_SECONDS = 30 * 60;
+// The probed duration and the model's last segment end can disagree slightly, so
+// the response check allows a margin over the gate.
+const DIARIZATION_BACKSTOP_SECONDS = DIARIZATION_MAX_AUDIO_SECONDS + 200;
+export const DIARIZATION_DURATION_LIMIT_CODE = 'DIARIZATION_DURATION_LIMIT';
+
+export function diarizationDurationLimitMessage() {
+  const minutes = Math.floor(DIARIZATION_MAX_AUDIO_SECONDS / 60);
+  return `다화자 분리 모드는 최대 ${minutes}분 음성만 지원합니다. 파일을 분할 후 다시 시도해주세요.`;
+}
+
+export function createDiarizationDurationLimitError() {
+  const error = new Error(diarizationDurationLimitMessage());
+  error.code = DIARIZATION_DURATION_LIMIT_CODE;
+  return error;
+}
+
 // The diarization model runs as a single un-chunked request, so its duration
 // scales with the audio. Measured on production jobs at roughly 27 seconds per
 // audio minute (worst case 31). The SDK default is a flat 10 minutes, which a
@@ -137,7 +158,7 @@ export async function prepareDiarizationAudioForStorage({ buffer, originalname, 
   console.log(`[diarization] 대기열 저장 전 오디오만 mp3로 변환합니다. original=${originalname}, inputBytes=${buffer.length}`);
   const compressed = await compressAudio(buffer, originalname);
   if (shouldCompressDiarizationAudioForStorage(compressed.length)) {
-    const error = new Error('다화자 변환용 오디오 파일이 저장 가능한 크기를 초과했습니다. 20분 이하 파일로 다시 시도해주세요.');
+    const error = new Error(`다화자 변환용 오디오 파일이 저장 가능한 크기를 초과했습니다. ${Math.floor(DIARIZATION_MAX_AUDIO_SECONDS / 60)}분 이하 파일로 다시 시도해주세요.`);
     error.code = 'DIARIZATION_STORAGE_LIMIT';
     throw error;
   }
@@ -352,10 +373,10 @@ export async function transcribeWithDiarization(
 
     const rawSegments = response.segments ?? [];
 
-    // 오디오 길이 제한 확인 (1400초 초과 시 에러)
+    // 길이 게이트를 통과했지만 실제 응답이 상한을 넘는 경우의 백스톱.
     const lastEnd = rawSegments.length > 0 ? rawSegments[rawSegments.length - 1].end : 0;
-    if (lastEnd > 1400) {
-      throw new Error('다화자 분리 모드는 최대 20분 음성만 지원합니다. 파일을 분할 후 다시 시도해주세요.');
+    if (lastEnd > DIARIZATION_BACKSTOP_SECONDS) {
+      throw createDiarizationDurationLimitError();
     }
 
     // speaker "A"→0, "B"→1, ... 매핑
@@ -373,7 +394,7 @@ export async function transcribeWithDiarization(
       timings,
     };
   } catch (err) {
-    if (err.message.includes('최대 20분')) throw err;
+    if (err.code === DIARIZATION_DURATION_LIMIT_CODE) throw err;
     // The worker aborts on cancellation, a lost lease, or container shutdown.
     // Without this branch it would surface as a generic API failure.
     if (err instanceof OpenAI.APIUserAbortError) {
