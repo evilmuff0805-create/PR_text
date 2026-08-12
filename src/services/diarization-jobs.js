@@ -9,10 +9,15 @@ const STORAGE_BUCKET = 'transcription-jobs';
 const JOB_POLL_INTERVAL_MS = 5_000;
 const JOB_LEASE_HEARTBEAT_INTERVAL_MS = 30_000;
 const JOB_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+// OpenAI charges gpt-4o-transcribe-diarize per minute of audio. The diarized
+// response carries no usage block, so cost is derived from the job duration.
+const OPENAI_DIARIZATION_USD_PER_AUDIO_MINUTE = 0.006;
 
 let workerTimer;
 let workerBusy = false;
 let workerCycleBusy = false;
+let workerStopping = false;
+let activeJobContext = null;
 
 export function isDiarizationJobId(value) {
   return typeof value === 'string' && JOB_ID_PATTERN.test(value);
@@ -85,6 +90,13 @@ function summarizeCorrection(timings) {
   };
 }
 
+export function estimateDiarizationCostUsd(durationSeconds) {
+  const seconds = Number(durationSeconds);
+  if (!Number.isFinite(seconds) || seconds <= 0) return null;
+  const usd = (seconds / 60) * OPENAI_DIARIZATION_USD_PER_AUDIO_MINUTE;
+  return Number(usd.toFixed(6));
+}
+
 export function createDiarizationJobTimingLog({
   job,
   outcome,
@@ -122,6 +134,9 @@ export function createDiarizationJobTimingLog({
     jobId: job.id,
     outcome,
     attempt: job.attempt_count,
+    audioSeconds: Number(job.duration_seconds) || 0,
+    // Transcription only. The Luna correction cost is reported under `correction`.
+    transcriptionCostUsd: estimateDiarizationCostUsd(job.duration_seconds),
     wallStartedAt: new Date(wallStartedAt).toISOString(),
     wallCompletedAt: new Date(wallCompletedAt).toISOString(),
     segmentCount,
@@ -295,7 +310,7 @@ async function claimNextDiarizationJob(workerToken) {
   return data?.[0] || null;
 }
 
-function startJobLeaseHeartbeat(job, workerToken) {
+function startJobLeaseHeartbeat(job, workerToken, onLeaseLost) {
   let stopped = false;
   let renewing = false;
 
@@ -310,8 +325,11 @@ function startJobLeaseHeartbeat(job, workerToken) {
       if (error) {
         console.warn(`[diarization.job] lease 갱신 실패: job=${job.id} ${error.message}`);
       } else if (!data) {
+        // The user cancelled or another worker reclaimed the job. Nothing this
+        // worker produces can be stored, so stop paying for the request.
         console.warn(`[diarization.job] lease를 잃어 갱신을 중단합니다: job=${job.id}`);
         stopped = true;
+        onLeaseLost?.();
       }
     } catch (error) {
       console.warn(`[diarization.job] lease 갱신 오류: job=${job.id} ${error.message}`);
@@ -368,6 +386,25 @@ async function storeCompletedJob(job, workerToken, result) {
   };
 }
 
+// Stage timings used to live only in the container log, which Railway keeps for
+// about five days. Persisting them alongside the job keeps the audio-length vs
+// processing-time record available for later limit decisions. Diagnostics must
+// never fail a job, so every error here is swallowed after a warning.
+async function persistJobTimings(job, timingLog) {
+  try {
+    const { error } = await supabaseAdmin
+      .from('transcription_jobs')
+      .update({ timings: timingLog })
+      .eq('id', job.id);
+
+    if (error) {
+      console.warn(`[diarization.job] 계측 기록 실패: job=${job.id} ${error.message}`);
+    }
+  } catch (error) {
+    console.warn(`[diarization.job] 계측 기록 오류: job=${job.id} ${error.message}`);
+  }
+}
+
 async function refundFailedJob(job, workerToken, error) {
   const { data, error: refundError } = await supabaseAdmin.rpc('fail_diarization_job', {
     p_job_id: job.id,
@@ -389,7 +426,7 @@ async function refundFailedJob(job, workerToken, error) {
 }
 
 async function processNextDiarizationJob() {
-  if (workerBusy) return;
+  if (workerBusy || workerStopping) return;
   workerBusy = true;
 
   const workerToken = randomUUID();
@@ -397,6 +434,7 @@ async function processNextDiarizationJob() {
   const startedAt = performance.now();
   const wallStartedAt = Date.now();
   const timings = {};
+  const abortController = new AbortController();
   let rawResult;
   let processedResult;
   let result;
@@ -407,8 +445,9 @@ async function processNextDiarizationJob() {
     timings.claimMs = performance.now() - claimStartedAt;
     if (!job) return;
 
+    activeJobContext = { job, workerToken, abortController };
     console.log(`[diarization.job] 시작: job=${job.id} attempt=${job.attempt_count}`);
-    stopLeaseHeartbeat = startJobLeaseHeartbeat(job, workerToken);
+    stopLeaseHeartbeat = startJobLeaseHeartbeat(job, workerToken, () => abortController.abort());
     const storageDownloadStartedAt = performance.now();
     const { data: audio, error: downloadError } = await supabaseAdmin.storage
       .from(STORAGE_BUCKET)
@@ -422,6 +461,7 @@ async function processNextDiarizationJob() {
       buffer,
       storageFilenameForJob(job),
       job.requested_language,
+      { durationSeconds: job.duration_seconds, signal: abortController.signal },
     );
     timings.transcriptionMs = performance.now() - transcriptionStartedAt;
     const processingStartedAt = performance.now();
@@ -440,7 +480,7 @@ async function processNextDiarizationJob() {
     const cleanupStartedAt = performance.now();
     await removeJobAudio(job);
     timings.cleanupMs = performance.now() - cleanupStartedAt;
-    console.log('[diarization.job.timing]', JSON.stringify(createDiarizationJobTimingLog({
+    const timingLog = createDiarizationJobTimingLog({
       job,
       outcome: 'success',
       startedAt,
@@ -451,8 +491,18 @@ async function processNextDiarizationJob() {
       segmentCount: result.segments.length,
       language: result.language,
       creditsRefunded: false,
-    })));
+    });
+    console.log('[diarization.job.timing]', JSON.stringify(timingLog));
+    await persistJobTimings(job, timingLog);
   } catch (error) {
+    if (workerStopping) {
+      // The container is shutting down and aborted the request on purpose.
+      // stopDiarizationJobWorker returns the job to the queue, so it must not be
+      // marked failed or refunded here — the next worker resumes it.
+      console.warn(`[diarization.job] 종료 신호로 중단됨: job=${job?.id || '-'}`);
+      return;
+    }
+
     console.error(`[diarization.job] 실패: job=${job?.id || '-'} ${error.message}`);
     if (job) {
       const refundStartedAt = performance.now();
@@ -463,7 +513,7 @@ async function processNextDiarizationJob() {
         await removeJobAudio(job);
         timings.cleanupMs = performance.now() - cleanupStartedAt;
       }
-      console.log('[diarization.job.timing]', JSON.stringify(createDiarizationJobTimingLog({
+      const timingLog = createDiarizationJobTimingLog({
         job,
         outcome: 'error',
         startedAt,
@@ -475,10 +525,13 @@ async function processNextDiarizationJob() {
         language: result?.language,
         error,
         creditsRefunded: failed,
-      })));
+      });
+      console.log('[diarization.job.timing]', JSON.stringify(timingLog));
+      await persistJobTimings(job, timingLog);
     }
   } finally {
     stopLeaseHeartbeat?.();
+    activeJobContext = null;
     workerBusy = false;
   }
 }
@@ -496,6 +549,7 @@ async function runWorkerCycle() {
 
 export function startDiarizationJobWorker() {
   if (workerTimer) return;
+  workerStopping = false;
 
   workerTimer = setInterval(() => {
     runWorkerCycle().catch((error) => {
@@ -506,5 +560,42 @@ export function startDiarizationJobWorker() {
   runWorkerCycle().catch((error) => {
     console.error(`[diarization.job] worker 초기화 오류: ${error.message}`);
   });
+}
+
+// Railway replaces the container on every deploy. Without this the in-flight job
+// keeps its lease until the 3-minute staleness window expires, so the next
+// worker restarts it minutes later and pays for the transcription twice.
+export async function stopDiarizationJobWorker() {
+  workerStopping = true;
+  if (workerTimer) {
+    clearInterval(workerTimer);
+    workerTimer = undefined;
+  }
+
+  const context = activeJobContext;
+  if (!context) return false;
+
+  console.warn(`[diarization.job] 종료 신호. 진행 중 작업을 반납합니다: job=${context.job.id}`);
+  context.abortController.abort();
+
+  try {
+    const { data, error } = await supabaseAdmin.rpc('release_diarization_job_lease', {
+      p_job_id: context.job.id,
+      p_worker_token: context.workerToken,
+    });
+
+    if (error) {
+      console.error(`[diarization.job] lease 반납 실패: job=${context.job.id} ${error.message}`);
+      return false;
+    }
+
+    if (data) {
+      console.warn(`[diarization.job] lease 반납 완료: job=${context.job.id}`);
+    }
+    return Boolean(data);
+  } catch (error) {
+    console.error(`[diarization.job] lease 반납 오류: job=${context.job.id} ${error.message}`);
+    return false;
+  }
 }
 
