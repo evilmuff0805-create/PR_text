@@ -390,12 +390,15 @@ async function storeCompletedJob(job, workerToken, result) {
 // about five days. Persisting them alongside the job keeps the audio-length vs
 // processing-time record available for later limit decisions. Diagnostics must
 // never fail a job, so every error here is swallowed after a warning.
-async function persistJobTimings(job, timingLog) {
+async function persistJobTimings(job, workerToken, timingLog) {
   try {
+    // A worker whose lease was reclaimed still reaches this on its way out. Without
+    // the token it would overwrite the timings the current worker just stored.
     const { error } = await supabaseAdmin
       .from('transcription_jobs')
       .update({ timings: timingLog })
-      .eq('id', job.id);
+      .eq('id', job.id)
+      .eq('worker_token', workerToken);
 
     if (error) {
       console.warn(`[diarization.job] 계측 기록 실패: job=${job.id} ${error.message}`);
@@ -441,11 +444,16 @@ async function processNextDiarizationJob() {
   let stopLeaseHeartbeat;
   try {
     const claimStartedAt = performance.now();
-    job = await claimNextDiarizationJob(workerToken);
+    // Registered before the claim resolves. If shutdown lands while the claim is
+    // in flight, the job can still be handed back by worker token — otherwise it
+    // would sit `running` with no worker until the stale window expires.
+    const claimPromise = claimNextDiarizationJob(workerToken);
+    activeJobContext = { job: null, workerToken, abortController, claimPromise };
+    job = await claimPromise;
     timings.claimMs = performance.now() - claimStartedAt;
     if (!job) return;
 
-    activeJobContext = { job, workerToken, abortController };
+    activeJobContext.job = job;
     console.log(`[diarization.job] 시작: job=${job.id} attempt=${job.attempt_count}`);
     stopLeaseHeartbeat = startJobLeaseHeartbeat(job, workerToken, () => abortController.abort());
     const storageDownloadStartedAt = performance.now();
@@ -493,7 +501,7 @@ async function processNextDiarizationJob() {
       creditsRefunded: false,
     });
     console.log('[diarization.job.timing]', JSON.stringify(timingLog));
-    await persistJobTimings(job, timingLog);
+    await persistJobTimings(job, workerToken, timingLog);
   } catch (error) {
     if (workerStopping) {
       // The container is shutting down and aborted the request on purpose.
@@ -527,7 +535,7 @@ async function processNextDiarizationJob() {
         creditsRefunded: failed,
       });
       console.log('[diarization.job.timing]', JSON.stringify(timingLog));
-      await persistJobTimings(job, timingLog);
+      await persistJobTimings(job, workerToken, timingLog);
     }
   } finally {
     stopLeaseHeartbeat?.();
@@ -575,26 +583,38 @@ export async function stopDiarizationJobWorker() {
   const context = activeJobContext;
   if (!context) return false;
 
-  console.warn(`[diarization.job] 종료 신호. 진행 중 작업을 반납합니다: job=${context.job.id}`);
   context.abortController.abort();
+
+  // The claim is a single fast RPC. Letting it settle first means a job committed
+  // moments before shutdown is still visible to the release below.
+  if (context.claimPromise) {
+    try {
+      await context.claimPromise;
+    } catch {
+      // A failed claim leaves nothing to hand back; the release below no-ops.
+    }
+  }
+
+  const label = context.job?.id ?? `worker=${context.workerToken}`;
+  console.warn(`[diarization.job] 종료 신호. 진행 중 작업을 반납합니다: ${label}`);
 
   try {
     const { data, error } = await supabaseAdmin.rpc('release_diarization_job_lease', {
-      p_job_id: context.job.id,
+      p_job_id: context.job?.id ?? null,
       p_worker_token: context.workerToken,
     });
 
     if (error) {
-      console.error(`[diarization.job] lease 반납 실패: job=${context.job.id} ${error.message}`);
+      console.error(`[diarization.job] lease 반납 실패: ${label} ${error.message}`);
       return false;
     }
 
     if (data) {
-      console.warn(`[diarization.job] lease 반납 완료: job=${context.job.id}`);
+      console.warn(`[diarization.job] lease 반납 완료: ${label}`);
     }
     return Boolean(data);
   } catch (error) {
-    console.error(`[diarization.job] lease 반납 오류: job=${context.job.id} ${error.message}`);
+    console.error(`[diarization.job] lease 반납 오류: ${label} ${error.message}`);
     return false;
   }
 }
