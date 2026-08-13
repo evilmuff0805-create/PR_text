@@ -1,4 +1,11 @@
-import { useState, useEffect } from 'react';
+import {
+  memo,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import {
@@ -117,6 +124,8 @@ const EDITOR_MODES = [
   { id: 'segments', label: '구간별 편집' },
 ];
 
+const DEFAULT_SPEAKER_COLORS = ['#FFFFFF', '#39FF14', '#FFE600', '#00F5FF', '#FF6B35', '#FF4BCB'];
+
 const LANGUAGE_LABELS = {
   ko: '한국어',
   korean: '한국어',
@@ -143,6 +152,96 @@ function formatResultDuration(segments) {
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+const SegmentEditorRow = memo(function SegmentEditorRow({
+  copiedIdea,
+  ideaError,
+  ideaLoading,
+  ideaMode,
+  ideaResults,
+  index,
+  isIdeaOpen,
+  onCopyIdea,
+  onGenerateIdeas,
+  onIdeaModeChange,
+  onTextChange,
+  onToggleIdea,
+  segment,
+  speakerColor,
+}) {
+  return (
+    <article className="result-segment-row">
+      <div className="result-segment-meta">
+        <span className="result-segment-index">#{String(index + 1).padStart(2, '0')}</span>
+        <span className="result-segment-time">
+          {formatSegmentTime(segment.start)} - {formatSegmentTime(segment.end)}
+        </span>
+        {segment.speaker !== undefined && (
+          <span className="result-segment-speaker" style={{ color: speakerColor }}>
+            인물 {Number(segment.speaker) + 1}
+          </span>
+        )}
+        <button
+          aria-expanded={isIdeaOpen}
+          className="result-segment-idea-toggle"
+          onClick={() => onToggleIdea(index)}
+          type="button"
+        >
+          자막 아이디어
+        </button>
+      </div>
+      <textarea
+        aria-label={`자막 구간 ${index + 1}`}
+        onChange={(event) => onTextChange(index, event.target.value)}
+        rows={2}
+        value={segment.text}
+      />
+      {isIdeaOpen && (
+        <div className="segment-idea-panel">
+          <p className="segment-idea-panel__hint">
+            앞뒤 대사를 함께 넘겨 이 구간에 어울리는 자막 문구를 제안합니다.
+          </p>
+          <div className="segment-idea-panel__modes" role="radiogroup" aria-label="자막 유형">
+            {CAPTION_IDEA_MODES.map((item) => (
+              <button
+                aria-checked={ideaMode === item.id}
+                className={ideaMode === item.id ? 'is-active' : ''}
+                key={item.id}
+                onClick={() => onIdeaModeChange(item.id)}
+                role="radio"
+                type="button"
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <button
+            className="gradient-btn segment-idea-panel__run"
+            disabled={ideaLoading}
+            onClick={onGenerateIdeas}
+            type="button"
+          >
+            {ideaLoading ? '만드는 중...' : '아이디어 3개 만들기'}
+          </button>
+          <p className="segment-idea-panel__cost">성공 5회당 변환 시간 1분이 차감됩니다</p>
+          {ideaError && <p className="segment-idea-panel__error" role="alert">{ideaError}</p>}
+          {ideaResults?.length > 0 && (
+            <ul className="segment-idea-panel__results">
+              {ideaResults.map((idea) => (
+                <li key={idea}>
+                  <span>{idea}</span>
+                  <button onClick={() => onCopyIdea(idea)} type="button">
+                    {copiedIdea === idea ? '복사됨' : '복사'}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+    </article>
+  );
+});
+
 export default function ResultPage() {
   const { state } = useLocation();
   const navigate = useNavigate();
@@ -158,9 +257,11 @@ export default function ResultPage() {
     }
   }, [state, navigate]);
 
-  const resolved = state || (() => {
-    try { return JSON.parse(sessionStorage.getItem('lastResult')); } catch { return null; }
-  })();
+  const resolved = useMemo(() => (
+    state || (() => {
+      try { return JSON.parse(sessionStorage.getItem('lastResult')); } catch { return null; }
+    })()
+  ), [state]);
 
   const {
     text = '',
@@ -186,6 +287,17 @@ export default function ResultPage() {
 
   const draftLineCount = splitTextLines(fullTextDraft).length;
   const lineCountMismatch = editedSegments.length > 0 && draftLineCount !== editedSegments.length;
+  const editedSegmentsRef = useRef(editedSegments);
+  const lineCountMismatchRef = useRef(lineCountMismatch);
+  editedSegmentsRef.current = editedSegments;
+  lineCountMismatchRef.current = lineCountMismatch;
+
+  const selectEditorMode = useCallback((nextMode) => {
+    if (nextMode !== editorMode && nextMode === 'text') {
+      setFullTextDraft(joinSegmentLines(editedSegments));
+    }
+    setEditorMode(nextMode);
+  }, [editedSegments, editorMode]);
 
   const handleEditorTabKeyDown = (event, index) => {
     let nextIndex = null;
@@ -197,14 +309,16 @@ export default function ResultPage() {
 
     event.preventDefault();
     const nextMode = EDITOR_MODES[nextIndex];
-    setEditorMode(nextMode.id);
+    selectEditorMode(nextMode.id);
     window.requestAnimationFrame(() => {
       document.getElementById(`editor-tab-${nextMode.id}`)?.focus();
     });
   };
 
-  const DEFAULT_SPEAKER_COLORS = ['#FFFFFF', '#39FF14', '#FFE600', '#00F5FF', '#FF6B35', '#FF4BCB'];
-  const speakerIds = [...new Set(segments.filter(s => s.speaker !== undefined).map(s => s.speaker))].sort((a, b) => a - b);
+  const speakerIds = useMemo(() => (
+    [...new Set(segments.filter(s => s.speaker !== undefined).map(s => s.speaker))]
+      .sort((a, b) => a - b)
+  ), [segments]);
   const [speakerColors, setSpeakerColors] = useState(() => {
     const init = {};
     speakerIds.forEach(id => { init[String(id)] = DEFAULT_SPEAKER_COLORS[id] ?? '#39FF14'; });
@@ -266,12 +380,12 @@ export default function ResultPage() {
   const [ideaError, setIdeaError] = useState('');
   const [copiedIdea, setCopiedIdea] = useState('');
 
-  function openIdeaPanel(index) {
+  const openIdeaPanel = useCallback((index) => {
     setIdeaIndex((current) => (current === index ? null : index));
     setIdeaResults([]);
     setIdeaError('');
     setCopiedIdea('');
-  }
+  }, []);
 
   async function generateIdeas() {
     const sceneText = buildSceneText(editedSegments, ideaIndex);
@@ -302,14 +416,14 @@ export default function ResultPage() {
     }
   }
 
-  async function copyIdea(idea) {
+  const copyIdea = useCallback(async (idea) => {
     try {
       await navigator.clipboard.writeText(idea);
       setCopiedIdea(idea);
     } catch {
       setIdeaError('복사하지 못했습니다. 직접 선택해 복사해주세요.');
     }
-  }
+  }, []);
 
   // 영어 번역 상태
   const [showTranslation, setShowTranslation] = useState(false);
@@ -373,13 +487,17 @@ export default function ResultPage() {
     return 'flex-end';
   }
 
-  function updateSegmentText(index, nextText) {
-    const next = editedSegments.map((segment, segmentIndex) => (
+  const updateSegmentText = useCallback((index, nextText) => {
+    const next = editedSegmentsRef.current.map((segment, segmentIndex) => (
       segmentIndex === index ? { ...segment, text: nextText } : segment
     ));
+    editedSegmentsRef.current = next;
     setEditedSegments(next);
-    setFullTextDraft(joinSegmentLines(next));
-  }
+    if (lineCountMismatchRef.current) {
+      setFullTextDraft(joinSegmentLines(next));
+      lineCountMismatchRef.current = false;
+    }
+  }, []);
 
   function updateFullText(nextText) {
     setFullTextDraft(nextText);
@@ -495,11 +613,12 @@ export default function ResultPage() {
     });
   }
 
+  const resultDuration = useMemo(() => formatResultDuration(segments), [segments]);
+  const hasSpeakers = speakerIds.length > 0;
+
   if (!resolved) return null;
 
   const languageLabel = LANGUAGE_LABELS[String(language).toLowerCase()] || language || '알 수 없음';
-  const resultDuration = formatResultDuration(segments);
-  const hasSpeakers = speakerIds.length > 0;
 
   return (
     <div className="result-workspace">
@@ -593,7 +712,7 @@ export default function ResultPage() {
                 className={editorMode === mode.id ? 'is-active' : ''}
                 id={`editor-tab-${mode.id}`}
                 key={mode.id}
-                onClick={() => setEditorMode(mode.id)}
+                onClick={() => selectEditorMode(mode.id)}
                 onKeyDown={(event) => handleEditorTabKeyDown(event, index)}
                 role="tab"
                 tabIndex={editorMode === mode.id ? 0 : -1}
@@ -614,7 +733,7 @@ export default function ResultPage() {
               {/* 자막 아이디어 버튼은 구간별 편집에만 있다. 여기서 찾지 못하고 지나치기 쉬워 안내한다. */}
               <p className="result-editor-tip">
                 구간마다 어울리는 자막 문구를 제안받으려면
-                <button className="result-editor-tip__link" onClick={() => setEditorMode('segments')} type="button">
+                <button className="result-editor-tip__link" onClick={() => selectEditorMode('segments')} type="button">
                   구간별 편집
                 </button>
                 으로 넘어가세요. 장면을 다시 입력할 필요 없이 앞뒤 대사를 문맥으로 넘겨 후보를 만듭니다.
@@ -643,81 +762,28 @@ export default function ResultPage() {
               id="editor-panel-segments"
               role="tabpanel"
             >
-              {editedSegments.map((segment, index) => (
-                <article className="result-segment-row" key={`${segment.start}-${segment.end}-${index}`}>
-                  <div className="result-segment-meta">
-                    <span className="result-segment-index">#{String(index + 1).padStart(2, '0')}</span>
-                    <span className="result-segment-time">
-                      {formatSegmentTime(segment.start)} - {formatSegmentTime(segment.end)}
-                    </span>
-                    {segment.speaker !== undefined && (
-                      <span
-                        className="result-segment-speaker"
-                        style={{ color: speakerColors[String(segment.speaker)] || 'var(--text-secondary)' }}
-                      >
-                        인물 {Number(segment.speaker) + 1}
-                      </span>
-                    )}
-                    <button
-                      aria-expanded={ideaIndex === index}
-                      className="result-segment-idea-toggle"
-                      onClick={() => openIdeaPanel(index)}
-                      type="button"
-                    >
-                      자막 아이디어
-                    </button>
-                  </div>
-                  <textarea
-                    aria-label={`자막 구간 ${index + 1}`}
-                    onChange={(event) => updateSegmentText(index, event.target.value)}
-                    rows={2}
-                    value={segment.text}
+              {editedSegments.map((segment, index) => {
+                const isIdeaOpen = ideaIndex === index;
+                return (
+                  <SegmentEditorRow
+                    copiedIdea={isIdeaOpen ? copiedIdea : null}
+                    ideaError={isIdeaOpen ? ideaError : null}
+                    ideaLoading={isIdeaOpen ? ideaLoading : false}
+                    ideaMode={isIdeaOpen ? ideaMode : null}
+                    ideaResults={isIdeaOpen ? ideaResults : null}
+                    index={index}
+                    isIdeaOpen={isIdeaOpen}
+                    key={`${segment.start}-${segment.end}-${index}`}
+                    onCopyIdea={isIdeaOpen ? copyIdea : null}
+                    onGenerateIdeas={isIdeaOpen ? generateIdeas : null}
+                    onIdeaModeChange={isIdeaOpen ? setIdeaMode : null}
+                    onTextChange={updateSegmentText}
+                    onToggleIdea={openIdeaPanel}
+                    segment={segment}
+                    speakerColor={speakerColors[String(segment.speaker)] || 'var(--text-secondary)'}
                   />
-                  {ideaIndex === index && (
-                    <div className="segment-idea-panel">
-                      <p className="segment-idea-panel__hint">
-                        앞뒤 대사를 함께 넘겨 이 구간에 어울리는 자막 문구를 제안합니다.
-                      </p>
-                      <div className="segment-idea-panel__modes" role="radiogroup" aria-label="자막 유형">
-                        {CAPTION_IDEA_MODES.map((item) => (
-                          <button
-                            aria-checked={ideaMode === item.id}
-                            className={ideaMode === item.id ? 'is-active' : ''}
-                            key={item.id}
-                            onClick={() => setIdeaMode(item.id)}
-                            role="radio"
-                            type="button"
-                          >
-                            {item.label}
-                          </button>
-                        ))}
-                      </div>
-                      <button
-                        className="gradient-btn segment-idea-panel__run"
-                        disabled={ideaLoading}
-                        onClick={generateIdeas}
-                        type="button"
-                      >
-                        {ideaLoading ? '만드는 중...' : '아이디어 3개 만들기'}
-                      </button>
-                      <p className="segment-idea-panel__cost">성공 5회당 변환 시간 1분이 차감됩니다</p>
-                      {ideaError && <p className="segment-idea-panel__error" role="alert">{ideaError}</p>}
-                      {ideaResults.length > 0 && (
-                        <ul className="segment-idea-panel__results">
-                          {ideaResults.map((idea) => (
-                            <li key={idea}>
-                              <span>{idea}</span>
-                              <button onClick={() => copyIdea(idea)} type="button">
-                                {copiedIdea === idea ? '복사됨' : '복사'}
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  )}
-                </article>
-              ))}
+                );
+              })}
             </div>
           )}
         </section>

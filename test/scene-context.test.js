@@ -79,7 +79,7 @@ test('the full text tab points to where the idea button lives', async () => {
 
   // 버튼이 구간별 편집에만 있어 전체 텍스트 탭에서 그냥 지나치기 쉬웠다.
   assert.match(page, /result-editor-tip/);
-  assert.match(page, /setEditorMode\('segments'\)/);
+  assert.match(page, /selectEditorMode\('segments'\)/);
 });
 
 test('the idea panel spans the whole segment row instead of the narrow meta column', async () => {
