@@ -3,7 +3,18 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useTranscription } from '../contexts/TranscriptionContext.jsx';
 import AuthModal from '../components/AuthModal.jsx';
-import { DIARIZATION_MAX_MINUTES, UPLOAD_ACCEPT, validateUploadFile } from '../utils/upload-validation.js';
+import {
+  DIARIZATION_MAX_MINUTES,
+  UPLOAD_ACCEPT,
+  shouldOptimizeWavUpload,
+  validatePreparedUploadFile,
+  validateUploadFile,
+} from '../utils/upload-validation.js';
+import { optimizeLargeWavForUpload } from '../utils/wav-optimization.js';
+
+function formatMegabytes(bytes) {
+  return (bytes / 1024 / 1024).toFixed(2);
+}
 
 function getAudioDuration(file) {
   return new Promise((resolve) => {
@@ -52,6 +63,7 @@ export default function HomePage() {
   } = useTranscription();
   const [showAuthModal, setShowAuthModal] = useState(false);
   const [file, setFile] = useState(null);
+  const [sourceFile, setSourceFile] = useState(null);
   const [language, setLanguage] = useState('');
   const [formError, setFormError] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
@@ -59,9 +71,13 @@ export default function HomePage() {
   const [estimatedCredits, setEstimatedCredits] = useState(null);
   const [durationSeconds, setDurationSeconds] = useState(null);
   const [isReadingDuration, setIsReadingDuration] = useState(false);
+  const [isPreparingFile, setIsPreparingFile] = useState(false);
+  const [preparationProgress, setPreparationProgress] = useState(0);
+  const [optimizationResult, setOptimizationResult] = useState(null);
 
   const fileInputRef = useRef(null);
   const fileSelectionRef = useRef(0);
+  const optimizationAbortRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -72,34 +88,88 @@ export default function HomePage() {
     }
   }, [location.state, navigate, user]);
 
+  useEffect(() => () => {
+    optimizationAbortRef.current?.abort();
+  }, []);
+
   async function selectFile(selected) {
+    optimizationAbortRef.current?.abort();
+    optimizationAbortRef.current = null;
+
     const validationError = validateUploadFile(selected);
     if (validationError) {
       fileSelectionRef.current += 1;
       setFile(null);
+      setSourceFile(null);
       setEstimatedCredits(null);
       setDurationSeconds(null);
       setIsReadingDuration(false);
+      setIsPreparingFile(false);
+      setPreparationProgress(0);
+      setOptimizationResult(null);
       setFormError(validationError);
       if (fileInputRef.current) fileInputRef.current.value = '';
       return;
     }
 
     const selectionId = ++fileSelectionRef.current;
-    setFile(selected);
+    setFile(null);
+    setSourceFile(selected);
     setEstimatedCredits(null);
     setDurationSeconds(null);
     setIsReadingDuration(true);
+    setIsPreparingFile(false);
+    setPreparationProgress(0);
+    setOptimizationResult(null);
     setFormError('');
     clearError();
 
-    const duration = await getAudioDuration(selected);
-    if (selectionId !== fileSelectionRef.current) return;
+    const durationPromise = getAudioDuration(selected);
 
-    setIsReadingDuration(false);
-    if (duration !== null) {
-      setDurationSeconds(duration);
-      setEstimatedCredits(Math.max(Math.ceil(duration / 60), 1));
+    try {
+      let preparedFile = selected;
+
+      if (shouldOptimizeWavUpload(selected)) {
+        const abortController = new AbortController();
+        optimizationAbortRef.current = abortController;
+        setIsPreparingFile(true);
+
+        const optimized = await optimizeLargeWavForUpload(selected, {
+          signal: abortController.signal,
+          onProgress: (progress) => {
+            if (selectionId === fileSelectionRef.current) {
+              setPreparationProgress(progress);
+            }
+          },
+        });
+        if (selectionId !== fileSelectionRef.current) return;
+
+        preparedFile = optimized.file;
+        setOptimizationResult(optimized.metadata);
+      }
+
+      const preparedValidationError = validatePreparedUploadFile(preparedFile);
+      if (preparedValidationError) throw new Error(preparedValidationError);
+      if (selectionId !== fileSelectionRef.current) return;
+
+      setFile(preparedFile);
+      const duration = await durationPromise;
+      if (selectionId !== fileSelectionRef.current) return;
+
+      if (duration !== null) {
+        setDurationSeconds(duration);
+        setEstimatedCredits(Math.max(Math.ceil(duration / 60), 1));
+      }
+    } catch (error) {
+      if (error?.name === 'AbortError' || selectionId !== fileSelectionRef.current) return;
+      setFile(null);
+      setFormError(error?.message || 'WAV 파일을 업로드할 수 있도록 준비하지 못했습니다.');
+    } finally {
+      if (selectionId === fileSelectionRef.current) {
+        optimizationAbortRef.current = null;
+        setIsPreparingFile(false);
+        setIsReadingDuration(false);
+      }
     }
   }
 
@@ -126,12 +196,18 @@ export default function HomePage() {
 
   function handleRemoveFile(e) {
     e.stopPropagation();
+    optimizationAbortRef.current?.abort();
+    optimizationAbortRef.current = null;
     fileSelectionRef.current += 1;
     setFile(null);
+    setSourceFile(null);
     setEstimatedCredits(null);
     setDurationSeconds(null);
     setIsReadingDuration(false);
-    fileInputRef.current.value = '';
+    setIsPreparingFile(false);
+    setPreparationProgress(0);
+    setOptimizationResult(null);
+    if (fileInputRef.current) fileInputRef.current.value = '';
     setFormError('');
     clearError();
   }
@@ -139,7 +215,7 @@ export default function HomePage() {
   async function handleSubmit() {
     if (!file) return;
 
-    const validationError = validateUploadFile(file);
+    const validationError = validatePreparedUploadFile(file);
     if (validationError) {
       setFormError(validationError);
       return;
@@ -168,6 +244,7 @@ export default function HomePage() {
 
   const isProcessing = status === 'queued' || status === 'processing';
   const displayError = formError || transcriptionError;
+  const displayFile = sourceFile || file;
 
   return (
     <div className="upload-workspace">
@@ -197,19 +274,37 @@ export default function HomePage() {
           onChange={handleFileChange}
         />
 
-        {file ? (
+        {displayFile ? (
           <div className="selected-file">
             <p className="selected-file__name">
-              {file.name}
+              {displayFile.name}
             </p>
-            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '16px' }}>
-              {(file.size / 1024 / 1024).toFixed(2)} MB
+            <p className="selected-file__size">
+              {formatMegabytes(displayFile.size)} MB
             </p>
-            {isReadingDuration ? (
+
+            {isPreparingFile && (
+              <div className="wav-preparation" role="status" aria-live="polite">
+                <div className="wav-preparation__status">
+                  <span className="wav-preparation__spinner" aria-hidden="true" />
+                  <span>대용량 WAV 최적화 중... {preparationProgress}%</span>
+                </div>
+                <progress max="100" value={preparationProgress} aria-label="WAV 최적화 진행률" />
+                <p>브라우저에서 먼저 처리하며 아직 업로드되거나 차감되지 않았습니다.</p>
+              </div>
+            )}
+
+            {!isPreparingFile && optimizationResult && (
+              <p className="wav-preparation-complete" role="status">
+                업로드 준비 완료 · {formatMegabytes(optimizationResult.inputBytes)}MB → {formatMegabytes(optimizationResult.outputBytes)}MB
+              </p>
+            )}
+
+            {!isPreparingFile && isReadingDuration ? (
               <p role="status" style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '12px' }}>
                 예상 사용 시간을 확인 중입니다...
               </p>
-            ) : estimatedCredits !== null ? (
+            ) : !isPreparingFile && estimatedCredits !== null ? (
               <p style={{ color: user && user.credits < estimatedCredits ? '#FF6B6B' : 'var(--gradient-start)', fontSize: '0.8rem', marginBottom: '12px' }}>
                 예상 사용 시간: {estimatedCredits}분 · 보유: {user ? user.credits : 0}분
               </p>
@@ -245,7 +340,8 @@ export default function HomePage() {
             <span className="upload-mark" aria-hidden="true">↑</span>
             <span className="upload-title">파일을 끌어놓거나 눌러서 선택</span>
             <span className="upload-support">
-              mp3, wav, m4a, webm, mp4 · 최대 150MB · 영상은 오디오만 추출합니다
+              MP3·M4A·영상 최대 150MB · WAV 원본 최대 500MB
+              <br />대용량 WAV는 업로드 전에 자동 최적화합니다
             </span>
             <span className="upload-credit-rule">음성 1분당 변환 시간 1분을 사용합니다</span>
           </button>
@@ -307,13 +403,19 @@ export default function HomePage() {
       <button
         className="gradient-btn conversion-submit"
         onClick={handleSubmit}
-        disabled={!file || isBusy}
+        disabled={!file || isBusy || isPreparingFile}
         style={{
-          opacity: !file || isBusy ? 0.5 : 1,
-          cursor: !file || isBusy ? 'not-allowed' : 'pointer',
+          opacity: !file || isBusy || isPreparingFile ? 0.5 : 1,
+          cursor: !file || isBusy || isPreparingFile ? 'not-allowed' : 'pointer',
         }}
       >
-        {status === 'uploading' ? progress : isProcessing ? 'PROCESSING' : '변환 시작'}
+        {isPreparingFile
+          ? `WAV 준비 중... ${preparationProgress}%`
+          : status === 'uploading'
+            ? progress
+            : isProcessing
+              ? 'PROCESSING'
+              : '변환 시작'}
       </button>
 
       {status === 'uploading' && (

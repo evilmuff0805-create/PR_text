@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext.jsx';
+import { validatePreparedUploadFile } from '../utils/upload-validation.js';
 
 const TranscriptionContext = createContext(null);
 const BUSY_STATUSES = new Set(['uploading', 'queued', 'processing']);
@@ -196,6 +197,12 @@ export function TranscriptionProvider({ children }) {
 
   const startTranscription = useCallback(async ({ file, language, diarize }) => {
     if (!user?.id || BUSY_STATUSES.has(job.status)) return;
+
+    const uploadValidationError = validatePreparedUploadFile(file);
+    if (uploadValidationError) {
+      failTranscription(uploadValidationError);
+      return;
+    }
 
     setNotice(null);
     setJob({

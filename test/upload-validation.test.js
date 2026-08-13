@@ -3,8 +3,11 @@ import test from 'node:test';
 
 const {
   MAX_UPLOAD_BYTES,
+  MAX_WAV_SOURCE_BYTES,
   SUPPORTED_UPLOAD_EXTENSIONS,
   UPLOAD_ACCEPT,
+  shouldOptimizeWavUpload,
+  validatePreparedUploadFile,
   validateUploadFile,
 } = await import('../client/src/utils/upload-validation.js');
 
@@ -21,6 +24,28 @@ test('offers Android audio providers while preserving supported extensions', () 
 
 test('accepts supported files within the upload limit', () => {
   assert.equal(validateUploadFile({ name: 'interview.MP4', size: MAX_UPLOAD_BYTES }), null);
+});
+
+test('accepts large WAV sources for browser optimization only', () => {
+  const wav = { name: 'long-interview.WAV', size: MAX_WAV_SOURCE_BYTES };
+
+  assert.equal(validateUploadFile(wav), null);
+  assert.equal(shouldOptimizeWavUpload(wav), true);
+  assert.match(validatePreparedUploadFile(wav), /최대 150MB/);
+});
+
+test('keeps non-WAV source files at the 150MB boundary', () => {
+  const mp4 = { name: 'long-interview.mp4', size: MAX_UPLOAD_BYTES + 1 };
+
+  assert.match(validateUploadFile(mp4), /최대 150MB/);
+  assert.equal(shouldOptimizeWavUpload(mp4), false);
+});
+
+test('rejects WAV sources above the 500MB selection boundary', () => {
+  const wav = { name: 'too-large.wav', size: MAX_WAV_SOURCE_BYTES + 1 };
+
+  assert.match(validateUploadFile(wav), /최대 500MB/);
+  assert.equal(shouldOptimizeWavUpload(wav), false);
 });
 
 test('reports unsupported formats and oversized files before upload', () => {

@@ -1052,6 +1052,75 @@ textarea:focus-visible {
   white-space: nowrap;
 }
 
+.selected-file__size {
+  margin: 6px 0 16px;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.wav-preparation {
+  width: min(100%, 520px);
+  margin: 0 auto 18px;
+  text-align: left;
+}
+
+.wav-preparation__status {
+  display: flex;
+  color: var(--text-primary);
+  font-size: 0.84rem;
+  font-weight: 650;
+  align-items: center;
+  gap: 9px;
+}
+
+.wav-preparation__spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(61, 242, 116, 0.2);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  flex: 0 0 auto;
+  animation: processing-spin 800ms linear infinite;
+}
+
+.wav-preparation progress {
+  width: 100%;
+  height: 5px;
+  margin-top: 10px;
+  border: 0;
+  border-radius: 2px;
+  overflow: hidden;
+  background: var(--bg-primary);
+  accent-color: var(--accent);
+}
+
+.wav-preparation progress::-webkit-progress-bar {
+  background: var(--bg-primary);
+}
+
+.wav-preparation progress::-webkit-progress-value {
+  background: var(--accent);
+}
+
+.wav-preparation progress::-moz-progress-bar {
+  background: var(--accent);
+}
+
+.wav-preparation p {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  line-height: 1.5;
+  word-break: keep-all;
+}
+
+.wav-preparation-complete {
+  margin: 0 0 14px;
+  color: var(--accent);
+  font-size: 0.8rem;
+  font-weight: 650;
+}
+
 .conversion-options {
   display: grid;
   margin-top: 18px;
