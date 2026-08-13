@@ -54,3 +54,26 @@ test('ASS controls speak the same 1080p coordinate system as the generator', asy
   assert.match(page, /max="96"/);
   assert.match(page, /min="24"/);
 });
+
+test('long segment lists isolate row updates and skip offscreen layout work', async () => {
+  const [page, styles] = await Promise.all([
+    read('client/src/pages/ResultPage.jsx'),
+    read('client/src/global.css'),
+  ]);
+
+  assert.match(page, /const SegmentEditorRow = memo\(/);
+  assert.match(page, /const updateSegmentText = useCallback\(/);
+  assert.match(page, /editedSegmentsRef\.current\.map\(/);
+  assert.match(page, /setEditedSegments\(next\)/);
+  assert.match(styles, /\.result-segment-row \{[\s\S]*content-visibility: auto;/);
+  assert.match(styles, /\.result-segment-row \{[\s\S]*contain-intrinsic-size: auto 110px;/);
+});
+
+test('segment editing recovers a mismatched full-text draft without discarding it on tab change', async () => {
+  const page = await read('client/src/pages/ResultPage.jsx');
+
+  assert.match(page, /if \(nextMode !== editorMode && nextMode === 'text'\)/);
+  assert.doesNotMatch(page, /nextMode === 'segments' && lineCountMismatch/);
+  assert.match(page, /if \(lineCountMismatchRef\.current\) \{/);
+  assert.match(page, /setFullTextDraft\(joinSegmentLines\(next\)\)/);
+});
