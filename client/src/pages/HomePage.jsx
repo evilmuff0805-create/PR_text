@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useTranscription } from '../contexts/TranscriptionContext.jsx';
 import AuthModal from '../components/AuthModal.jsx';
-import { UPLOAD_ACCEPT, validateUploadFile } from '../utils/upload-validation.js';
+import { DIARIZATION_MAX_MINUTES, UPLOAD_ACCEPT, validateUploadFile } from '../utils/upload-validation.js';
 
 function getAudioDuration(file) {
   return new Promise((resolve) => {
@@ -296,7 +296,7 @@ export default function HomePage() {
           </p>
           {diarize && (
             <p style={{ color: 'var(--gradient-start)', fontSize: '0.78rem', margin: 0, marginTop: '4px' }}>
-              최대 20분 지원 · 일반 변환보다 시간이 더 소요됩니다
+              최대 {DIARIZATION_MAX_MINUTES}분 지원 · 일반 변환보다 시간이 더 소요됩니다
             </p>
           )}
         </div>

@@ -1,6 +1,13 @@
 import { Router } from 'express';
 import uploadMiddleware from '../middleware/upload.js';
-import { prepareDiarizationAudioForStorage, probeAudioDuration, transcribe } from '../services/whisper.js';
+import {
+  DIARIZATION_DURATION_LIMIT_CODE,
+  DIARIZATION_MAX_AUDIO_SECONDS,
+  diarizationDurationLimitMessage,
+  prepareDiarizationAudioForStorage,
+  probeAudioDuration,
+  transcribe,
+} from '../services/whisper.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { normalizeLanguage } from '../services/language.js';
 import { supabaseAdmin } from '../lib/supabase.js';
@@ -193,10 +200,10 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
         });
       }
 
-      if (durationSeconds > 20 * 60) {
+      if (durationSeconds > DIARIZATION_MAX_AUDIO_SECONDS) {
         completeTiming(req, res, 'diarization_duration_limit');
         return res.status(400).json({
-          error: '다화자 분리 모드는 최대 20분 음성만 지원합니다. 파일을 분할 후 다시 시도해주세요.',
+          error: diarizationDurationLimitMessage(),
         });
       }
 
@@ -351,7 +358,7 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
     if (err.code === 'QUOTA') return res.status(503).json({ error: err.message });
     if (err.code === 'RATELIMIT') return res.status(429).json({ error: err.message });
     if (err.message.includes('지원하지 않는 파일')) return res.status(415).json({ error: err.message });
-    if (err.message.includes('최대 20분')) return res.status(400).json({ error: err.message });
+    if (err.code === DIARIZATION_DURATION_LIMIT_CODE) return res.status(400).json({ error: err.message });
     if (err.code === 'DIARIZATION_STORAGE_LIMIT') return res.status(413).json({ error: err.message });
     if (err.message.includes('Whisper API') || err.message.includes('Diarize API')) return res.status(502).json({ error: err.message });
     res.status(500).json({ error: '변환 중 오류가 발생했습니다.' });
