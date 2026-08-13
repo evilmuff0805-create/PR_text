@@ -44,12 +44,23 @@ export function createDiarizationDurationLimitError() {
 }
 
 // The diarization model runs as a single un-chunked request, so its duration
-// scales with the audio. Measured on production jobs at roughly 27 seconds per
-// audio minute (worst case 31). The SDK default is a flat 10 minutes, which a
-// 20-minute file already reaches 89% of, so the budget is derived from the
-// audio length with about a 2x safety factor instead.
-const DIARIZATION_TIMEOUT_MS_PER_AUDIO_SECOND = 1_000;
-const DIARIZATION_MIN_TIMEOUT_MS = 5 * 60_000;
+// scales with the audio. The SDK default is a flat 10 minutes, which a 20-minute
+// file already reaches 89% of, so the budget is derived from the audio length.
+//
+// Sizing it at 60s per audio minute — about twice the median — was not enough.
+// A production job timed out here after the same account's near-identical file
+// had finished at 28.6s per audio minute fifteen minutes earlier: provider
+// latency more than doubled inside that window, past 60s per audio minute. The
+// user saw a failure, retried, and gave up on diarization.
+//
+// This budget exists to cut a connection that is never going to answer, not to
+// hold the model to a latency target. A request that is still streaming is worth
+// waiting for, because the alternative is a refund and a lost result. So it is
+// sized off the observed tail rather than the median, with a ceiling so a truly
+// hung request cannot occupy the single worker indefinitely.
+const DIARIZATION_TIMEOUT_MS_PER_AUDIO_SECOND = 3_000;
+const DIARIZATION_MIN_TIMEOUT_MS = 10 * 60_000;
+const DIARIZATION_MAX_TIMEOUT_MS = 45 * 60_000;
 // Retrying a request this long doubles both the wait and the OpenAI spend, so
 // the shared client's retry budget is narrowed for this call only.
 const DIARIZATION_MAX_RETRIES = 1;
@@ -131,9 +142,10 @@ export function shouldCompressDiarizationAudioForStorage(byteLength) {
 function diarizationRequestTimeoutMs(durationSeconds) {
   const seconds = Number(durationSeconds);
   if (!Number.isFinite(seconds) || seconds <= 0) return DIARIZATION_MIN_TIMEOUT_MS;
-  return Math.max(
-    DIARIZATION_MIN_TIMEOUT_MS,
-    Math.round(seconds * DIARIZATION_TIMEOUT_MS_PER_AUDIO_SECOND),
+  const budget = Math.round(seconds * DIARIZATION_TIMEOUT_MS_PER_AUDIO_SECOND);
+  return Math.min(
+    DIARIZATION_MAX_TIMEOUT_MS,
+    Math.max(DIARIZATION_MIN_TIMEOUT_MS, budget),
   );
 }
 
@@ -264,30 +276,38 @@ async function createTranscriptionWithFallback({
     }
   }
 
-  if (getExtension(originalname) === '.m4a') {
-    console.log(`[${logPrefix}] 휴대폰 m4a 호환성을 위해 mp3로 선제 변환합니다. original=${originalname}`);
-    audioBuffer = await compressWithTiming(buffer);
-    audioName = 'converted.mp3';
-    timings.preconvertedM4a = true;
-  } else if (buffer.length >= WHISPER_LIMIT) {
-    console.log(`[${logPrefix}] 압축 전: ${(buffer.length / 1024 / 1024).toFixed(2)}MB`);
-    audioBuffer = await compressWithTiming(buffer);
-    audioName = 'compressed.mp3';
-    console.log(`[${logPrefix}] 압축 후: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
-  }
-
   try {
-    const response = await requestTranscription(audioBuffer, audioName, 'initial');
-    return { response, timings };
-  } catch (err) {
-    if (!isInvalidFileFormatError(err) || audioName === 'compressed.mp3' || audioName === 'converted.mp3') {
-      throw err;
+    if (getExtension(originalname) === '.m4a') {
+      console.log(`[${logPrefix}] 휴대폰 m4a 호환성을 위해 mp3로 선제 변환합니다. original=${originalname}`);
+      audioBuffer = await compressWithTiming(buffer);
+      audioName = 'converted.mp3';
+      timings.preconvertedM4a = true;
+    } else if (buffer.length >= WHISPER_LIMIT) {
+      console.log(`[${logPrefix}] 압축 전: ${(buffer.length / 1024 / 1024).toFixed(2)}MB`);
+      audioBuffer = await compressWithTiming(buffer);
+      audioName = 'compressed.mp3';
+      console.log(`[${logPrefix}] 압축 후: ${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB`);
     }
 
-    console.warn(`[${logPrefix}] OpenAI 파일 형식 오류. 휴대폰 녹음 파일 호환성을 위해 mp3로 변환 후 재시도합니다. original=${originalname}, upload=${audioName}`);
-    const converted = await compressWithTiming(buffer);
-    const response = await requestTranscription(converted, 'converted.mp3', 'format_fallback');
-    return { response, timings };
+    try {
+      const response = await requestTranscription(audioBuffer, audioName, 'initial');
+      return { response, timings };
+    } catch (err) {
+      if (!isInvalidFileFormatError(err) || audioName === 'compressed.mp3' || audioName === 'converted.mp3') {
+        throw err;
+      }
+
+      console.warn(`[${logPrefix}] OpenAI 파일 형식 오류. 휴대폰 녹음 파일 호환성을 위해 mp3로 변환 후 재시도합니다. original=${originalname}, upload=${audioName}`);
+      const converted = await compressWithTiming(buffer);
+      const response = await requestTranscription(converted, 'converted.mp3', 'format_fallback');
+      return { response, timings };
+    }
+  } catch (error) {
+    // These timings only left this function on the success path, so a failed job
+    // recorded no attempt count and no request duration — the two numbers that
+    // separate a timeout from a transient blip. Carry them out on the error too.
+    error.timings = timings;
+    throw error;
   }
 }
 
@@ -400,11 +420,21 @@ export async function transcribeWithDiarization(
     if (err instanceof OpenAI.APIUserAbortError) {
       const e = new Error('다화자 전사 요청이 중단되었습니다.');
       e.code = 'ABORTED';
+      e.timings = err.timings;
+      throw e;
+    }
+    // Must precede APIConnectionError, which this extends. Reporting a timeout as
+    // a transient blip told a user to retry straight back into the same failure.
+    if (err instanceof OpenAI.APIConnectionTimeoutError) {
+      const e = new Error('다화자 변환이 제한 시간 안에 끝나지 않았습니다. 잠시 후 다시 시도하거나 파일을 나눠서 올려주세요.');
+      e.code = 'TIMEOUT';
+      e.timings = err.timings;
       throw e;
     }
     if (err instanceof OpenAI.APIConnectionError) {
       const e = new Error('OpenAI 서버 연결이 일시적으로 불안정합니다. 잠시 후 다시 시도해주세요.');
       e.code = 'CONNECTION';
+      e.timings = err.timings;
       throw e;
     }
     if (err.status === 429) {
@@ -413,9 +443,12 @@ export async function transcribeWithDiarization(
         ? '변환 서버(OpenAI) 사용량이 소진되었습니다. 관리자에게 문의해주세요.'
         : '요청이 일시적으로 많습니다. 잠시 후 다시 시도해주세요.');
       e.code = quota ? 'QUOTA' : 'RATELIMIT';
+      e.timings = err.timings;
       throw e;
     }
-    throw new Error(`Whisper Diarize API 오류: ${err.message}`);
+    const wrapped = new Error(`Whisper Diarize API 오류: ${err.message}`);
+    wrapped.timings = err.timings;
+    throw wrapped;
   }
 }
 
