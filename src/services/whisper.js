@@ -23,12 +23,12 @@ const PARALLEL_TRANSCRIBE_CONCURRENCY = 2;
 const PARALLEL_TRANSCRIBE_ENABLED = process.env.PARALLEL_TRANSCRIBE_ENABLED !== 'false';
 
 // The production API rejects diarized audio longer than 1,400 seconds. Keep the
-// public gate 20 seconds below that boundary so ffprobe/model duration drift
-// cannot reserve credits for a request the provider will reject.
+// product limit at the previously proven 20 minutes, leaving enough operational
+// headroom for ffprobe/model duration drift before credits are reserved.
 export const DIARIZATION_PROVIDER_MAX_AUDIO_SECONDS = 1_400;
-const DIARIZATION_DURATION_SAFETY_MARGIN_SECONDS = 20;
+const DIARIZATION_OPERATIONAL_HEADROOM_SECONDS = 200;
 export const DIARIZATION_MAX_AUDIO_SECONDS =
-  DIARIZATION_PROVIDER_MAX_AUDIO_SECONDS - DIARIZATION_DURATION_SAFETY_MARGIN_SECONDS;
+  DIARIZATION_PROVIDER_MAX_AUDIO_SECONDS - DIARIZATION_OPERATIONAL_HEADROOM_SECONDS;
 const DIARIZATION_BACKSTOP_SECONDS = DIARIZATION_PROVIDER_MAX_AUDIO_SECONDS;
 export const DIARIZATION_DURATION_LIMIT_CODE = 'DIARIZATION_DURATION_LIMIT';
 

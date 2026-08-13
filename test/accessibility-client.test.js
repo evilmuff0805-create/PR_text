@@ -108,3 +108,18 @@ test('payment pages keep a single top-level heading and touch targets stay usabl
   assert.match(styles, /\.icon-button\s*\{[\s\S]*?width:\s*44px;[\s\S]*?height:\s*44px;/);
   assert.match(styles, /\.mobile-menu-button\s*\{[\s\S]*?flex:\s*0 0 44px;/);
 });
+
+test('result summary and download copy stay legible without horizontal overflow', async () => {
+  const styles = await clientFile('global.css');
+
+  assert.match(styles, /\.result-summary dt\s*\{[\s\S]*?font-size:\s*0\.875rem;/);
+  assert.match(styles, /\.result-summary dd\s*\{[\s\S]*?font-size:\s*1rem;/);
+  assert.match(styles, /\.result-tool-heading h2\s*\{[\s\S]*?font-size:\s*1\.25rem;/);
+  assert.match(styles, /\.export-option__copy strong\s*\{[\s\S]*?font-size:\s*1rem;/);
+  assert.match(styles, /\.export-option__copy small\s*\{[\s\S]*?font-size:\s*0\.875rem;/);
+  assert.match(
+    styles,
+    /\.export-option__copy strong,\s*\.export-option__copy small\s*\{[\s\S]*?overflow-wrap:\s*anywhere;/,
+  );
+  assert.match(styles, /\.export-option__copy\s*\{[\s\S]*?min-width:\s*0;/);
+});

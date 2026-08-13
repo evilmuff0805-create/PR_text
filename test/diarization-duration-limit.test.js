@@ -17,12 +17,12 @@ const {
 } = await import('../src/services/whisper.js');
 const { DIARIZATION_MAX_MINUTES } = await import('../client/src/utils/upload-validation.js');
 
-test('diarization stops safely below the provider 1,400 second limit', () => {
+test('diarization stops at the 20-minute product limit below the provider cap', () => {
   assert.equal(DIARIZATION_PROVIDER_MAX_AUDIO_SECONDS, 1_400);
-  assert.equal(DIARIZATION_MAX_AUDIO_SECONDS, 23 * 60);
+  assert.equal(DIARIZATION_MAX_AUDIO_SECONDS, 20 * 60);
   assert.equal(
     DIARIZATION_PROVIDER_MAX_AUDIO_SECONDS - DIARIZATION_MAX_AUDIO_SECONDS,
-    20,
+    200,
   );
   assert.ok(29 * 60 > DIARIZATION_MAX_AUDIO_SECONDS);
 });
