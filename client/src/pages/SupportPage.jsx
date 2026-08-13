@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 const faqs = [
   {
     question: '어떤 파일 형식을 지원하나요?',
-    answer: 'mp3, wav, m4a, webm, mp4, mpeg, mpga, ogg, flac 파일을 지원하며, 최대 150MB까지 업로드할 수 있습니다.',
+    answer: 'mp3, wav, m4a, webm, mp4, mpeg, mpga, ogg, flac 파일을 지원합니다. MP3·M4A·영상 등은 최대 150MB, WAV 원본은 최대 500MB까지 선택할 수 있으며, 150MB를 넘는 WAV는 업로드 전에 자동 최적화합니다.',
   },
   {
     question: '변환 시간은 얼마나 걸리나요?',

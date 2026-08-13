@@ -223,3 +223,34 @@
 
 - At 1,440px, summary text renders at 14/16px and export text at 20/16/14px in a 360px tool column, with no overflowing result elements.
 - At 390px, the summary uses two columns, the export tool fills the available width, and no result element creates horizontal overflow.
+
+# Large WAV pre-upload optimization
+
+## Acceptance criteria
+
+- [x] MP3, M4A, video, and other supported formats keep the existing 150MB selection and server limit.
+- [x] PCM and IEEE Float WAV files up to 500MB can be selected and are converted in the browser to 16-bit mono speech WAV before upload.
+- [x] Large WAV processing reads the source incrementally in a Web Worker instead of loading the full original into the page memory.
+- [x] Unsupported or malformed WAV files fail before network upload and before any credit reservation.
+- [x] The optimized file must be 150MB or smaller and preserve the original filename for history.
+- [x] Progress, cancellation/reselection, mobile layout, and accessible status messaging are complete.
+- [ ] Focused tests, full tests, production build, responsive browser checks, CI, and production health pass.
+
+## Checklist
+
+- [x] Verify production account count, balances, active reservations, and usage-ledger consistency.
+- [x] Trace client selection, validation, upload ownership, and server size boundaries.
+- [x] Implement and test the PCM/Float WAV parser and streaming downsampler.
+- [x] Add the worker bridge and HomePage preparation states.
+- [x] Update upload guidance without changing the 150MB server boundary.
+- [x] Run focused and full tests, build, responsive browser checks, and diff review.
+- [ ] Commit, open and merge the PR, then verify Railway and `/api/health`.
+
+## Working notes
+
+- Production currently has 10 confirmed active accounts and 1,269 total remaining minutes; no missing profiles, orphan profiles, negative balances, or active reserved jobs were found.
+- Browser output will remain WAV rather than adding a browser MP3 encoder dependency. Mono 16kHz 16-bit PCM is about 1.92MB per minute and remains suitable for speech transcription.
+- The 500MB value is a client-side source-selection ceiling only. Multer, Railway, and the transcription API remain capped at 150MB.
+- A synthetic 151MB, 48kHz stereo PCM WAV completed optimization in 1.66 seconds, read no source slice larger than 4MB, and produced an uploadable file below 150MB.
+- Focused tests passed 13/13, the full suite passed 218/218, and the production build emitted the dedicated WAV worker bundle.
+- Responsive checks passed at 1440x900 and 390x844 without upload guidance overflow. The local browser could not inject a file into the login-gated hidden chooser, so the real-size conversion engine was verified separately from the signed-in UI flow.
