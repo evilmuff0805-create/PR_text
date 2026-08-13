@@ -180,3 +180,46 @@
 - The production build passed with 60 modules transformed.
 - Local browser QA confirmed zero history requests before opening, one request on first open, no duplicate request after closing and reopening, and no horizontal overflow at 390 x 844.
 - Usage retained the caption-idea credit ledger row but no longer rendered the caption-idea history section.
+
+## Diarization provider duration limit
+
+### Goal and acceptance criteria
+
+- A file above the provider's 1,400-second diarization limit is rejected before queueing or credit reservation.
+- The client notice and server gate advertise the same proven 20-minute limit.
+- The exact production provider error is classified as a duration-limit failure if it reaches the worker.
+
+### Checklist
+
+- [x] Inspect the failed production job, timings, and refund ledger.
+- [x] Confirm the provider's 1,400-second rejection against the current request path.
+- [x] Restore the shared server/client limit to 20 minutes, leaving 200 seconds below the provider cap.
+- [x] Add regression coverage for the 29-minute failure and provider error classification.
+- [x] Run focused and full tests, build, and diff review.
+- [ ] Merge after separate release approval, then verify Railway and `/api/health`.
+
+### Results
+
+- Production job `d86aab09` proved the model rejects 1,704.94 seconds because its maximum is 1,400 seconds.
+- The 29-minute reservation and refund ledger entries cancel exactly; no credit loss was found.
+- Focused duration/readability tests passed 12/12, the full suite passed 208/208, the production build transformed 61 modules, and `git diff --check` passed.
+
+## Result screen readability
+
+### Goal and acceptance criteria
+
+- Completion summary labels and values are readable without browser zoom.
+- Download format names, details, and actions are clearly legible.
+- Longer labels wrap inside their own column without creating horizontal overflow on desktop or mobile.
+
+### Checklist
+
+- [x] Increase summary and export typography with matching row spacing.
+- [x] Give the export panel enough stable width on desktop and stack it at the existing responsive breakpoint.
+- [x] Allow download copy to wrap inside a `min-width: 0` column.
+- [x] Run focused tests, full tests, build, and desktop/mobile visual checks.
+
+### Results
+
+- At 1,440px, summary text renders at 14/16px and export text at 20/16/14px in a 360px tool column, with no overflowing result elements.
+- At 390px, the summary uses two columns, the export tool fills the available width, and no result element creates horizontal overflow.

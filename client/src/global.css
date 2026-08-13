@@ -3516,7 +3516,7 @@ textarea:focus-visible {
 
 .result-summary > div {
   min-width: 0;
-  padding: 15px 18px;
+  padding: 18px 20px;
   border-right: 1px solid var(--border-color);
 }
 
@@ -3526,27 +3526,30 @@ textarea:focus-visible {
 
 .result-summary dt {
   color: var(--text-muted);
-  font-size: 0.67rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.4;
 }
 
 .result-summary dd {
   display: flex;
-  min-height: 24px;
-  margin-top: 3px;
+  min-height: 28px;
+  margin-top: 6px;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   overflow: hidden;
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 0.79rem;
+  font-size: 1rem;
   font-weight: 700;
+  line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .result-status-dot {
-  width: 7px;
-  height: 7px;
+  width: 9px;
+  height: 9px;
   flex: 0 0 auto;
   border-radius: 50%;
   background: var(--accent);
@@ -3636,7 +3639,7 @@ textarea:focus-visible {
 
 .result-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 360px);
   align-items: start;
   gap: 18px;
 }
@@ -3983,11 +3986,15 @@ textarea:focus-visible {
 
 .result-tool-section {
   min-width: 0;
-  padding: 18px;
+  padding: 22px;
 }
 
 .result-tool-heading {
-  margin-bottom: 15px;
+  margin-bottom: 18px;
+}
+
+.result-tool-heading h2 {
+  font-size: 1.25rem;
 }
 
 .result-tool-heading--inline {
@@ -4015,14 +4022,14 @@ textarea:focus-visible {
 
 .export-option {
   display: grid;
-  min-height: 68px;
-  padding: 11px 2px;
+  min-height: 84px;
+  padding: 14px 2px;
   border: 0;
   border-bottom: 1px solid var(--border-color);
   background: transparent;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
+  grid-template-columns: 52px minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   color: var(--text-primary);
   cursor: pointer;
   text-align: left;
@@ -4042,7 +4049,7 @@ textarea:focus-visible {
 .export-option__format {
   color: var(--accent);
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.875rem;
   font-weight: 800;
 }
 
@@ -4054,33 +4061,37 @@ textarea:focus-visible {
 .export-option__copy strong,
 .export-option__copy small {
   display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 100%;
+  overflow-wrap: anywhere;
 }
 
 .export-option__copy strong {
-  font-size: 0.78rem;
+  font-size: 1rem;
+  line-height: 1.4;
 }
 
 .export-option__copy small {
-  margin-top: 2px;
+  margin-top: 4px;
   color: var(--text-muted);
-  font-size: 0.66rem;
+  font-size: 0.875rem;
   font-weight: 500;
+  line-height: 1.45;
 }
 
 .export-option__action {
+  min-width: 24px;
   color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 0.65rem;
+  font-size: 0.875rem;
+  text-align: right;
+  white-space: nowrap;
 }
 
 .result-tool-note,
 .result-tool-status {
   margin-top: 12px;
   color: var(--text-muted);
-  font-size: 0.68rem;
+  font-size: 0.875rem;
   line-height: 1.55;
 }
 
