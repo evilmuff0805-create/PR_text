@@ -180,3 +180,26 @@
 - The production build passed with 60 modules transformed.
 - Local browser QA confirmed zero history requests before opening, one request on first open, no duplicate request after closing and reopening, and no horizontal overflow at 390 x 844.
 - Usage retained the caption-idea credit ledger row but no longer rendered the caption-idea history section.
+
+## Diarization provider duration limit
+
+### Goal and acceptance criteria
+
+- A file above the provider's 1,400-second diarization limit is rejected before queueing or credit reservation.
+- The client notice and server gate advertise the same conservative 23-minute limit.
+- The exact production provider error is classified as a duration-limit failure if it reaches the worker.
+
+### Checklist
+
+- [x] Inspect the failed production job, timings, and refund ledger.
+- [x] Confirm the provider's 1,400-second rejection against the current request path.
+- [x] Set the shared server/client limit with a 20-second measurement margin.
+- [x] Add regression coverage for the 29-minute failure and provider error classification.
+- [x] Run focused and full tests, build, and diff review.
+- [ ] Publish separately after release approval, then verify Railway and `/api/health`.
+
+### Results
+
+- Production job `d86aab09` proved the model rejects 1,704.94 seconds because its maximum is 1,400 seconds.
+- The 29-minute reservation and refund ledger entries cancel exactly; no credit loss was found.
+- Focused tests passed 20/20, the full suite passed 207/207, the production build transformed 61 modules, and `git diff --check` passed.

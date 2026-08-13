@@ -22,14 +22,14 @@ const PARALLEL_TRANSCRIBE_CHUNK_SECONDS = 3 * 60;
 const PARALLEL_TRANSCRIBE_CONCURRENCY = 2;
 const PARALLEL_TRANSCRIBE_ENABLED = process.env.PARALLEL_TRANSCRIBE_ENABLED !== 'false';
 
-// Diarization length cap. The upload gate and the post-response backstop used to
-// carry separate literals (1200 and 1400), so raising one without the other left
-// a band where a file passed the gate, paid for a full transcription, and then
-// failed. Both are derived from here.
-export const DIARIZATION_MAX_AUDIO_SECONDS = 30 * 60;
-// The probed duration and the model's last segment end can disagree slightly, so
-// the response check allows a margin over the gate.
-const DIARIZATION_BACKSTOP_SECONDS = DIARIZATION_MAX_AUDIO_SECONDS + 200;
+// The production API rejects diarized audio longer than 1,400 seconds. Keep the
+// public gate 20 seconds below that boundary so ffprobe/model duration drift
+// cannot reserve credits for a request the provider will reject.
+export const DIARIZATION_PROVIDER_MAX_AUDIO_SECONDS = 1_400;
+const DIARIZATION_DURATION_SAFETY_MARGIN_SECONDS = 20;
+export const DIARIZATION_MAX_AUDIO_SECONDS =
+  DIARIZATION_PROVIDER_MAX_AUDIO_SECONDS - DIARIZATION_DURATION_SAFETY_MARGIN_SECONDS;
+const DIARIZATION_BACKSTOP_SECONDS = DIARIZATION_PROVIDER_MAX_AUDIO_SECONDS;
 export const DIARIZATION_DURATION_LIMIT_CODE = 'DIARIZATION_DURATION_LIMIT';
 
 export function diarizationDurationLimitMessage() {
@@ -41,6 +41,12 @@ export function createDiarizationDurationLimitError() {
   const error = new Error(diarizationDurationLimitMessage());
   error.code = DIARIZATION_DURATION_LIMIT_CODE;
   return error;
+}
+
+export function isDiarizationProviderDurationLimitError(error) {
+  return error?.status === 400
+    && /audio duration .* seconds is longer than .* seconds which is the maximum for this model/i
+      .test(error?.message || '');
 }
 
 // The diarization model runs as a single un-chunked request, so its duration
@@ -415,6 +421,11 @@ export async function transcribeWithDiarization(
     };
   } catch (err) {
     if (err.code === DIARIZATION_DURATION_LIMIT_CODE) throw err;
+    if (isDiarizationProviderDurationLimitError(err)) {
+      const e = createDiarizationDurationLimitError();
+      e.timings = err.timings;
+      throw e;
+    }
     // The worker aborts on cancellation, a lost lease, or container shutdown.
     // Without this branch it would surface as a generic API failure.
     if (err instanceof OpenAI.APIUserAbortError) {

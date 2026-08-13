@@ -3,7 +3,7 @@ export const MAX_UPLOAD_BYTES = 150 * 1024 * 1024;
 // Mirrors DIARIZATION_MAX_AUDIO_SECONDS in src/services/whisper.js. The server
 // owns the check; this only drives the on-screen notice. A regression test keeps
 // the two in sync.
-export const DIARIZATION_MAX_MINUTES = 30;
+export const DIARIZATION_MAX_MINUTES = 23;
 
 export const SUPPORTED_UPLOAD_EXTENSIONS = [
   '.mp3', '.wav', '.m4a', '.webm', '.mp4', '.mpeg', '.mpga', '.ogg', '.flac',
