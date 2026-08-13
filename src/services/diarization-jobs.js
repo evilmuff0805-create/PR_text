@@ -527,7 +527,10 @@ async function processNextDiarizationJob() {
         startedAt,
         wallStartedAt,
         timings,
-        rawTimings: rawResult?.timings,
+        // On failure `rawResult` is never assigned, so the request timings come
+        // off the error instead. Without this the failed job records no attempt
+        // count and no request duration.
+        rawTimings: rawResult?.timings ?? error?.timings,
         correctionTimings: processedResult?.correctionTimings,
         segmentCount: result?.segments.length,
         language: result?.language,

@@ -125,19 +125,19 @@ test('summarizes diarization timings without treating nested persistence stages 
 });
 
 test('diarization requests set their own timeout instead of the SDK 10 minute default', () => {
-  // A single un-chunked call at the measured ~27s per audio minute reaches 89%
-  // of the SDK's flat 600s default at the current 20 minute cap.
+  // A single un-chunked call scales with the audio, so the flat 600s default is
+  // reached by a 20 minute file well before the request is actually stuck.
   const twentyMinutes = buildDiarizationRequestOptions({ durationSeconds: 20 * 60 });
 
-  assert.equal(twentyMinutes.timeout, 1_200_000);
   assert.ok(twentyMinutes.timeout > 600_000);
+  assert.equal(twentyMinutes.timeout, 45 * 60_000);
 });
 
 test('diarization timeout keeps a floor for short audio and unusable durations', () => {
-  assert.equal(buildDiarizationRequestOptions({ durationSeconds: 30 }).timeout, 300_000);
-  assert.equal(buildDiarizationRequestOptions({ durationSeconds: 0 }).timeout, 300_000);
-  assert.equal(buildDiarizationRequestOptions({ durationSeconds: null }).timeout, 300_000);
-  assert.equal(buildDiarizationRequestOptions().timeout, 300_000);
+  assert.equal(buildDiarizationRequestOptions({ durationSeconds: 30 }).timeout, 600_000);
+  assert.equal(buildDiarizationRequestOptions({ durationSeconds: 0 }).timeout, 600_000);
+  assert.equal(buildDiarizationRequestOptions({ durationSeconds: null }).timeout, 600_000);
+  assert.equal(buildDiarizationRequestOptions().timeout, 600_000);
 });
 
 test('diarization narrows the shared client retry budget and forwards the abort signal', () => {
@@ -178,4 +178,34 @@ test('timing log records audio length and estimated transcription cost', () => {
 
   assert.equal(timing.audioSeconds, 666.3);
   assert.equal(timing.transcriptionCostUsd, 0.06663);
+});
+
+test('diarization timeout is sized off the observed tail, not the median', () => {
+  // A production job timed out at 60s per audio minute fifteen minutes after a
+  // near-identical file finished at 28.6s per audio minute. The budget has to
+  // clear that tail, not sit on top of it.
+  const observedTailSecPerAudioMinute = 60;
+  for (const minutes of [12.54, 20, 30]) {
+    const options = buildDiarizationRequestOptions({ durationSeconds: minutes * 60 });
+    const observedTailMs = minutes * observedTailSecPerAudioMinute * 1000;
+    assert.ok(
+      options.timeout > observedTailMs,
+      `${minutes}min: budget ${options.timeout}ms must clear the observed tail ${observedTailMs}ms`,
+    );
+  }
+});
+
+test('diarization timeout is capped so a hung request cannot hold the worker forever', () => {
+  // The worker runs one job at a time, so an unbounded budget stalls the queue.
+  const veryLong = buildDiarizationRequestOptions({ durationSeconds: 10 * 60 * 60 });
+
+  assert.equal(veryLong.timeout, 45 * 60_000);
+});
+
+test('the failing 12.54 minute job would have had headroom under the new budget', () => {
+  const options = buildDiarizationRequestOptions({ durationSeconds: 752.381333 });
+
+  // It was killed at 752s; the request had not necessarily stalled.
+  assert.ok(options.timeout > 752_381, 'budget must exceed the duration that was cut off');
+  assert.equal(options.timeout, 2_257_144);
 });
