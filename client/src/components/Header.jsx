@@ -3,7 +3,7 @@ import { NavLink } from 'react-router-dom';
 export default function Header() {
   const linkStyle = (isActive) => ({
     padding: '8px 20px',
-    fontSize: '0.85rem',
+    fontSize: '0.875rem',
     fontWeight: isActive ? 600 : 400,
     color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
     textDecoration: 'none',

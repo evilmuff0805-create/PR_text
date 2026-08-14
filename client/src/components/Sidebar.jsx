@@ -102,7 +102,7 @@ export default function Sidebar({ isOpen, isMobile, onClose, triggerRef }) {
             }}>
               프리뷰<br />자막 머신
             </p>
-            <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '4px' }}>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '4px' }}>
               with editor
             </p>
           </Link>
@@ -124,19 +124,19 @@ export default function Sidebar({ isOpen, isMobile, onClose, triggerRef }) {
               borderRadius: '50%',
               background: 'var(--gradient)',
               color: '#000',
-              fontSize: '0.8rem',
+              fontSize: '0.875rem',
               fontWeight: 700,
             }}>⏱</span>
             <div>
-              <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>잔여 변환 시간</p>
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>잔여 변환 시간</p>
               <p style={{ fontSize: '1.1rem', fontWeight: 700, color: 'var(--text-primary)' }}>
                 {user ? user.credits : 0}분
               </p>
-              <p style={{ fontSize: '0.75rem', color: '#999' }}>(분 단위로 차감)</p>
+              <p style={{ fontSize: '0.875rem', color: '#999' }}>(분 단위로 차감)</p>
             </div>
           </div>
           {user && (
-            <p style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '6px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {user.email}
             </p>
           )}
@@ -170,7 +170,7 @@ export default function Sidebar({ isOpen, isMobile, onClose, triggerRef }) {
                 border: '1px solid var(--border-color)',
                 borderRadius: '8px',
                 color: 'var(--text-secondary)',
-                fontSize: '0.85rem',
+                fontSize: '0.875rem',
                 fontWeight: 400,
                 cursor: 'pointer',
                 textAlign: 'left',
@@ -191,7 +191,7 @@ export default function Sidebar({ isOpen, isMobile, onClose, triggerRef }) {
                 border: '1px solid var(--border-color)',
                 borderRadius: '8px',
                 color: 'var(--text-primary)',
-                fontSize: '0.85rem',
+                fontSize: '0.875rem',
                 fontWeight: 600,
                 cursor: 'pointer',
               }}
@@ -210,7 +210,7 @@ export default function Sidebar({ isOpen, isMobile, onClose, triggerRef }) {
                 border: 'none',
                 borderRadius: '8px',
                 color: '#000',
-                fontSize: '0.85rem',
+                fontSize: '0.875rem',
                 fontWeight: 700,
                 cursor: 'pointer',
               }}
@@ -220,21 +220,21 @@ export default function Sidebar({ isOpen, isMobile, onClose, triggerRef }) {
           )}
           <NavLink
             to="/terms"
-            style={{ display: 'block', padding: '8px 12px', fontSize: '0.75rem', color: 'var(--text-muted)', textDecoration: 'none' }}
+            style={{ display: 'block', padding: '8px 12px', fontSize: '0.875rem', color: 'var(--text-muted)', textDecoration: 'none' }}
             onClick={isMobile ? onClose : undefined}
           >
             이용약관
           </NavLink>
           <NavLink
             to="/privacy"
-            style={{ display: 'block', padding: '8px 12px', fontSize: '0.75rem', color: 'var(--text-muted)', textDecoration: 'none' }}
+            style={{ display: 'block', padding: '8px 12px', fontSize: '0.875rem', color: 'var(--text-muted)', textDecoration: 'none' }}
             onClick={isMobile ? onClose : undefined}
           >
             개인정보처리방침
           </NavLink>
           <NavLink
             to="/support"
-            style={{ display: 'block', padding: '8px 12px', fontSize: '0.75rem', color: 'var(--text-muted)', textDecoration: 'none' }}
+            style={{ display: 'block', padding: '8px 12px', fontSize: '0.875rem', color: 'var(--text-muted)', textDecoration: 'none' }}
             onClick={isMobile ? onClose : undefined}
           >
             고객센터

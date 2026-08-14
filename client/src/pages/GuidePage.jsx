@@ -45,6 +45,24 @@ const steps = [
   },
 ];
 
+const manualPages = [
+  'SRT 자막 넣는 방법',
+  '8단계 한눈에 보기',
+  '프로젝트 패널에서 더블 클릭',
+  'SRT 파일 선택 후 열기',
+  'SRT 파일을 타임라인으로 드래그',
+  '시작 지점 지정 후 확인',
+  '자막 클립 클릭 후 속성 열기',
+  '폰트, 크기, 위치 지정',
+  '자막 스타일 만들기',
+  '스타일 이름 지정 후 전체 적용',
+  '저장한 스타일로 추가 자막 적용',
+].map((title, index) => ({
+  number: index + 1,
+  title,
+  src: `/images/manual/pr-text-manual-${String(index + 1).padStart(2, '0')}.webp`,
+}));
+
 export default function GuidePage() {
   return (
     <div className="info-page">
@@ -87,6 +105,53 @@ export default function GuidePage() {
             </ul>
           </article>
         ))}
+      </section>
+
+      <section id="guide-manual" className="guide-manual" aria-labelledby="guide-manual-title">
+        <div className="guide-manual__heading">
+          <div>
+            <p className="info-callout__label">PREMIERE PRO MANUAL</p>
+            <h2 id="guide-manual-title">Premiere Pro에 SRT 자막 넣기</h2>
+            <p>
+              11페이지 이미지 설명서를 순서대로 확인하거나 PDF 파일로 내려받을 수 있습니다.
+              이미지를 누르면 원본 크기로 열립니다.
+            </p>
+          </div>
+          <a
+            className="button button--primary"
+            href="/docs/pr-text-manual.pdf"
+            download="pr-text_manual.pdf"
+          >
+            PDF 설명서 다운로드
+          </a>
+        </div>
+
+        <div className="guide-manual__pages">
+          {manualPages.map((page) => (
+            <figure className="guide-manual-page" key={page.src}>
+              <a
+                className="guide-manual-page__image-link"
+                href={page.src}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`${page.number}페이지 ${page.title} 원본 이미지 열기`}
+              >
+                <img
+                  src={page.src}
+                  alt={`${page.number}페이지: ${page.title}`}
+                  width="2200"
+                  height="1238"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </a>
+              <figcaption>
+                <span>{String(page.number).padStart(2, '0')}</span>
+                {page.title}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
       </section>
 
       <section className="guide-ideas" aria-labelledby="guide-ideas-title">
