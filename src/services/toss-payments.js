@@ -21,28 +21,37 @@ function parseKey(key, expectedKind) {
     throw new Error('토스페이먼츠 API 키 형식이 올바르지 않습니다.');
   }
 
-  const match = /^(test|live)_(gc|gs)k_/.exec(key);
+  const match = /^(test|live)_(g?c|g?s)k_/.exec(key);
   if (!match) {
-    throw new Error('토스페이먼츠 주문서형·결제창형(gck/gsk) 키를 사용해야 합니다.');
+    throw new Error('토스페이먼츠 API 키 형식이 올바르지 않습니다.');
   }
 
-  const kind = match[2] === 'gc' ? 'client' : 'secret';
+  const kind = match[2].endsWith('c') ? 'client' : 'secret';
   if (kind !== expectedKind) {
     throw new Error(`토스페이먼츠 ${expectedKind === 'client' ? '클라이언트' : '시크릿'} 키가 잘못 설정되었습니다.`);
   }
 
-  return match[1];
+  return {
+    environment: match[1],
+    integration: match[2].startsWith('g') ? 'checkout' : 'individual',
+  };
 }
 
 export function validateTossKeyPair({ clientKey, secretKey }) {
-  const clientEnvironment = parseKey(clientKey, 'client');
-  const secretEnvironment = parseKey(secretKey, 'secret');
+  const client = parseKey(clientKey, 'client');
+  const secret = parseKey(secretKey, 'secret');
 
-  if (clientEnvironment !== secretEnvironment) {
+  if (client.environment !== secret.environment) {
     throw new Error('토스페이먼츠 테스트 키와 실결제 키가 섞여 있습니다.');
   }
+  if (client.integration !== secret.integration) {
+    throw new Error('토스페이먼츠 결제창 키와 API 개별 연동 키가 섞여 있습니다.');
+  }
+  if (client.environment === 'live' && client.integration !== 'checkout') {
+    throw new Error('실결제는 토스페이먼츠 주문서형·결제창형(gck/gsk) 키를 사용해야 합니다.');
+  }
 
-  return { environment: clientEnvironment };
+  return { environment: client.environment };
 }
 
 export function isVerifiedTossPayment(payment, expected) {

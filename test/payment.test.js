@@ -79,9 +79,13 @@ async function request(router, path, body, method = 'POST') {
   }
 }
 
-test('accepts only matching Toss checkout key pairs and rejects billing or mixed keys', () => {
+test('keeps test-key compatibility but accepts only checkout keys for live payments', () => {
   assert.deepEqual(
     validateTossKeyPair({ clientKey: 'test_gck_client', secretKey: 'test_gsk_secret' }),
+    { environment: 'test' },
+  );
+  assert.deepEqual(
+    validateTossKeyPair({ clientKey: 'test_ck_client', secretKey: 'test_sk_secret' }),
     { environment: 'test' },
   );
   assert.deepEqual(
@@ -99,6 +103,10 @@ test('accepts only matching Toss checkout key pairs and rejects billing or mixed
   assert.throws(
     () => validateTossKeyPair({ clientKey: 'live_ck_billing', secretKey: 'live_sk_billing' }),
     /gck\/gsk/,
+  );
+  assert.throws(
+    () => validateTossKeyPair({ clientKey: 'test_gck_client', secretKey: 'test_sk_secret' }),
+    /키가 섞여 있습니다/,
   );
 });
 
