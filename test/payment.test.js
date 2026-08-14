@@ -79,30 +79,30 @@ async function request(router, path, body, method = 'POST') {
   }
 }
 
-test('keeps test-key compatibility but accepts only checkout keys for live payments', () => {
-  assert.deepEqual(
-    validateTossKeyPair({ clientKey: 'test_gck_client', secretKey: 'test_gsk_secret' }),
-    { environment: 'test' },
-  );
+test('accepts API individual keys and rejects checkout keys', () => {
   assert.deepEqual(
     validateTossKeyPair({ clientKey: 'test_ck_client', secretKey: 'test_sk_secret' }),
     { environment: 'test' },
   );
   assert.deepEqual(
-    validateTossKeyPair({ clientKey: 'live_gck_client', secretKey: 'live_gsk_secret' }),
+    validateTossKeyPair({ clientKey: 'live_ck_client', secretKey: 'live_sk_secret' }),
     { environment: 'live' },
   );
   assert.throws(
-    () => validateTossKeyPair({ clientKey: 'test_gck_client', secretKey: 'live_gsk_secret' }),
-    /섞여 있습니다/,
+    () => validateTossKeyPair({ clientKey: 'test_gck_client', secretKey: 'test_gsk_secret' }),
+    /API 개별 연동\(ck\/sk\)/,
   );
   assert.throws(
-    () => validateTossKeyPair({ clientKey: 'test_gsk_secret', secretKey: 'test_gck_client' }),
+    () => validateTossKeyPair({ clientKey: 'live_gck_client', secretKey: 'live_gsk_secret' }),
+    /API 개별 연동\(ck\/sk\)/,
+  );
+  assert.throws(
+    () => validateTossKeyPair({ clientKey: 'test_sk_secret', secretKey: 'test_ck_client' }),
     /클라이언트 키/,
   );
   assert.throws(
-    () => validateTossKeyPair({ clientKey: 'live_ck_billing', secretKey: 'live_sk_billing' }),
-    /gck\/gsk/,
+    () => validateTossKeyPair({ clientKey: 'test_ck_client', secretKey: 'live_sk_secret' }),
+    /테스트 키와 실결제 키/,
   );
   assert.throws(
     () => validateTossKeyPair({ clientKey: 'test_gck_client', secretKey: 'test_sk_secret' }),
@@ -339,8 +339,8 @@ test('creates orders from the server plan catalog and ignores client-supplied pr
   const router = createPaymentRouter({
     auth,
     store,
-    clientKey: () => 'test_gck_client',
-    secretKey: () => 'test_gsk_secret',
+    clientKey: () => 'test_ck_client',
+    secretKey: () => 'test_sk_secret',
     paymentsEnabled: () => true,
   });
 

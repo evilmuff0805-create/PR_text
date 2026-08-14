@@ -47,8 +47,8 @@ export function validateTossKeyPair({ clientKey, secretKey }) {
   if (client.integration !== secret.integration) {
     throw new Error('토스페이먼츠 결제창 키와 API 개별 연동 키가 섞여 있습니다.');
   }
-  if (client.environment === 'live' && client.integration !== 'checkout') {
-    throw new Error('실결제는 토스페이먼츠 주문서형·결제창형(gck/gsk) 키를 사용해야 합니다.');
+  if (client.integration !== 'individual') {
+    throw new Error('현재 토스페이먼츠 결제창 연동에는 API 개별 연동(ck/sk) 키가 필요합니다.');
   }
 
   return { environment: client.environment };
