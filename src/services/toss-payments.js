@@ -21,12 +21,12 @@ function parseKey(key, expectedKind) {
     throw new Error('토스페이먼츠 API 키 형식이 올바르지 않습니다.');
   }
 
-  const match = /^(test|live)_(g?c|g?s)k_/.exec(key);
+  const match = /^(test|live)_(gc|gs)k_/.exec(key);
   if (!match) {
-    throw new Error('토스페이먼츠 API 키 형식이 올바르지 않습니다.');
+    throw new Error('토스페이먼츠 주문서형·결제창형(gck/gsk) 키를 사용해야 합니다.');
   }
 
-  const kind = match[2].endsWith('c') ? 'client' : 'secret';
+  const kind = match[2] === 'gc' ? 'client' : 'secret';
   if (kind !== expectedKind) {
     throw new Error(`토스페이먼츠 ${expectedKind === 'client' ? '클라이언트' : '시크릿'} 키가 잘못 설정되었습니다.`);
   }

@@ -21,6 +21,9 @@ export default function PaymentFailPage() {
         <p className="payment-status-card__note">
           오류 코드: {code}
         </p>
+        <p className="payment-status-card__issuer-note">
+          우리카드·하나카드 계열을 사용했다면 다른 카드사로 다시 시도해주세요.
+        </p>
         <div className="payment-status-card__actions">
           <button
             className="gradient-btn payment-status-card__button"

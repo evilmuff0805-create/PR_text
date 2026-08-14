@@ -79,9 +79,9 @@ async function request(router, path, body, method = 'POST') {
   }
 }
 
-test('accepts matching Toss test and live key pairs and rejects mixed environments', () => {
+test('accepts only matching Toss checkout key pairs and rejects billing or mixed keys', () => {
   assert.deepEqual(
-    validateTossKeyPair({ clientKey: 'test_ck_client', secretKey: 'test_sk_secret' }),
+    validateTossKeyPair({ clientKey: 'test_gck_client', secretKey: 'test_gsk_secret' }),
     { environment: 'test' },
   );
   assert.deepEqual(
@@ -89,12 +89,16 @@ test('accepts matching Toss test and live key pairs and rejects mixed environmen
     { environment: 'live' },
   );
   assert.throws(
-    () => validateTossKeyPair({ clientKey: 'test_ck_client', secretKey: 'live_sk_secret' }),
+    () => validateTossKeyPair({ clientKey: 'test_gck_client', secretKey: 'live_gsk_secret' }),
     /섞여 있습니다/,
   );
   assert.throws(
-    () => validateTossKeyPair({ clientKey: 'test_sk_secret', secretKey: 'test_ck_client' }),
+    () => validateTossKeyPair({ clientKey: 'test_gsk_secret', secretKey: 'test_gck_client' }),
     /클라이언트 키/,
+  );
+  assert.throws(
+    () => validateTossKeyPair({ clientKey: 'live_ck_billing', secretKey: 'live_sk_billing' }),
+    /gck\/gsk/,
   );
 });
 
@@ -327,8 +331,9 @@ test('creates orders from the server plan catalog and ignores client-supplied pr
   const router = createPaymentRouter({
     auth,
     store,
-    clientKey: () => 'test_ck_client',
-    secretKey: () => 'test_sk_secret',
+    clientKey: () => 'test_gck_client',
+    secretKey: () => 'test_gsk_secret',
+    paymentsEnabled: () => true,
   });
 
   const response = await request(router, '/create', {
@@ -344,6 +349,21 @@ test('creates orders from the server plan catalog and ignores client-supplied pr
   assert.equal(created.credits, 100);
   assert.equal(created.user_id, USER.id);
   assert.equal(created.payment_environment, 'test');
+});
+
+test('blocks new orders before any mutation when live payments are disabled', async () => {
+  let createCalls = 0;
+  const router = createPaymentRouter({
+    auth,
+    store: { async create() { createCalls += 1; } },
+    paymentsEnabled: () => false,
+  });
+
+  const response = await request(router, '/create', { planId: 'basic' });
+
+  assert.equal(response.status, 503);
+  assert.equal(createCalls, 0);
+  assert.match(response.data.error, /결제 오픈을 준비/);
 });
 
 test('rejects an altered confirmation amount before contacting Toss', async () => {
@@ -460,6 +480,7 @@ test('lists the authenticated user payment orders and refund gate state', async 
   const router = createPaymentRouter({
     auth,
     store,
+    paymentsEnabled: () => true,
     refundsEnabled: () => true,
     paymentEnvironment: () => 'test',
   });
@@ -468,6 +489,7 @@ test('lists the authenticated user payment orders and refund gate state', async 
 
   assert.equal(response.status, 200);
   assert.deepEqual(response.data.orders, orders);
+  assert.equal(response.data.paymentsEnabled, true);
   assert.equal(response.data.refundsEnabled, true);
 });
 
