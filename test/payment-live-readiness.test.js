@@ -26,6 +26,22 @@ test('a failed confirm never offers a path that creates a second order', async (
   assert.match(errorBlock, /주문번호/);
 });
 
+test('live checkout stays gated until launch and explains temporarily unsupported issuers', async () => {
+  const [route, page, failPage, env] = await Promise.all([
+    read('src/routes/payment.js'),
+    read('client/src/pages/PaymentPage.jsx'),
+    read('client/src/pages/PaymentFailPage.jsx'),
+    read('.env.example'),
+  ]);
+
+  assert.match(route, /process\.env\.PAYMENTS_ENABLED === 'true'/);
+  assert.match(route, /router\.post\('\/create'[\s\S]*if \(!paymentsEnabled\(\)\)/);
+  assert.match(page, /우리카드·하나카드/);
+  assert.match(page, /paymentsEnabled !== true/);
+  assert.match(failPage, /다른 카드사로 다시 시도/);
+  assert.match(env, /PAYMENTS_ENABLED=false/);
+});
+
 test('partial cancellations are verified before any credit is reclaimed', () => {
   const expected = { paymentKey: 'pk', orderId: 'order_1', amount: 10000 };
   const partial = {

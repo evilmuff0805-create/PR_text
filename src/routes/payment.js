@@ -58,6 +58,7 @@ export function createPaymentRouter({
     clientKey: clientKey(),
     secretKey: secretKey(),
   }).environment,
+  paymentsEnabled = () => process.env.PAYMENTS_ENABLED === 'true',
   refundsEnabled = () => {
     const environment = paymentEnvironment();
     return environment === 'test' || process.env.PAYMENT_REFUNDS_ENABLED === 'true';
@@ -66,6 +67,12 @@ export function createPaymentRouter({
   const router = Router();
 
   router.post('/create', auth, async (req, res) => {
+    if (!paymentsEnabled()) {
+      return res.status(503).json({
+        error: '현재 결제 오픈을 준비 중입니다. 잠시 후 다시 확인해주세요.',
+      });
+    }
+
     const { planId } = req.body;
     const plan = PLANS[planId];
 
@@ -202,6 +209,7 @@ export function createPaymentRouter({
       ));
       return res.json({
         orders,
+        paymentsEnabled: paymentsEnabled(),
         refundsEnabled: refundsEnabled(),
       });
     } catch (error) {

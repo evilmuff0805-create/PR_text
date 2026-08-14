@@ -1467,6 +1467,38 @@ textarea:focus-visible {
   color: var(--danger);
 }
 
+.payment-notice {
+  display: grid;
+  margin-bottom: 18px;
+  padding: 13px 16px;
+  border: 1px solid rgba(245, 184, 75, 0.32);
+  border-radius: 8px;
+  background: rgba(245, 184, 75, 0.07);
+  gap: 4px;
+}
+
+.payment-notice strong {
+  color: #f5b84b;
+  font-size: 0.82rem;
+}
+
+.payment-notice p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 0.82rem;
+  line-height: 1.55;
+  word-break: keep-all;
+}
+
+.payment-notice--paused {
+  border-color: rgba(61, 242, 116, 0.26);
+  background: rgba(61, 242, 116, 0.055);
+}
+
+.payment-notice--paused strong {
+  color: var(--accent);
+}
+
 .payment-plans {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1860,6 +1892,14 @@ textarea:focus-visible {
 .payment-status-card__note {
   margin-bottom: 8px;
   font-size: 0.76rem !important;
+}
+
+.payment-status-card .payment-status-card__issuer-note {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(245, 184, 75, 0.28);
+  color: #f5b84b;
+  font-size: 0.82rem;
 }
 
 .payment-status-card__actions {

@@ -9,6 +9,7 @@ export default function PaymentPage() {
   const [orders, setOrders] = useState([]);
   const [ordersLoading, setOrdersLoading] = useState(false);
   const [ordersError, setOrdersError] = useState('');
+  const [paymentsEnabled, setPaymentsEnabled] = useState(null);
   const [refundsEnabled, setRefundsEnabled] = useState(false);
   const [confirmingRefund, setConfirmingRefund] = useState(null);
   const [refunding, setRefunding] = useState(null);
@@ -59,6 +60,7 @@ export default function PaymentPage() {
   const loadPaymentOrders = useCallback(async () => {
     if (!user) {
       setOrders([]);
+      setPaymentsEnabled(null);
       setRefundsEnabled(false);
       return;
     }
@@ -72,8 +74,10 @@ export default function PaymentPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || '결제 내역을 불러오지 못했습니다.');
       setOrders(data.orders || []);
+      setPaymentsEnabled(Boolean(data.paymentsEnabled));
       setRefundsEnabled(Boolean(data.refundsEnabled));
     } catch (err) {
+      setPaymentsEnabled(false);
       setOrdersError(err.message || '결제 내역을 불러오지 못했습니다.');
     } finally {
       setOrdersLoading(false);
@@ -87,6 +91,10 @@ export default function PaymentPage() {
   async function handlePurchase(plan) {
     if (!user) {
       setError('로그인이 필요합니다.');
+      return;
+    }
+    if (paymentsEnabled !== true) {
+      setError('현재 결제 오픈을 준비 중입니다. 잠시 후 다시 확인해주세요.');
       return;
     }
 
@@ -202,6 +210,21 @@ export default function PaymentPage() {
         </div>
       </section>
 
+      <section className="payment-notice payment-notice--issuer" role="status" aria-label="카드사 결제 안내">
+        <strong>카드사 심사 안내</strong>
+        <p>
+          현재 우리카드·하나카드 계열은 카드사 심사 중으로 결제가 제한될 수 있습니다.
+          {' '}다른 카드사를 이용해주세요.
+        </p>
+      </section>
+
+      {paymentsEnabled === false && !ordersError && (
+        <section className="payment-notice payment-notice--paused" role="status" aria-live="polite">
+          <strong>결제 오픈 준비 중</strong>
+          <p>라이브 결제 설정을 최종 확인하고 있습니다. 준비가 완료되면 이 화면에서 바로 충전할 수 있습니다.</p>
+        </section>
+      )}
+
       {(error || success || selectedPlan) && (
         <div
           className={error ? 'payment-alert payment-alert--error' : 'payment-alert'}
@@ -251,10 +274,16 @@ export default function PaymentPage() {
             <button
               className="gradient-btn payment-plan__button"
               onClick={() => handlePurchase(plan)}
-              disabled={loading !== null}
+              disabled={loading !== null || paymentsEnabled !== true}
               type="button"
             >
-              {loading === plan.id ? '처리 중...' : '충전하기'}
+              {loading === plan.id
+                ? '처리 중...'
+                : paymentsEnabled === null
+                  ? '결제 상태 확인 중'
+                  : paymentsEnabled
+                    ? '충전하기'
+                    : '결제 준비 중'}
             </button>
           </article>
         ))}
