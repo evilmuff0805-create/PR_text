@@ -301,11 +301,11 @@ export default function HomePage() {
             )}
 
             {!isPreparingFile && isReadingDuration ? (
-              <p role="status" style={{ color: 'var(--text-muted)', fontSize: '0.8rem', marginBottom: '12px' }}>
+              <p role="status" style={{ color: 'var(--text-muted)', fontSize: '0.875rem', marginBottom: '12px' }}>
                 예상 사용 시간을 확인 중입니다...
               </p>
             ) : !isPreparingFile && estimatedCredits !== null ? (
-              <p style={{ color: user && user.credits < estimatedCredits ? '#FF6B6B' : 'var(--gradient-start)', fontSize: '0.8rem', marginBottom: '12px' }}>
+              <p style={{ color: user && user.credits < estimatedCredits ? '#FF6B6B' : 'var(--gradient-start)', fontSize: '0.875rem', marginBottom: '12px' }}>
                 예상 사용 시간: {estimatedCredits}분 · 보유: {user ? user.credits : 0}분
               </p>
             ) : null}
@@ -387,11 +387,11 @@ export default function HomePage() {
           <p style={{ color: 'var(--text-primary)', fontWeight: 600, fontSize: '0.95rem', margin: 0, marginBottom: '4px' }}>
             인물 여러 명
           </p>
-          <p style={{ color: 'var(--text-muted)', fontSize: '0.8rem', margin: 0, lineHeight: '1.5' }}>
+          <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', margin: 0, lineHeight: '1.5' }}>
             인물이 여러 명일 때 체크하면 텍스트에서 색깔로 자동 구분합니다
           </p>
           {diarize && (
-            <p style={{ color: 'var(--gradient-start)', fontSize: '0.78rem', margin: 0, marginTop: '4px' }}>
+            <p style={{ color: 'var(--gradient-start)', fontSize: '0.875rem', margin: 0, marginTop: '4px' }}>
               최대 {DIARIZATION_MAX_MINUTES}분 지원 · 일반 변환보다 시간이 더 소요됩니다
             </p>
           )}

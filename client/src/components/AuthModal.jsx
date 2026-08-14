@@ -146,7 +146,7 @@ export default function AuthModal({ isOpen, onClose, restoreFocusRef, returnPath
           </button>
 
           <div id="auth-modal-description" style={{
-            textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.8rem',
+            textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.875rem',
             lineHeight: 1.6, margin: '16px 0', wordBreak: 'keep-all',
           }}>
             {mode === 'reset' ? (
@@ -201,11 +201,11 @@ export default function AuthModal({ isOpen, onClose, restoreFocusRef, returnPath
             </>
           )}
 
-          {error && <p role="alert" style={{ color: '#ff6b72', fontSize: '0.85rem', marginBottom: '12px' }}>{error}</p>}
+          {error && <p role="alert" style={{ color: '#ff6b72', fontSize: '0.875rem', marginBottom: '12px' }}>{error}</p>}
           {success && (
             <div role="status" aria-live="polite" style={{ marginBottom: '12px' }}>
-              <p style={{ color: '#3df274', fontSize: '0.85rem', marginBottom: '4px' }}>{success}</p>
-              <p style={{ color: 'var(--text-muted)', fontSize: '0.85rem' }}>이메일이 도착하지 않으면 스팸함을 확인해주세요.</p>
+              <p style={{ color: '#3df274', fontSize: '0.875rem', marginBottom: '4px' }}>{success}</p>
+              <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem' }}>이메일이 도착하지 않으면 스팸함을 확인해주세요.</p>
             </div>
           )}
 
@@ -222,14 +222,14 @@ export default function AuthModal({ isOpen, onClose, restoreFocusRef, returnPath
 
           {mode === 'signup' && (
             <p style={{
-              color: 'var(--text-muted)', fontSize: '0.78rem', lineHeight: 1.6,
+              color: 'var(--text-muted)', fontSize: '0.875rem', lineHeight: 1.6,
               marginTop: '10px', textAlign: 'center', wordBreak: 'keep-all',
             }}>
               신규 무료 10분은 동일 로그인 계정에 최초 1회만 지급됩니다.
             </p>
           )}
 
-          <p style={{ textAlign: 'center', marginTop: '16px', fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+          <p style={{ textAlign: 'center', marginTop: '16px', fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
             {mode === 'login' && (
               <>
                 <button className="auth-modal__text-button" type="button" onClick={() => switchMode('reset')}>비밀번호를 잊으셨나요?</button>

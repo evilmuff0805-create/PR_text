@@ -1,8 +1,18 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir, stat } from 'node:fs/promises';
 import test from 'node:test';
 
 const clientFile = (path) => readFile(new URL(`../client/src/${path}`, import.meta.url), 'utf8');
+
+async function clientSourceFiles(directory = new URL('../client/src/', import.meta.url)) {
+  const entries = await readdir(directory, { withFileTypes: true });
+  const files = await Promise.all(entries.map((entry) => {
+    const entryUrl = new URL(`${entry.name}${entry.isDirectory() ? '/' : ''}`, directory);
+    if (entry.isDirectory()) return clientSourceFiles(entryUrl);
+    return /\.[jt]sx?$/.test(entry.name) ? [entryUrl] : [];
+  }));
+  return files.flat();
+}
 
 function relativeLuminance(hex) {
   const channels = hex.match(/[a-f\d]{2}/gi).map((value) => parseInt(value, 16) / 255);
@@ -122,4 +132,50 @@ test('result summary and download copy stay legible without horizontal overflow'
     /\.export-option__copy strong,\s*\.export-option__copy small\s*\{[\s\S]*?overflow-wrap:\s*anywhere;/,
   );
   assert.match(styles, /\.export-option__copy\s*\{[\s\S]*?min-width:\s*0;/);
+});
+
+test('shared app typography never drops below the result-screen readability floor', async () => {
+  const styles = await clientFile('global.css');
+  const sizes = [...styles.matchAll(/font-size:\s*([0-9.]+)(rem|px)(?:\s*!important)?;/g)]
+    .map((match) => (match[2] === 'rem' ? Number(match[1]) * 16 : Number(match[1])));
+  const sourceFiles = await clientSourceFiles();
+  const sourceEntries = await Promise.all(sourceFiles.map(async (file) => ({
+    file,
+    source: await readFile(file, 'utf8'),
+  })));
+  const undersizedInlineStyles = sourceEntries.flatMap(({ file, source }) => (
+    [...source.matchAll(/fontSize:\s*['"]([0-9.]+)(rem|px)['"]/g)]
+      .filter((match) => (match[2] === 'rem' ? Number(match[1]) * 16 : Number(match[1])) < 14)
+      .map((match) => `${file.pathname}:${match[0]}`)
+  ));
+
+  assert.ok(sizes.length > 0);
+  assert.deepEqual(sizes.filter((size) => size < 14), []);
+  assert.deepEqual(undersizedInlineStyles, []);
+});
+
+test('guide publishes the complete visual manual and a downloadable PDF', async () => {
+  const guide = await clientFile('pages/GuidePage.jsx');
+  const manualTitles = guide.match(/const manualPages = \[([\s\S]*?)\]\.map/);
+
+  assert.ok(manualTitles);
+  assert.equal([...manualTitles[1].matchAll(/^\s*'[^']+',?\s*$/gm)].length, 11);
+  assert.match(guide, /href="\/docs\/pr-text-manual\.pdf"/);
+  assert.match(guide, /download="pr-text_manual\.pdf"/);
+  assert.match(guide, /loading="lazy"/);
+  assert.match(guide, /aria-label=\{`\$\{page\.number\}페이지/);
+
+  const assets = [
+    new URL('../client/public/docs/pr-text-manual.pdf', import.meta.url),
+    ...Array.from(
+      { length: 11 },
+      (_, index) => new URL(
+        `../client/public/images/manual/pr-text-manual-${String(index + 1).padStart(2, '0')}.webp`,
+        import.meta.url,
+      ),
+    ),
+  ];
+  const stats = await Promise.all(assets.map((asset) => stat(asset)));
+
+  assert.ok(stats.every((asset) => asset.isFile() && asset.size > 0));
 });
