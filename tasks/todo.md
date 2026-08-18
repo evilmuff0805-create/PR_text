@@ -280,3 +280,29 @@
 - This release changes subtitle formatting only. It does not change transcription, diarization, credits, payments, or database behavior.
 - Multi-speaker audio quality and dual-pass word timing remain separate benchmark-gated work.
 - Focused subtitle tests passed 13/13, focused result-editor tests passed 7/7, the full suite passed 225/225, and the production build completed successfully.
+
+# History date and filename overlap
+
+## Acceptance criteria
+
+- [x] Usage and redownload timestamps cannot paint over the adjacent column.
+- [x] Dates and times remain readable at the existing 14px minimum without widening the desktop table.
+- [x] Long filenames keep their desktop ellipsis and mobile wrapping behavior.
+- [x] Focused tests, full tests, build, and responsive visual checks pass.
+- [ ] CI, deployment health, and Notion synchronization pass.
+
+## Checklist
+
+- [x] Trace the shared history table structure and reproduce the fixed-column overflow cause.
+- [x] Render history date and time on stable separate lines through one shared component.
+- [x] Add a cell containment rule and regression coverage for both pages.
+- [x] Run local verification and review the diff.
+- [ ] Publish and verify production.
+
+## Working notes
+
+- The 176px date track leaves about 144px after cell padding, while the Korean locale timestamp is wider and was allowed to overflow because of `white-space: nowrap`.
+- Widening the fixed track would reduce filename space and increase clipping risk near the desktop/mobile breakpoint, so this fix keeps the grid widths unchanged.
+- The first five-width visual pass found the fixed desktop history grid clipping its download column at 1024px, so the existing card layout now starts at 1100px instead of 768px.
+- Focused history checks passed 11/11, the full suite passed 226/226, and the production build completed successfully.
+- Synthetic responsive history rows passed at 375, 390, 768, 1024, and 1440px with no date-to-filename overlap, page overflow, or download-column escape.

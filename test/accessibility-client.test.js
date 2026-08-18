@@ -134,6 +134,30 @@ test('result summary and download copy stay legible without horizontal overflow'
   assert.match(styles, /\.export-option__copy\s*\{[\s\S]*?min-width:\s*0;/);
 });
 
+test('history timestamps stay inside their columns on both history pages', async () => {
+  const [usage, redownload, dateTime, styles] = await Promise.all([
+    clientFile('pages/UsagePage.jsx'),
+    clientFile('pages/RedownloadPage.jsx'),
+    clientFile('components/HistoryDateTime.jsx'),
+    clientFile('global.css'),
+  ]);
+
+  assert.match(usage, /<HistoryDateTime value=\{log\.created_at\} \/>/);
+  assert.match(redownload, /<HistoryDateTime value=\{log\.created_at\} \/>/);
+  assert.match(dateTime, /className="usage-date-time"/);
+  assert.match(dateTime, /<span>\{dateText\}<\/span>[\s\S]*<span>\{timeText\}<\/span>/);
+  assert.match(styles, /\.usage-table__date\s*\{[\s\S]*?overflow:\s*hidden;/);
+  assert.match(
+    styles,
+    /\.usage-date-time\s*\{[\s\S]*?display:\s*grid;[\s\S]*?max-width:\s*100%;[\s\S]*?white-space:\s*nowrap;/,
+  );
+  const mediumBreakpoint = styles.indexOf('@media (max-width: 1100px)');
+  const mobileBreakpoint = styles.indexOf('@media (max-width: 768px)');
+  const responsiveHistoryLayout = styles.indexOf('.usage-table--ledger tr,', mediumBreakpoint);
+  assert.ok(responsiveHistoryLayout > mediumBreakpoint);
+  assert.ok(responsiveHistoryLayout < mobileBreakpoint);
+});
+
 test('shared app typography never drops below the result-screen readability floor', async () => {
   const styles = await clientFile('global.css');
   const sizes = [...styles.matchAll(/font-size:\s*([0-9.]+)(rem|px)(?:\s*!important)?;/g)]

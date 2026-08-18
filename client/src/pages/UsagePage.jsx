@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import HistoryDateTime from '../components/HistoryDateTime.jsx';
 
 const LIMIT = 20;
 
@@ -72,17 +73,6 @@ export default function UsagePage() {
     }
   }
 
-  const formatDate = (iso) => {
-    const d = new Date(iso);
-    return d.toLocaleDateString('ko-KR', {
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
   return (
     <div className="usage-page">
       <header className="usage-heading">
@@ -141,7 +131,7 @@ export default function UsagePage() {
                           <tr key={log.id || i}>
                             <td className="usage-table__date">
                               <span className="usage-mobile-label">날짜</span>
-                              <time dateTime={log.created_at}>{formatDate(log.created_at)}</time>
+                              <HistoryDateTime value={log.created_at} />
                             </td>
                             <td className="usage-table__action">
                               <span className="usage-mobile-label">구분</span>

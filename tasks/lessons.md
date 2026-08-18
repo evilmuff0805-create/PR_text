@@ -5,3 +5,4 @@
 - Place generated-content history beside the workflow that creates and reuses it. Keep account usage pages focused on ledger changes so users do not have to guess where past results live.
 - Do not raise a public media-duration limit because documentation omits a cap. Verify the provider boundary with a real request first, then keep a small measurement margin so users are rejected before credits are reserved.
 - PR_text spoken subtitles are a strict single-line product format. Normalize all edited whitespace before export, forbid ASS automatic wrapping and `\\N`, and keep every generated cue within the existing 28-character boundary.
+- Locale-formatted timestamps must not rely on a narrow fixed column with visible overflow. Split date and time into stable lines and contain the cell so adjacent history columns can never overlap.
