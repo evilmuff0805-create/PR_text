@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import HistoryDateTime from '../components/HistoryDateTime.jsx';
 
 const LIMIT = 20;
 const DOWNLOAD_FORMATS = ['srt', 'txt', 'ass'];
@@ -145,7 +146,7 @@ export default function RedownloadPage() {
                         <tr key={log.id || index}>
                           <td className="usage-table__date">
                             <span className="usage-mobile-label">날짜</span>
-                            <time dateTime={log.created_at}>{formatDate(log.created_at)}</time>
+                            <HistoryDateTime value={log.created_at} />
                           </td>
                           <td className="usage-table__filename">
                             <span className="usage-mobile-label">파일명</span>
@@ -208,17 +209,6 @@ export default function RedownloadPage() {
       )}
     </div>
   );
-}
-
-function formatDate(iso) {
-  const date = new Date(iso);
-  return date.toLocaleDateString('ko-KR', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
 }
 
 function formatDuration(seconds) {
