@@ -27,16 +27,19 @@ const POSTPOSITION = /[은는이가을를에도로]$/;
 const DECORATIVE_PERIOD = /\.(?![0-9A-Za-z])|(?<![0-9A-Za-z])\./g;
 
 function cleanText(text) {
-  return text.trim().replace(DECORATIVE_PERIOD, '');
+  return String(text ?? '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .replace(DECORATIVE_PERIOD, '');
 }
 
-// ASS는 중괄호를 스타일 오버라이드로, 줄바꿈을 라인 구분자로 해석한다.
-// 자막 본문에 그대로 들어가면 Dialogue 라인이 깨지므로 무해한 형태로 바꾼다.
+// ASS는 중괄호를 스타일 오버라이드로 해석한다. 줄바꿈은 두 줄 자막을
+// 만들 수 있으므로 cleanText 이후에도 방어적으로 한 칸으로 바꾼다.
 function escapeASSText(text) {
   return String(text ?? '')
     .replace(/\{/g, '(')
     .replace(/\}/g, ')')
-    .replace(/\r\n?|\n/g, '\\N');
+    .replace(/\r\n?|\n/g, ' ');
 }
 
 function findCutAt(text, maxLen) {
@@ -199,7 +202,8 @@ export function generateASS(segments, options = {}, speakerColors = null) {
     `PlayResX: ${ASS_PLAY_RES_X}`,
     `PlayResY: ${ASS_PLAY_RES_Y}`,
     'ScaledBorderAndShadow: yes',
-    'WrapStyle: 0',
+    // 자동 줄바꿈을 금지한다. 모든 Dialogue 텍스트는 앞 단계에서 28자 이하로 분할된다.
+    'WrapStyle: 2',
     'PlayDepth: 0',
     '',
   ].join('\n');

@@ -75,6 +75,17 @@ function formatSegmentTime(seconds) {
 // ASS 기준 해상도(src/services/subtitle.js와 동일). 글자 크기는 이 좌표계의 픽셀이다.
 const ASS_PLAY_RES_X = 1920;
 const ASS_DEFAULT_FONT_SIZE = 48;
+const SUBTITLE_MAX_CHARS = 28;
+
+function buildSingleLinePreviewText(text) {
+  const normalized = String(text ?? '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '자막 미리보기 텍스트';
+  if (normalized.length <= SUBTITLE_MAX_CHARS) return normalized;
+
+  const candidate = normalized.slice(0, SUBTITLE_MAX_CHARS + 1);
+  const wordBoundary = candidate.lastIndexOf(' ');
+  return normalized.slice(0, wordBoundary > 0 ? wordBoundary : SUBTITLE_MAX_CHARS).trimEnd();
+}
 // 미리보기 박스는 1920px 폭을 축소해서 보여주므로 같은 비율로 글자도 줄인다.
 const ASS_PREVIEW_WIDTH = 560;
 
@@ -478,7 +489,7 @@ export default function ResultPage() {
   ))?.id;
 
   // 미리보기용 샘플 텍스트 (첫 번째 세그먼트 사용)
-  const previewText = editedSegments.length > 0 ? editedSegments[0].text : '자막 미리보기 텍스트';
+  const previewText = buildSingleLinePreviewText(editedSegments[0]?.text);
 
   // 미리보기에서 자막 위치 계산
   function getPreviewAlign() {

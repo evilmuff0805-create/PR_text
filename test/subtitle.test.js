@@ -43,17 +43,22 @@ test('ASS declares a 1080p canvas so font size is not scaled up by the player', 
   assert.match(ass, /^PlayResX: 1920$/m);
   assert.match(ass, /^PlayResY: 1080$/m);
   assert.match(ass, /^ScaledBorderAndShadow: yes$/m);
+  assert.match(ass, /^WrapStyle: 2$/m);
   assert.match(ass, new RegExp(`Style: Default,Pretendard,${ASS_DEFAULT_FONT_SIZE},`));
 });
 
-test('ASS text cannot break the Dialogue line with braces or newlines', () => {
-  const ass = generateASS([
-    { start: 0, end: 1, text: '앞줄\n뒷줄 {b1}' },
-  ]);
+test('SRT and ASS normalize edited whitespace into one visual line', () => {
+  const input = [{ start: 0, end: 1, text: '앞줄\r\n뒷줄\t마지막 {b1}' }];
+  const srt = generateSRT(input);
+  const ass = generateASS(input);
 
+  const srtBlock = srt.split('\n');
+  assert.equal(srtBlock.length, 3);
+  assert.equal(srtBlock[2], '앞줄 뒷줄 마지막 {b1}');
   const dialogue = ass.split('\n').filter((line) => line.startsWith('Dialogue:'));
   assert.equal(dialogue.length, 1);
-  assert.match(dialogue[0], /앞줄\\N뒷줄 \(b1\)/);
+  assert.match(dialogue[0], /앞줄 뒷줄 마지막 \(b1\)/);
+  assert.doesNotMatch(dialogue[0], /\\N/);
   assert.doesNotMatch(dialogue[0], /[{}]/);
 });
 
