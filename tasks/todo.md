@@ -254,3 +254,29 @@
 - A synthetic 151MB, 48kHz stereo PCM WAV completed optimization in 1.66 seconds, read no source slice larger than 4MB, and produced an uploadable file below 150MB.
 - Focused tests passed 13/13, the full suite passed 218/218, and the production build emitted the dedicated WAV worker bundle.
 - Responsive checks passed at 1440x900 and 390x844 without upload guidance overflow. The local browser could not inject a file into the login-gated hidden chooser, so the real-size conversion engine was verified separately from the signed-in UI flow.
+
+# Single-line spoken subtitle invariant
+
+## Acceptance criteria
+
+- [x] SRT and ASS normalize edited line breaks and tabs into spaces.
+- [x] Every generated spoken-subtitle cue remains a single visual line and at most 28 characters.
+- [x] ASS disables automatic player wrapping and never emits `\\N` line breaks.
+- [x] The result preview shows only the first single-line 28-character cue.
+- [x] Targeted tests, full tests, and the production build pass.
+- [ ] CI, deployment health, and Notion synchronization pass.
+
+## Checklist
+
+- [x] Confirm the existing SRT, ASS, preview, and regression-test behavior.
+- [x] Normalize whitespace at the subtitle export boundary.
+- [x] Disable ASS automatic wrapping and constrain the preview to one line.
+- [x] Replace the prior two-line regression expectation with the product invariant.
+- [x] Run local verification and review the diff.
+- [ ] Publish and verify production.
+
+## Working notes
+
+- This release changes subtitle formatting only. It does not change transcription, diarization, credits, payments, or database behavior.
+- Multi-speaker audio quality and dual-pass word timing remain separate benchmark-gated work.
+- Focused subtitle tests passed 13/13, focused result-editor tests passed 7/7, the full suite passed 225/225, and the production build completed successfully.

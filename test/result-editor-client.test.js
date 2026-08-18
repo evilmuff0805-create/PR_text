@@ -55,6 +55,19 @@ test('ASS controls speak the same 1080p coordinate system as the generator', asy
   assert.match(page, /min="24"/);
 });
 
+test('ASS preview keeps the product one-line subtitle invariant', async () => {
+  const [page, styles] = await Promise.all([
+    read('client/src/pages/ResultPage.jsx'),
+    read('client/src/global.css'),
+  ]);
+
+  assert.match(page, /const SUBTITLE_MAX_CHARS = 28;/);
+  assert.match(page, /function buildSingleLinePreviewText\(text\)/);
+  assert.match(page, /replace\(\/\\s\+\/g, ' '\)/);
+  assert.match(styles, /\.ass-preview p \{[\s\S]*white-space: nowrap;/);
+  assert.match(styles, /\.ass-preview p \{[\s\S]*text-overflow: ellipsis;/);
+});
+
 test('long segment lists isolate row updates and skip offscreen layout work', async () => {
   const [page, styles] = await Promise.all([
     read('client/src/pages/ResultPage.jsx'),

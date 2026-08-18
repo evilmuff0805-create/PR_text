@@ -4432,10 +4432,13 @@ textarea:focus-visible {
   max-width: 92%;
   margin: 0;
   padding: 4px 10px;
+  overflow: hidden;
   font-weight: 500;
   line-height: 1.45;
   text-align: center;
+  text-overflow: ellipsis;
   text-shadow: 1px 1px 3px rgba(0, 0, 0, 0.95), -1px -1px 3px rgba(0, 0, 0, 0.95);
+  white-space: nowrap;
   word-break: keep-all;
 }
 
