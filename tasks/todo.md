@@ -316,7 +316,7 @@
 - [x] Valid existing speaker IDs and color assignments are preserved during legacy repair.
 - [x] Invalid untrusted speaker metadata still fails with a safe 400 response.
 - [x] Focused tests, full tests, and the production build pass.
-- [ ] CI, deployment health, and Notion synchronization pass.
+- [x] CI, deployment health, and Notion synchronization pass.
 
 ## Checklist
 
@@ -324,7 +324,7 @@
 - [x] Confirm the latest job contains one legacy `speaker: -1` segment and that the download route rejects it.
 - [x] Add shared speaker normalization for provider output and legacy download payloads.
 - [x] Add regression coverage for the reported result shape and unsafe metadata.
-- [ ] Run local verification, publish, and verify production.
+- [x] Run local verification, publish, and verify production.
 
 ## Working notes
 
@@ -333,3 +333,31 @@
 - `/api/download` validates speaker IDs and speaker-color keys before generating every format, so the single negative ID blocked TXT even though TXT does not render speaker metadata.
 - Focused download, diarization, and subtitle tests passed 33/33, including the 264-segment reported shape across SRT, TXT, and ASS.
 - The full suite passed 230/230 and the production build completed successfully.
+- PR #98 merged as `4c2c9e5`; Railway stabilized after the provider incident and `/api/health` returned HTTP 200 with the same commit.
+
+# Whisper repeated-speech hallucination guard
+
+## Acceptance criteria
+
+- [x] The reported low-confidence seven-segment repetition is recognized before GPT correction.
+- [x] Normal two- or three-fold repetitions and high-confidence repeated speech remain untouched.
+- [x] Speaker-labeled diarization output is never changed by the regular Whisper guard.
+- [x] Segment order and timestamps stay monotonic after a guarded run is collapsed.
+- [ ] Focused tests, full tests, production build, CI, deployment health, and Notion synchronization pass.
+
+## Checklist
+
+- [x] Compare the reported WAV interval with the stored provider segments and local silence analysis.
+- [x] Trace the existing silence filter and confirm that it only removes explicit silence or music markers.
+- [x] Characterize consecutive exact-repeat runs across production history without reading other transcript text.
+- [x] Add regression tests for the reported provider shape and legitimate repetition counterexamples.
+- [x] Implement the smallest evidence-gated regular-Whisper guard before GPT correction.
+- [ ] Run local verification, publish, and verify production.
+
+## Working notes
+
+- The reported result contains seven consecutive `아 진짜요?` segments from 376.793s to 384.433s. They share one decode window, nearly identical durations, no speaker label, and `avg_logprob` about -0.826.
+- The existing filter removes labels such as `(무음)` and `[음악]`, but natural-language Whisper hallucinations pass through and GPT correction intentionally preserves repetition.
+- Production aggregates show 49 exact runs of at least three segments; none are speaker-labeled. Only four runs satisfy the conservative four-plus, single-window, uniform-duration, low-confidence signature.
+- The parallel chunk boundary can amplify a low-energy decode, but similar runs predate parallel transcription, so the provider loop plus the missing semantic guard is the root cause.
+- Focused processing tests passed 17/17, the full suite passed 239/239, and the production build completed successfully.
