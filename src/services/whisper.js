@@ -8,6 +8,7 @@ import { tmpdir } from 'os';
 import { randomUUID } from 'crypto';
 import { performance } from 'perf_hooks';
 import { buildAudioChunkPlan, mapWithConcurrency, mergeChunkSegments } from './audio-chunks.js';
+import { normalizeProviderSpeakerLabels } from './speakers.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 4 });
 const execFileAsync = promisify(execFile);
@@ -405,12 +406,13 @@ export async function transcribeWithDiarization(
       throw createDiarizationDurationLimitError();
     }
 
-    // speaker "A"→0, "B"→1, ... 매핑
-    const segments = rawSegments.map(s => ({
+    // 공급자가 A/B 외의 라벨을 반환해도 음수 화자 ID가 생기지 않도록
+    // 실제 등장 순서대로 안정적인 0..19 ID를 부여한다.
+    const segments = normalizeProviderSpeakerLabels(rawSegments).map(s => ({
       start: s.start,
       end: s.end,
       text: s.text,
-      speaker: typeof s.speaker === 'string' ? s.speaker.charCodeAt(0) - 65 : 0,
+      speaker: s.speaker,
     }));
 
     return {

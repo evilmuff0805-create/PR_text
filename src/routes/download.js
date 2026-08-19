@@ -1,12 +1,15 @@
 import { Router } from 'express';
 import { generateSRT, generateTXT, generateASS } from '../services/subtitle.js';
 import { authMiddleware } from '../middleware/auth.js';
+import {
+  MAX_SPEAKERS,
+  normalizeStoredSpeakerMetadata,
+} from '../services/speakers.js';
 
 const router = Router();
 const MAX_SEGMENTS = 5_000;
 const MAX_SEGMENT_TEXT_LENGTH = 10_000;
 const MAX_TOTAL_TEXT_LENGTH = 1_000_000;
-const MAX_SPEAKERS = 20;
 const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
 const ASS_POSITIONS = new Set(['top', 'middle', 'bottom']);
 
@@ -76,13 +79,28 @@ export function validateDownloadPayload({ segments, format, assOptions, speakerC
   return validateAssOptions(assOptions);
 }
 
+export function prepareDownloadPayload({ segments, format, assOptions, speakerColors }) {
+  const normalized = normalizeStoredSpeakerMetadata(segments, speakerColors);
+  if (normalized.error) return { error: normalized.error };
+
+  const payload = {
+    segments: normalized.segments,
+    format,
+    assOptions,
+    speakerColors: normalized.speakerColors,
+  };
+  return {
+    ...payload,
+    error: validateDownloadPayload(payload),
+  };
+}
+
 // POST /api/download
 router.post('/', authMiddleware, (req, res) => {
   try {
-    const { segments, format, assOptions, speakerColors } = req.body;
-
-    const validationError = validateDownloadPayload({ segments, format, assOptions, speakerColors });
-    if (validationError) return res.status(400).json({ error: validationError });
+    const prepared = prepareDownloadPayload(req.body);
+    if (prepared.error) return res.status(400).json({ error: prepared.error });
+    const { segments, format, assOptions, speakerColors } = prepared;
 
     const colors = speakerColors && Object.keys(speakerColors).length > 0 ? speakerColors : null;
 
