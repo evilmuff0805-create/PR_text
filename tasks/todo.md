@@ -306,3 +306,30 @@
 - The first five-width visual pass found the fixed desktop history grid clipping its download column at 1024px, so the existing card layout now starts at 1100px instead of 768px.
 - Focused history checks passed 11/11, the full suite passed 226/226, and the production build completed successfully.
 - Synthetic responsive history rows passed at 375, 390, 768, 1024, and 1440px with no date-to-filename overlap, page overflow, or download-column escape.
+
+# Diarization result download failure
+
+## Acceptance criteria
+
+- [x] Existing completed diarization results with legacy speaker IDs can download as SRT, TXT, and ASS.
+- [x] New provider speaker labels always become stable non-negative IDs below the 20-speaker boundary.
+- [x] Valid existing speaker IDs and color assignments are preserved during legacy repair.
+- [x] Invalid untrusted speaker metadata still fails with a safe 400 response.
+- [x] Focused tests, full tests, and the production build pass.
+- [ ] CI, deployment health, and Notion synchronization pass.
+
+## Checklist
+
+- [x] Compare the latest completed production job shape with the download validator without reading transcript text.
+- [x] Confirm the latest job contains one legacy `speaker: -1` segment and that the download route rejects it.
+- [x] Add shared speaker normalization for provider output and legacy download payloads.
+- [x] Add regression coverage for the reported result shape and unsafe metadata.
+- [ ] Run local verification, publish, and verify production.
+
+## Working notes
+
+- The latest completed production job had 264 segments with valid text/start/end fields; one segment had `speaker: -1`, while the remaining speaker range was 0 through 5.
+- The old provider mapping assumed every string label was a single uppercase letter and calculated `charCodeAt(0) - 65`; an exceptional label therefore produced a negative ID.
+- `/api/download` validates speaker IDs and speaker-color keys before generating every format, so the single negative ID blocked TXT even though TXT does not render speaker metadata.
+- Focused download, diarization, and subtitle tests passed 33/33, including the 264-segment reported shape across SRT, TXT, and ASS.
+- The full suite passed 230/230 and the production build completed successfully.
