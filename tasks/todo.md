@@ -361,3 +361,28 @@
 - Production aggregates show 49 exact runs of at least three segments; none are speaker-labeled. Only four runs satisfy the conservative four-plus, single-window, uniform-duration, low-confidence signature.
 - The parallel chunk boundary can amplify a low-energy decode, but similar runs predate parallel transcription, so the provider loop plus the missing semantic guard is the root cause.
 - Focused processing tests passed 17/17, the full suite passed 239/239, and the production build completed successfully.
+
+# Toss review payment window and business contact
+
+## Acceptance criteria
+
+- [x] The payment page opens Toss Payments' integrated card window without filtering issuers.
+- [x] Card availability and issuer-review messages are removed from payment and failure pages.
+- [x] The public footer displays `010-4901-1421` as the business contact.
+- [x] The privacy policy remains email-only and does not duplicate the mobile number.
+- [ ] Production uses a matched Toss API individual test key pair before checkout is enabled.
+- [x] Focused tests, full tests, build, and responsive checks pass.
+- [ ] CI, deployment health, and Notion synchronization pass.
+
+## Working notes
+
+- Railway currently reports Toss Payments `live` mode, so `PAYMENTS_ENABLED` must remain closed until the production variables are changed to a matched `test_ck`/`test_sk` pair.
+- The order, confirmation, idempotency, credit, refund, and webhook paths are unchanged.
+- `.env.example` keeps `PAYMENTS_ENABLED=false` as the safe default; Railway production is opened only after the test key switch is verified in startup logs.
+
+## Results
+
+- Focused payment, contact, and accessibility tests passed 49/49.
+- The full suite passed 239/239 with `--test-isolation=none`; the production build transformed 63 modules.
+- Desktop 1440x900 and mobile 390x844 checks found no horizontal overflow, no issuer-specific copy, and the exact business contact in the footer.
+- The checkout still creates orders from the server catalog, verifies amount and ownership, and uses idempotent confirmation and recovery paths.

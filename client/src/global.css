@@ -1894,14 +1894,6 @@ textarea:focus-visible {
   font-size: 0.875rem !important;
 }
 
-.payment-status-card .payment-status-card__issuer-note {
-  margin-top: 16px;
-  padding-top: 14px;
-  border-top: 1px solid rgba(245, 184, 75, 0.28);
-  color: #f5b84b;
-  font-size: 0.875rem;
-}
-
 .payment-status-card__actions {
   display: flex;
   margin-top: 24px;
