@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 
-const APPROVED_CARD_COMPANIES = '41|51|61|91';
-
 export default function PaymentPage() {
   const { user, getToken, updateCredits } = useAuth();
   const [loading, setLoading] = useState(null);
@@ -129,7 +127,6 @@ export default function PaymentPage() {
         method: 'CARD',
         card: {
           flowMode: 'DEFAULT',
-          cardCompany: APPROVED_CARD_COMPANIES,
         },
         amount: { currency: 'KRW', value: amount },
         orderId,
@@ -214,14 +211,6 @@ export default function PaymentPage() {
           <span>가성비</span>
           <strong>{bestPlan.name} {Math.round(bestPlan.salePrice / bestPlan.credits).toLocaleString()}원/분</strong>
         </div>
-      </section>
-
-      <section className="payment-notice payment-notice--issuer" role="status" aria-label="카드사 결제 안내">
-        <strong>현재 결제 가능 카드</strong>
-        <p>
-          신한·삼성·현대·농협카드로 결제할 수 있습니다.
-          {' '}카카오페이를 포함한 간편결제와 다른 카드사는 심사·오픈 준비 중입니다.
-        </p>
       </section>
 
       {paymentsEnabled === false && !ordersError && (

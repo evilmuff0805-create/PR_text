@@ -14,6 +14,8 @@ function SiteFooter() {
       <span className="footer-divider">|</span>
       <span>사업장 주소: 경기도 김포시 김포한강9로12번길 50(구래동)</span>
       <span className="footer-divider">|</span>
+      <span>연락처: 010-4901-1421</span>
+      <span className="footer-divider">|</span>
       <span>이메일: codemeet@naver.com</span>
       <span className="footer-divider">|</span>
       <span>통신판매업 신고번호: 제 2026-경기김포-4391 호</span>

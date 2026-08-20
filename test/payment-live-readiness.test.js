@@ -26,7 +26,7 @@ test('a failed confirm never offers a path that creates a second order', async (
   assert.match(errorBlock, /주문번호/);
 });
 
-test('live checkout stays gated and only exposes approved issuers', async () => {
+test('checkout stays gated and opens an unfiltered integrated card window', async () => {
   const [route, page, failPage, env] = await Promise.all([
     read('src/routes/payment.js'),
     read('client/src/pages/PaymentPage.jsx'),
@@ -36,13 +36,11 @@ test('live checkout stays gated and only exposes approved issuers', async () => 
 
   assert.match(route, /process\.env\.PAYMENTS_ENABLED === 'true'/);
   assert.match(route, /router\.post\('\/create'[\s\S]*if \(!paymentsEnabled\(\)\)/);
-  assert.match(page, /const APPROVED_CARD_COMPANIES = '41\|51\|61\|91'/);
   assert.match(page, /flowMode: 'DEFAULT'/);
-  assert.match(page, /cardCompany: APPROVED_CARD_COMPANIES/);
-  assert.match(page, /신한·삼성·현대·농협카드/);
-  assert.match(page, /카카오페이를 포함한 간편결제/);
+  assert.doesNotMatch(page, /APPROVED_CARD_COMPANIES|cardCompany:/);
+  assert.doesNotMatch(page, /현재 결제 가능 카드|심사·오픈 준비 중/);
   assert.match(page, /paymentsEnabled !== true/);
-  assert.match(failPage, /다른 카드사로 다시 시도/);
+  assert.doesNotMatch(failPage, /우리카드|하나카드|다른 카드사로 다시 시도/);
   assert.match(env, /PAYMENTS_ENABLED=false/);
 });
 
