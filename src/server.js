@@ -14,6 +14,7 @@ import { requestObservability, apiErrorHandler } from './middleware/observabilit
 import { startDiarizationJobWorker, stopDiarizationJobWorker } from './services/diarization-jobs.js';
 import { startCaptionIdeaMaintenance } from './services/caption-idea-store.js';
 import { startPaymentOrderMaintenance } from './services/payment-orders.js';
+import { startCreditLedgerMaintenance } from './services/credit-ledger.js';
 import { validateTossKeyPair } from './services/toss-payments.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
@@ -37,11 +38,13 @@ if (missingEnv.length > 0) {
 }
 
 try {
-  const { environment } = validateTossKeyPair({
+  const paymentsEnabled = process.env.PAYMENTS_ENABLED === 'true';
+  const { environment, integration } = validateTossKeyPair({
     clientKey: process.env.TOSS_CLIENT_KEY,
     secretKey: process.env.TOSS_SECRET_KEY,
+    requiredIntegration: paymentsEnabled ? 'checkout' : null,
   });
-  console.log(`[ENV] Toss Payments mode: ${environment}`);
+  console.log(`[ENV] Toss Payments mode: ${environment}/${integration}, enabled=${paymentsEnabled}`);
 } catch (error) {
   console.error(`[ENV] ${error.message}`);
   process.exit(1);
@@ -192,6 +195,7 @@ const server = app.listen(PORT, () => {
   startDiarizationJobWorker();
   startCaptionIdeaMaintenance();
   startPaymentOrderMaintenance();
+  startCreditLedgerMaintenance();
 });
 
 // Railway sends SIGTERM before replacing the container on every deploy. Hand the

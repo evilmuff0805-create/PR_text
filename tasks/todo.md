@@ -386,3 +386,46 @@
 - The full suite passed 239/239 with `--test-isolation=none`; the production build transformed 63 modules.
 - Desktop 1440x900 and mobile 390x844 checks found no horizontal overflow, no issuer-specific copy, and the exact business contact in the footer.
 - The checkout still creates orders from the server catalog, verifies amount and ownership, and uses idempotent confirmation and recovery paths.
+
+# Toss payment widget and one-year paid-credit validity
+
+## Acceptance criteria
+
+- [x] Toss checkout uses the current order-sheet Payment Widget with a matched `gck/gsk` key pair.
+- [x] Production checkout remains disabled until the test widget key pair and startup mode are verified.
+- [x] The server remains authoritative for plan, amount, order ownership, confirmation, webhook recovery, and refunds.
+- [x] Newly paid credits expire one year after payment approval; pre-policy balances are not expired retroactively.
+- [x] Paid credits are consumed by earliest expiry first and refunds reclaim only the originating order's unused credits.
+- [x] Diarization cancellation restores the exact reserved sources without reviving already-expired paid credits.
+- [x] The payment page, intro copy, terms, and payment history explain the one-year policy consistently.
+- [ ] Database replay, focused tests, full tests, build, responsive checks, CI, deployment health, and Notion synchronization pass.
+- [ ] A Toss review PPT is created from the verified test checkout flow after all preceding gates pass.
+
+## Checklist
+
+- [x] Compare the current `payment()` integration with Toss's current `widgets()` order-sheet guide and key families.
+- [x] Audit production balances, paid orders, active jobs, and every credit mutation path.
+- [x] Implement the Payment Widget UI, public configuration endpoint, and widget-key validation.
+- [x] Add backward-compatible paid-credit lot fields and atomic consume, restore, expire, payment, and refund functions.
+- [x] Rewire transcription, diarization, caption ideas, authentication refresh, and maintenance to the new credit functions.
+- [x] Add regression coverage for key pairing, widget order, expiry, allocation restoration, concurrency, and refunds.
+- [x] Replay the migration in a disposable Supabase branch and run database invariants before production approval.
+- [x] Run the full local verification and responsive browser checks.
+- [ ] Open and merge a PR only after CI passes; apply production schema and deploy only after an explicit go/no-go.
+- [ ] Verify `/api/health`, update and re-fetch the canonical Notion page, then produce the Toss review PPT.
+
+## Working notes
+
+- Toss's current order-sheet integration uses `widgets()` and widget key pairs (`gck/gsk`); the existing `payment()` flow uses API individual keys (`ck/sk`).
+- Production currently has no open unrefunded paid order and no active queued or running job, so the key-family cutover does not need a legacy secret-key fallback.
+- Existing `profiles.credits` remain the displayed aggregate for compatibility. Only payments approved after this migration receive an expiry and tracked remaining balance.
+- The exact customer-facing wording is `충전 시간은 최대 1년입니다`.
+- Checkout stays closed while Railway still has live API-individual keys. Code readiness is not permission to enable payment or apply the production migration.
+- The migration now blocks both pending payments and unresolved paid orders, and it blocks active diarization reservations before backfilling legacy balances.
+- `npm test -- --test-isolation=none`: 250 passed, 0 failed. `npm run build`: passed with 63 modules transformed. `git diff --check`: passed.
+- Codex Browser responsive QA is not complete: two connection attempts failed at the trusted RPC boundary before a page opened. This is an environment limitation, not a verified UI result.
+- The user approved the disposable Supabase branch cost of USD 0.01344 per hour. The first replay exposed a stale aggregate-balance bug when an expired lot still had both reserved and available credits; the migration and regression coverage now reconcile both amounts atomically.
+- Branch SQL scenarios passed for welcome credit, paid completion and idempotency, FEFO consumption, expiry, refund and idempotency, normal reservation cancellation, and cancellation after expiry. Invariants reported zero ledger mismatches, negative profiles, invalid lots, or expired lots with available credit.
+- The first branch was repaired with follow-up validation migrations after the defect was found, so a fresh branch replay of the final migration files was required before production approval.
+- A fresh disposable branch then applied all 23 repository migration files in order without follow-up patches. The same functional SQL scenarios passed, all six ledger/cleanup invariants were zero, server-only privileges were enforced, and the branch was deleted after verification.
+- Local verification after the fix passed the full 250-test suite, the 63-module production build, and `git diff --check`. Chrome QA at 1440x900 and 393x852 found no horizontal overflow, no console errors, a 14px minimum visible font size, all three plans, and the required business contact.

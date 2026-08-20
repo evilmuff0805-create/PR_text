@@ -179,5 +179,6 @@ function getUsageActionLabel(action) {
   if (action === 'payment_refund' || action === 'payment_refund_reconcile') return '결제 환불';
   if (action === 'payment_refund_restore') return '환불 취소';
   if (action === 'caption_ideas') return '자막 아이디어';
+  if (action === 'credit_expiration') return '사용 기한 만료';
   return '변환';
 }

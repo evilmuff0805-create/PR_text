@@ -307,7 +307,7 @@ export default function IntroPage() {
 
       <section className="closing-band" aria-labelledby="closing-title">
         <div>
-          <p className="eyebrow">충전한 시간은 만료되지 않습니다</p>
+          <p className="eyebrow">충전 시간은 최대 1년입니다</p>
           <h2 id="closing-title">필요한 만큼 변환하고,<br />결과는 원하는 만큼 다듬으세요.</h2>
         </div>
         <div className="closing-band__actions">

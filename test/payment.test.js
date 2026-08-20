@@ -6,6 +6,8 @@ import express from 'express';
 process.env.SUPABASE_URL ??= 'https://example.supabase.co';
 process.env.SUPABASE_ANON_KEY ??= 'test-anon-key';
 process.env.SUPABASE_SERVICE_ROLE_KEY ??= 'test-service-key';
+process.env.TOSS_CLIENT_KEY = 'test_gck_client';
+process.env.TOSS_SECRET_KEY = 'test_gsk_secret';
 
 const {
   createPaymentRouter,
@@ -22,11 +24,12 @@ const USER = { id: 'user-1', email: 'buyer@example.com' };
 const ORDER = {
   order_id: 'order_123456',
   user_id: USER.id,
-  amount: 4900,
+  amount: 5900,
   credits: 100,
   status: 'pending',
   payment_key: null,
   payment_environment: 'test',
+  payment_integration: 'checkout',
   idempotency_key: '49ff4ef0-f325-4c66-bffe-3d630e257d9f',
 };
 const PAYMENT = {
@@ -34,6 +37,7 @@ const PAYMENT = {
   orderId: ORDER.order_id,
   totalAmount: ORDER.amount,
   status: 'DONE',
+  approvedAt: '2026-08-20T03:00:00.000Z',
 };
 const CANCELED_PAYMENT = {
   ...PAYMENT,
@@ -79,22 +83,30 @@ async function request(router, path, body, method = 'POST') {
   }
 }
 
-test('accepts API individual keys and rejects checkout keys', () => {
+test('accepts matched key pairs and can require Payment Widget keys', () => {
   assert.deepEqual(
     validateTossKeyPair({ clientKey: 'test_ck_client', secretKey: 'test_sk_secret' }),
-    { environment: 'test' },
+    { environment: 'test', integration: 'individual' },
   );
   assert.deepEqual(
-    validateTossKeyPair({ clientKey: 'live_ck_client', secretKey: 'live_sk_secret' }),
-    { environment: 'live' },
+    validateTossKeyPair({ clientKey: 'live_gck_client', secretKey: 'live_gsk_secret' }),
+    { environment: 'live', integration: 'checkout' },
+  );
+  assert.deepEqual(
+    validateTossKeyPair({
+      clientKey: 'test_gck_client',
+      secretKey: 'test_gsk_secret',
+      requiredIntegration: 'checkout',
+    }),
+    { environment: 'test', integration: 'checkout' },
   );
   assert.throws(
-    () => validateTossKeyPair({ clientKey: 'test_gck_client', secretKey: 'test_gsk_secret' }),
-    /API 개별 연동\(ck\/sk\)/,
-  );
-  assert.throws(
-    () => validateTossKeyPair({ clientKey: 'live_gck_client', secretKey: 'live_gsk_secret' }),
-    /API 개별 연동\(ck\/sk\)/,
+    () => validateTossKeyPair({
+      clientKey: 'test_ck_client',
+      secretKey: 'test_sk_secret',
+      requiredIntegration: 'checkout',
+    }),
+    /gck\/gsk/,
   );
   assert.throws(
     () => validateTossKeyPair({ clientKey: 'test_sk_secret', secretKey: 'test_ck_client' }),
@@ -339,8 +351,8 @@ test('creates orders from the server plan catalog and ignores client-supplied pr
   const router = createPaymentRouter({
     auth,
     store,
-    clientKey: () => 'test_ck_client',
-    secretKey: () => 'test_sk_secret',
+    clientKey: () => 'test_gck_client',
+    secretKey: () => 'test_gsk_secret',
     paymentsEnabled: () => true,
   });
 
@@ -357,6 +369,54 @@ test('creates orders from the server plan catalog and ignores client-supplied pr
   assert.equal(created.credits, 100);
   assert.equal(created.user_id, USER.id);
   assert.equal(created.payment_environment, 'test');
+  assert.equal(created.payment_integration, 'checkout');
+});
+
+test('payment configuration exposes no key while checkout is disabled', async () => {
+  const router = createPaymentRouter({
+    auth,
+    paymentsEnabled: () => false,
+  });
+
+  const response = await request(router, '/config', undefined, 'GET');
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.data, { paymentsEnabled: false, clientKey: null });
+});
+
+test('payment configuration exposes only the matched widget client key', async () => {
+  const router = createPaymentRouter({
+    auth,
+    clientKey: () => 'test_gck_client',
+    secretKey: () => 'test_gsk_secret',
+    paymentsEnabled: () => true,
+  });
+
+  const response = await request(router, '/config', undefined, 'GET');
+
+  assert.equal(response.status, 200);
+  assert.deepEqual(response.data, {
+    paymentsEnabled: true,
+    clientKey: 'test_gck_client',
+    environment: 'test',
+    integration: 'checkout',
+  });
+  assert.equal(JSON.stringify(response.data).includes('gsk'), false);
+});
+
+test('payment configuration refuses API-individual keys for the widget', async () => {
+  const router = createPaymentRouter({
+    auth,
+    clientKey: () => 'test_ck_client',
+    secretKey: () => 'test_sk_secret',
+    paymentsEnabled: () => true,
+  });
+
+  const response = await request(router, '/config', undefined, 'GET');
+
+  assert.equal(response.status, 503);
+  assert.match(response.data.error, /결제 설정/);
+  assert.equal(response.data.clientKey, undefined);
 });
 
 test('blocks new orders before any mutation when live payments are disabled', async () => {
@@ -394,6 +454,28 @@ test('rejects an altered confirmation amount before contacting Toss', async () =
   assert.equal(response.status, 400);
   assert.equal(confirmCalls, 0);
   assert.match(response.data.error, /금액/);
+});
+
+test('rejects confirmation from a different Toss integration before contacting Toss', async () => {
+  let confirmCalls = 0;
+  const store = {
+    async find() { return { ...ORDER, payment_integration: 'individual' }; },
+  };
+  const router = createPaymentRouter({
+    auth,
+    store,
+    confirmPayment: async () => { confirmCalls += 1; },
+  });
+
+  const response = await request(router, '/confirm', {
+    paymentKey: PAYMENT.paymentKey,
+    orderId: ORDER.order_id,
+    amount: ORDER.amount,
+  });
+
+  assert.equal(response.status, 409);
+  assert.equal(confirmCalls, 0);
+  assert.match(response.data.error, /다른 주문/);
 });
 
 test('does not reveal or confirm an order owned by another user', async () => {
@@ -454,7 +536,7 @@ test('completes credits only after a verified Toss confirmation', async () => {
     auth,
     store,
     confirmPayment: async () => ({ payment: PAYMENT, recovered: false }),
-    secretKey: () => 'test_sk_secret',
+    secretKey: () => 'test_gsk_secret',
   });
 
   const response = await request(router, '/confirm', {
@@ -469,6 +551,7 @@ test('completes credits only after a verified Toss confirmation', async () => {
     orderId: ORDER.order_id,
     userId: USER.id,
     paymentKey: PAYMENT.paymentKey,
+    approvedAt: PAYMENT.approvedAt,
   });
 });
 
@@ -477,6 +560,7 @@ test('lists the authenticated user payment orders and refund gate state', async 
     order_id: ORDER.order_id,
     payment_status: 'paid',
     payment_environment: 'test',
+    payment_integration: 'checkout',
   }];
   const store = {
     async listForRefund(userId, limit) {
@@ -508,6 +592,7 @@ test('marks payment orders from another Toss environment as non-refundable', asy
         order_id: ORDER.order_id,
         payment_status: 'paid',
         payment_environment: 'test',
+        payment_integration: 'checkout',
         can_refund: true,
         can_retry: false,
       }];
@@ -782,7 +867,7 @@ test('webhook re-queries Toss before completing a pending order', async () => {
       queryCalls += 1;
       return PAYMENT;
     },
-    secretKey: () => 'test_sk_secret',
+    secretKey: () => 'test_gsk_secret',
   });
 
   const response = await request(router, '/', {

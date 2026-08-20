@@ -5,6 +5,7 @@ import {
   getWelcomeIdentityHashes,
   welcomeCreditStore,
 } from '../services/welcome-credits.js';
+import { creditLedgerStore } from '../services/credit-ledger.js';
 
 // 일시적 장애는 retryable로 표시한다. 결제 승인 도중 이 응답을 받은 클라이언트가
 // "결제 실패"로 단정하고 새 주문을 만들면 이중결제가 된다.
@@ -62,6 +63,27 @@ export async function authMiddleware(req, res, next) {
       console.error('[auth.profile_prepare_failed]', JSON.stringify({ userId: user.id }));
       return res.status(503).json({ error: '계정 정보를 준비하지 못했습니다.', retryable: true });
     }
+  }
+
+  try {
+    const expiry = await creditLedgerStore.expireForUser(user.id);
+    if (expiry.discrepancy) {
+      console.error('[auth.credit_ledger_discrepancy]', JSON.stringify({ userId: user.id }));
+      return res.status(503).json({
+        error: '변환 시간 잔액을 확인하고 있습니다. 잠시 후 다시 시도해주세요.',
+        retryable: true,
+      });
+    }
+    profile.credits = expiry.credits_remaining;
+  } catch (expiryError) {
+    console.error('[auth.credit_expiry_failed]', JSON.stringify({
+      userId: user.id,
+      error: expiryError.message,
+    }));
+    return res.status(503).json({
+      error: '변환 시간 잔액을 확인하지 못했습니다.',
+      retryable: true,
+    });
   }
 
   req.user = {

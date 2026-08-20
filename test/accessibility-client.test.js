@@ -84,7 +84,7 @@ test('editor tabs and async messages include keyboard and announcement support',
   assert.match(result, /event\.key === 'ArrowLeft'/);
   assert.match(result, /tabIndex=\{editorMode === mode\.id \? 0 : -1\}/);
   assert.match(home, /role="alert"/);
-  assert.match(payment, /role=\{error \? 'alert' : 'status'\}/);
+  assert.match(payment, /role=\{\(error \|\| configError\) \? 'alert' : 'status'\}/);
   assert.match(paymentSuccess, /aria-atomic="true"/);
   assert.match(usage, /className="usage-state" role="status"/);
   assert.match(redownload, /className="usage-state usage-state--error" role="alert"/);
