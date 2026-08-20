@@ -270,18 +270,17 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
     const audioMinutes = Math.ceil(totalSeconds / 60);
     const creditsNeeded = Math.max(audioMinutes, 1);
 
-    // 2단계: Atomic 크레딧 차감 (race condition 방지)
-    // Supabase RPC 함수 deduct_credits 호출:
-    //   UPDATE profiles SET credits = credits - p_credits, updated_at = now()
-    //   WHERE id = p_user_id AND credits >= p_credits
-    //   RETURNING credits
-    // 크레딧 부족 또는 동시 요청으로 조건 불충족 시 null 반환
+    // 2단계: 사용 기한이 빠른 크레딧부터 차감하고 사용 로그까지 한 트랜잭션으로 확정한다.
     const creditStartedAt = performance.now();
-    const { data: deducted, error: deductErr } = await supabaseAdmin.rpc('deduct_credits', {
+    const { data: creditData, error: deductErr } = await supabaseAdmin.rpc('consume_transcription_credits', {
       p_user_id: req.user.id,
       p_credits: creditsNeeded,
+      p_operation_id: req.requestId,
+      p_audio_minutes: parseFloat((totalSeconds / 60).toFixed(1)),
+      p_description: `${originalname} (${(totalSeconds / 60).toFixed(1)}분)`,
     });
     req.transcriptionTiming.creditMs = performance.now() - creditStartedAt;
+    req.transcriptionTiming.usageLogMs = 0;
 
     if (deductErr) {
       console.error(`[transcribe] 크레딧 차감 DB 오류 — user_id: ${req.user.id}, creditsNeeded: ${creditsNeeded}`, deductErr.message);
@@ -289,7 +288,8 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
       return res.status(500).json({ error: '변환 시간 처리 중 오류가 발생했습니다.' });
     }
 
-    if (deducted === null || deducted === undefined) {
+    const creditResult = Array.isArray(creditData) ? creditData[0] : creditData;
+    if (!creditResult) {
       completeTiming(req, res, 'insufficient_credits_after_transcription');
       return res.status(402).json({
         error: `변환 가능 시간이 부족합니다. 필요: ${creditsNeeded}분, 보유: ${req.user.credits}분`,
@@ -298,18 +298,7 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
       });
     }
 
-    const newCredits = deducted;
-
-    // 사용 로그 기록
-    const usageLogStartedAt = performance.now();
-    await supabaseAdmin.from('usage_logs').insert({
-      user_id: req.user.id,
-      action: 'transcribe',
-      credits_used: creditsNeeded,
-      audio_minutes: parseFloat((totalSeconds / 60).toFixed(1)),
-      description: `${originalname} (${(totalSeconds / 60).toFixed(1)}분)`,
-    });
-    req.transcriptionTiming.usageLogMs = performance.now() - usageLogStartedAt;
+    const newCredits = creditResult.credits_remaining;
 
     console.log(`[transcribe] 유저 ${req.user.email}: ${creditsNeeded}크레딧 차감 (${newCredits} 남음)`);
 

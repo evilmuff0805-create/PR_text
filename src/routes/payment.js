@@ -54,17 +54,50 @@ export function createPaymentRouter({
   cancelPayment = cancelOrRecoverTossPayment,
   clientKey = () => process.env.TOSS_CLIENT_KEY,
   secretKey = () => process.env.TOSS_SECRET_KEY,
+  paymentsEnabled = () => process.env.PAYMENTS_ENABLED === 'true',
+  checkoutConfiguration = () => validateTossKeyPair({
+    clientKey: clientKey(),
+    secretKey: secretKey(),
+    requiredIntegration: 'checkout',
+  }),
   paymentEnvironment = () => validateTossKeyPair({
     clientKey: clientKey(),
     secretKey: secretKey(),
   }).environment,
-  paymentsEnabled = () => process.env.PAYMENTS_ENABLED === 'true',
+  paymentIntegration = () => validateTossKeyPair({
+    clientKey: clientKey(),
+    secretKey: secretKey(),
+  }).integration,
   refundsEnabled = () => {
     const environment = paymentEnvironment();
     return environment === 'test' || process.env.PAYMENT_REFUNDS_ENABLED === 'true';
   },
 } = {}) {
   const router = Router();
+
+  router.get('/config', auth, (req, res) => {
+    if (!paymentsEnabled()) {
+      return res.json({ paymentsEnabled: false, clientKey: null });
+    }
+
+    try {
+      const configuration = checkoutConfiguration();
+      return res.json({
+        paymentsEnabled: true,
+        clientKey: clientKey(),
+        environment: configuration.environment,
+        integration: configuration.integration,
+      });
+    } catch (error) {
+      console.error('[payment.config_error]', JSON.stringify({
+        requestId: req.requestId,
+        error: error.message,
+      }));
+      return res.status(503).json({
+        error: '결제 설정을 확인하고 있습니다. 잠시 후 다시 시도해주세요.',
+      });
+    }
+  });
 
   router.post('/create', auth, async (req, res) => {
     if (!paymentsEnabled()) {
@@ -83,6 +116,7 @@ export function createPaymentRouter({
     const orderId = `order_${randomUUID()}`;
 
     try {
+      const configuration = checkoutConfiguration();
       await store.create({
         order_id: orderId,
         user_id: req.user.id,
@@ -90,7 +124,8 @@ export function createPaymentRouter({
         plan_name: plan.name,
         amount: plan.price,
         credits: plan.credits,
-        payment_environment: paymentEnvironment(),
+        payment_environment: configuration.environment,
+        payment_integration: configuration.integration,
       });
     } catch (error) {
       console.error('[payment.create]', JSON.stringify({
@@ -106,7 +141,6 @@ export function createPaymentRouter({
       orderName: plan.name,
       credits: plan.credits,
       customerEmail: req.user.email,
-      clientKey: clientKey(),
     });
   });
 
@@ -125,6 +159,13 @@ export function createPaymentRouter({
       if (amount !== order.amount) {
         return res.status(400).json({ error: '결제 금액이 주문 정보와 일치하지 않습니다.' });
       }
+      if (order.payment_environment !== paymentEnvironment()
+        || order.payment_integration !== paymentIntegration()) {
+        return res.status(409).json({
+          error: '현재 결제 설정과 다른 주문입니다. 새로 결제하지 말고 고객센터에 문의해주세요.',
+          retryable: false,
+        });
+      }
 
       if (order.status === 'paid') {
         if (order.payment_key !== paymentKey) {
@@ -139,7 +180,7 @@ export function createPaymentRouter({
         }, '이미 완료된 결제입니다.');
       }
 
-      const { recovered } = await confirmPayment({
+      const { payment, recovered } = await confirmPayment({
         paymentKey,
         orderId,
         amount: order.amount,
@@ -151,6 +192,7 @@ export function createPaymentRouter({
         orderId,
         userId: req.user.id,
         paymentKey,
+        approvedAt: payment?.approvedAt || null,
       });
 
       console.log('[payment.complete]', JSON.stringify({
@@ -196,9 +238,11 @@ export function createPaymentRouter({
   router.get('/orders', auth, async (req, res) => {
     try {
       const environment = paymentEnvironment();
+      const integration = paymentIntegration();
       const storedOrders = await store.listForRefund(req.user.id, 10);
       const orders = storedOrders.map((order) => (
         order.payment_environment === environment
+          && order.payment_integration === integration
           ? order
           : {
             ...order,
@@ -244,6 +288,12 @@ export function createPaymentRouter({
       if (order.payment_environment !== paymentEnvironment()) {
         return res.status(409).json({
           error: '현재 결제 환경과 다른 주문입니다. 고객센터에 문의해주세요.',
+          retryable: false,
+        });
+      }
+      if (order.payment_integration !== paymentIntegration()) {
+        return res.status(409).json({
+          error: '현재 결제 연동 방식과 다른 주문입니다. 고객센터에 문의해주세요.',
           retryable: false,
         });
       }
@@ -378,7 +428,12 @@ export function createPaymentRouter({
 export function createPaymentWebhookRouter({
   store = paymentOrderStore,
   getPayment = getTossPaymentByOrderId,
+  clientKey = () => process.env.TOSS_CLIENT_KEY,
   secretKey = () => process.env.TOSS_SECRET_KEY,
+  paymentConfiguration = () => validateTossKeyPair({
+    clientKey: clientKey(),
+    secretKey: secretKey(),
+  }),
 } = {}) {
   const router = Router();
 
@@ -403,6 +458,19 @@ export function createPaymentWebhookRouter({
       if (!order) {
         console.warn('[payment.webhook_unknown_order]', JSON.stringify({ orderId }));
         return res.json({ received: true });
+      }
+
+      const configuration = paymentConfiguration();
+      if (order.payment_environment !== configuration.environment
+        || order.payment_integration !== configuration.integration) {
+        console.error('[payment.webhook_configuration_mismatch]', JSON.stringify({
+          orderId,
+          orderEnvironment: order.payment_environment,
+          orderIntegration: order.payment_integration,
+          currentEnvironment: configuration.environment,
+          currentIntegration: configuration.integration,
+        }));
+        return res.json({ received: true, ignored: true });
       }
 
       if (data.status === 'PARTIAL_CANCELED') {
@@ -496,6 +564,7 @@ export function createPaymentWebhookRouter({
         orderId,
         userId: order.user_id,
         paymentKey,
+        approvedAt: payment.approvedAt || null,
       });
 
       console.log('[payment.webhook_complete]', JSON.stringify({

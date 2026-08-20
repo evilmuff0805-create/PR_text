@@ -26,6 +26,7 @@ export function isDiarizationJobId(value) {
 export function toClientDiarizationJob(job, creditsRemaining) {
   const completed = job.status === 'completed';
   const failed = job.status === 'failed';
+  const creditsRestored = Number(job.credits_restored ?? (job.credits_refunded ? job.credits_reserved : 0));
 
   return {
     id: job.id,
@@ -37,14 +38,25 @@ export function toClientDiarizationJob(job, creditsRemaining) {
     filename: job.filename,
     creditsUsed: job.credits_reserved,
     creditsRemaining,
-    creditsRefunded: job.credits_refunded,
+    creditsRefunded: creditsRestored > 0,
+    creditsRestored,
     text: completed ? job.result_text : undefined,
     segments: completed ? job.result_segments : undefined,
     language: completed ? job.result_language : undefined,
     // 편집기가 다듬은 자막을 되돌려 저장할 대상.
     transcriptionLogId: completed ? job.transcription_log_id : undefined,
-    error: failed ? '변환에 실패해 예약한 변환 시간이 자동 환불되었습니다.' : undefined,
+    error: failed ? failedJobMessage(job.credits_reserved, creditsRestored) : undefined,
   };
+}
+
+function failedJobMessage(creditsReserved, creditsRestored) {
+  if (creditsRestored >= creditsReserved) {
+    return '변환에 실패해 예약한 변환 시간이 자동 환불되었습니다.';
+  }
+  if (creditsRestored > 0) {
+    return `변환에 실패해 유효한 예약 시간 ${creditsRestored}분이 반환되었습니다.`;
+  }
+  return '변환에 실패했으며, 사용 기한이 지난 예약 시간은 반환되지 않습니다.';
 }
 
 function storagePathFor(userId, storageFilename) {
@@ -259,7 +271,7 @@ export async function enqueueDiarizationJob({
 export async function getDiarizationJobForUser(jobId, userId) {
   const { data, error } = await supabaseAdmin
     .from('transcription_jobs')
-    .select('id, status, created_at, started_at, completed_at, updated_at, filename, credits_reserved, credits_refunded, result_text, result_segments, result_language')
+    .select('id, status, created_at, started_at, completed_at, updated_at, filename, credits_reserved, credits_refunded, credits_restored, result_text, result_segments, result_language')
     .eq('id', jobId)
     .eq('user_id', userId)
     .maybeSingle();

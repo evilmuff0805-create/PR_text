@@ -24,11 +24,14 @@ export function createPaymentOrderStore(database = supabaseAdmin) {
           status,
           payment_key,
           payment_environment,
+          payment_integration,
           idempotency_key,
           refund_status,
           refund_idempotency_key,
           refund_reason,
           refund_credits_reclaimed,
+          canceled_amount,
+          canceled_credits_reclaimed,
           account_deleted_at
         `)
         .eq('order_id', orderId)
@@ -49,11 +52,12 @@ export function createPaymentOrderStore(database = supabaseAdmin) {
       return data.credits;
     },
 
-    async complete({ orderId, userId, paymentKey }) {
+    async complete({ orderId, userId, paymentKey, approvedAt }) {
       const { data, error } = await database.rpc('complete_payment_order', {
         p_order_id: orderId,
         p_user_id: userId,
         p_payment_key: paymentKey,
+        p_approved_at: approvedAt || null,
       });
 
       if (error) throw error;

@@ -37,7 +37,11 @@ function parseKey(key, expectedKind) {
   };
 }
 
-export function validateTossKeyPair({ clientKey, secretKey }) {
+export function validateTossKeyPair({
+  clientKey,
+  secretKey,
+  requiredIntegration = null,
+}) {
   const client = parseKey(clientKey, 'client');
   const secret = parseKey(secretKey, 'secret');
 
@@ -47,11 +51,19 @@ export function validateTossKeyPair({ clientKey, secretKey }) {
   if (client.integration !== secret.integration) {
     throw new Error('토스페이먼츠 결제창 키와 API 개별 연동 키가 섞여 있습니다.');
   }
-  if (client.integration !== 'individual') {
-    throw new Error('현재 토스페이먼츠 결제창 연동에는 API 개별 연동(ck/sk) 키가 필요합니다.');
+  if (requiredIntegration !== null
+    && !['individual', 'checkout'].includes(requiredIntegration)) {
+    throw new Error('토스페이먼츠 연동 유형 설정이 올바르지 않습니다.');
+  }
+  if (requiredIntegration && client.integration !== requiredIntegration) {
+    const requiredKeys = requiredIntegration === 'checkout' ? 'gck/gsk' : 'ck/sk';
+    throw new Error(`현재 토스페이먼츠 연동에는 ${requiredKeys} 키가 필요합니다.`);
   }
 
-  return { environment: client.environment };
+  return {
+    environment: client.environment,
+    integration: client.integration,
+  };
 }
 
 export function isVerifiedTossPayment(payment, expected) {

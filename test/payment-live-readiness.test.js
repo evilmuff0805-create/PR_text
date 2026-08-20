@@ -26,7 +26,7 @@ test('a failed confirm never offers a path that creates a second order', async (
   assert.match(errorBlock, /주문번호/);
 });
 
-test('checkout stays gated and opens an unfiltered integrated card window', async () => {
+test('checkout stays gated and renders the Toss Payment Widget without card filtering', async () => {
   const [route, page, failPage, env] = await Promise.all([
     read('src/routes/payment.js'),
     read('client/src/pages/PaymentPage.jsx'),
@@ -36,7 +36,11 @@ test('checkout stays gated and opens an unfiltered integrated card window', asyn
 
   assert.match(route, /process\.env\.PAYMENTS_ENABLED === 'true'/);
   assert.match(route, /router\.post\('\/create'[\s\S]*if \(!paymentsEnabled\(\)\)/);
-  assert.match(page, /flowMode: 'DEFAULT'/);
+  assert.match(page, /tossPayments\.widgets\(\{ customerKey: user\.id \}\)/);
+  assert.match(page, /widgets\.setAmount\(/);
+  assert.match(page, /widgets\.renderPaymentMethods\(/);
+  assert.match(page, /widgets\.renderAgreement\(/);
+  assert.match(page, /widgetsRef\.current\.requestPayment\(/);
   assert.doesNotMatch(page, /APPROVED_CARD_COMPANIES|cardCompany:/);
   assert.doesNotMatch(page, /현재 결제 가능 카드|심사·오픈 준비 중/);
   assert.match(page, /paymentsEnabled !== true/);

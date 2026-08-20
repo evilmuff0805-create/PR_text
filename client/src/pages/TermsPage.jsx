@@ -12,7 +12,7 @@ export default function TermsPage() {
           </div>
           <Link className="button button--secondary" to="/support">고객센터</Link>
         </div>
-        <p className="info-heading__meta">시행일: 2026년 7월 22일</p>
+        <p className="info-heading__meta">시행일: 2026년 8월 20일</p>
       </header>
 
       <div className="document-layout">
@@ -68,6 +68,12 @@ export default function TermsPage() {
               저장하지 않습니다. 이용자가 결과를 확인할 수 있도록 변환 이력과 사용·결제 기록은
               개인정보처리방침에 정한 범위에서 보관합니다.
               변환 결과의 정확도는 음성 품질에 따라 달라질 수 있으며, 이에 대한 책임은 사용자에게 있습니다.
+            </p>
+            <p>
+              신규 유료 충전분의 사용 기한은 결제 승인일로부터 1년입니다. 사용 시 만료일이 빠른 유료 충전분부터
+              우선 차감되며, 사용 기한이 지난 잔여 시간은 소멸합니다. 이 기준은 2026년 8월 20일 이후 승인된 유료
+              충전분에만 적용하며, 시행일 전에 보유한 변환 시간에는 소급 적용하지 않습니다. 관계 법령 또는 회사의 귀책사유에
+              따라 달리 처리해야 하는 경우에는 해당 기준을 우선 적용합니다.
             </p>
             <p>
               자막 아이디어는 한 번 생성할 때 후보 3개를 제공하며, 생성 5회를 한 묶음으로 하여 변환 시간 1분을

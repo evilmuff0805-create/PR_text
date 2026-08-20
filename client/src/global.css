@@ -1384,6 +1384,15 @@ textarea:focus-visible {
   min-width: 0;
 }
 
+.payment-validity-note {
+  max-width: 720px;
+  margin: 8px 0 0;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.6;
+  word-break: keep-all;
+}
+
 .payment-balance {
   display: grid;
   min-width: 190px;
@@ -1522,6 +1531,11 @@ textarea:focus-visible {
   box-shadow: inset 0 0 0 1px rgba(39, 216, 209, 0.18);
 }
 
+.payment-plan.is-selected {
+  border-color: rgba(61, 242, 116, 0.7);
+  box-shadow: inset 0 0 0 1px rgba(61, 242, 116, 0.2);
+}
+
 .payment-plan__badge {
   position: absolute;
   top: 14px;
@@ -1645,11 +1659,103 @@ textarea:focus-visible {
 
 .payment-plan__button {
   width: 100%;
+  min-height: 48px;
   margin-top: 20px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-strong);
+  border-radius: 7px;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.payment-plan__button:hover:not(:disabled) {
+  border-color: rgba(61, 242, 116, 0.48);
+}
+
+.payment-plan__button.is-selected {
+  border-color: rgba(61, 242, 116, 0.48);
+  background: rgba(61, 242, 116, 0.09);
+  color: var(--accent);
 }
 
 .payment-plan__button:disabled {
+  cursor: not-allowed;
   opacity: 0.5;
+}
+
+.payment-checkout {
+  margin-top: 26px;
+  padding: 22px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+}
+
+.payment-checkout__heading {
+  display: flex;
+  margin-bottom: 16px;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.payment-checkout__heading h2 {
+  margin-top: 4px;
+  color: var(--text-primary);
+  font-size: 1.08rem;
+}
+
+.payment-checkout__selection {
+  display: grid;
+  min-width: 180px;
+  text-align: right;
+  gap: 3px;
+}
+
+.payment-checkout__selection span,
+.payment-checkout__state {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+}
+
+.payment-checkout__selection strong {
+  color: var(--text-primary);
+  font-size: 1.18rem;
+}
+
+.payment-checkout__state {
+  margin: 0 0 12px;
+  text-align: center;
+}
+
+.payment-widget-mount {
+  overflow: hidden;
+  width: 100%;
+  border-radius: 8px;
+  background: #fff;
+}
+
+#toss-payment-methods {
+  min-height: 220px;
+}
+
+#toss-payment-agreement {
+  min-height: 88px;
+  margin-top: 10px;
+}
+
+.payment-checkout__button {
+  width: 100%;
+  min-height: 52px;
+  margin-top: 14px;
+}
+
+.payment-checkout__button:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
 }
 
 .payment-orders {
@@ -5398,6 +5504,22 @@ textarea:focus-visible {
 
   .payment-plan__summary {
     min-height: 0;
+  }
+
+  .payment-checkout {
+    margin-top: 20px;
+    padding: 14px;
+  }
+
+  .payment-checkout__heading {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .payment-checkout__selection {
+    min-width: 0;
+    text-align: left;
   }
 
   .payment-orders {

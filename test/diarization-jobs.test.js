@@ -63,12 +63,41 @@ test('returns completed diarization results and a safe failure message', () => {
     result_segments: [{ text: '결과' }],
     result_language: 'korean',
   }, 18);
-  const failed = toClientDiarizationJob({ ...completed, status: 'failed', result_text: null, result_segments: null }, 30);
+  const failed = toClientDiarizationJob({
+    ...completed,
+    status: 'failed',
+    credits_reserved: 12,
+    credits_refunded: true,
+    credits_restored: 12,
+    result_text: null,
+    result_segments: null,
+  }, 30);
 
   assert.equal(completed.text, '결과');
   assert.equal(completed.segments.length, 1);
   assert.equal(failed.creditsRemaining, 30);
   assert.equal(failed.error, '변환에 실패해 예약한 변환 시간이 자동 환불되었습니다.');
+});
+
+test('reports the amount actually restored when reserved paid credits expire', () => {
+  const base = {
+    id: jobId,
+    status: 'failed',
+    created_at: '2026-07-11T00:00:00.000Z',
+    completed_at: '2026-07-11T00:02:00.000Z',
+    filename: 'interview.m4a',
+    credits_reserved: 12,
+    result_text: null,
+    result_segments: null,
+  };
+
+  const partial = toClientDiarizationJob({ ...base, credits_restored: 5 }, 23);
+  const expired = toClientDiarizationJob({ ...base, credits_restored: 0 }, 18);
+
+  assert.equal(partial.creditsRestored, 5);
+  assert.match(partial.error, /5분이 반환/);
+  assert.equal(expired.creditsRefunded, false);
+  assert.match(expired.error, /사용 기한이 지난/);
 });
 
 test('converts only large diarization files before temporary storage', () => {
