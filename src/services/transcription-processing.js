@@ -1,5 +1,6 @@
 import { performance } from 'perf_hooks';
 import { processSegmentsWithTiming } from './postprocess.js';
+import { normalizeLanguage } from './language.js';
 
 // Provider hallucination loops are uniform, low-confidence repeats from one decode window.
 // These thresholds intentionally leave ordinary or weakly evidenced repetition untouched.
@@ -137,6 +138,20 @@ export function removeCommas(text) {
 // "네." "응." 같은 한두 글자 세그먼트가 독립 자막이 되면 화면에서 깜빡인다.
 // 뒤 세그먼트와 합쳐 하나의 자막으로 만든다. 타임코드는 앞의 시작과 뒤의 끝을 쓴다.
 export const MIN_SEGMENT_CHARS = 5;
+const MAX_MERGE_GAP_SECONDS = 0.3;
+
+function canMergeAdjacentSegments(left, right) {
+  if (left.speaker !== right.speaker) return false;
+
+  const leftStart = numericValue(left.start);
+  const leftEnd = numericValue(left.end);
+  const rightStart = numericValue(right.start);
+  const rightEnd = numericValue(right.end);
+  const gap = rightStart === null || leftEnd === null ? null : rightStart - leftEnd;
+  return leftStart !== null && leftEnd !== null && leftEnd >= leftStart
+    && rightStart !== null && rightEnd !== null && rightEnd >= rightStart
+    && gap !== null && gap >= 0 && gap <= MAX_MERGE_GAP_SECONDS + 1e-9;
+}
 
 export function mergeShortSegments(segments, minChars = MIN_SEGMENT_CHARS) {
   if (!Array.isArray(segments) || segments.length === 0) return [];
@@ -148,8 +163,9 @@ export function mergeShortSegments(segments, minChars = MIN_SEGMENT_CHARS) {
     const text = (segment.text || '').trim();
 
     if (pending) {
-      // 화자가 다르면 합치지 않는다. 말이 섞여 누가 한 말인지 알 수 없게 된다.
-      if (pending.speaker === segment.speaker) {
+      // 화자와 발화 사이의 짧은 간격까지 같을 때만 합친다.
+      // 긴 무음까지 자막 시간이 늘어나는 것을 막는다.
+      if (canMergeAdjacentSegments(pending, segment)) {
         merged.push({
           ...segment,
           start: pending.start,
@@ -176,6 +192,65 @@ export function mergeShortSegments(segments, minChars = MIN_SEGMENT_CHARS) {
   return merged;
 }
 
+function normalizedEnglishToken(value) {
+  return String(value ?? '')
+    .normalize('NFKC')
+    .toLocaleLowerCase('en')
+    .replace(/[^\p{L}\p{N}]/gu, '');
+}
+
+function refineEnglishSegment(segment) {
+  const tokens = String(segment.text ?? '').trim().match(/\S+/g) ?? [];
+  const words = segment.sourceWords;
+  if (tokens.length === 0 || tokens.some((token) => token.length > 28)
+    || !Array.isArray(words) || words.length !== tokens.length) return [segment];
+
+  const sourceStart = numericValue(segment.start);
+  const sourceEnd = numericValue(segment.end);
+  let previousEnd = -Infinity;
+  const valid = sourceStart !== null && sourceEnd !== null && sourceEnd > sourceStart
+    && words.every((word, index) => {
+      if (!word || typeof word !== 'object') return false;
+      const start = numericValue(word.start);
+      const end = numericValue(word.end);
+      const tokenMatches = normalizedEnglishToken(tokens[index])
+        && normalizedEnglishToken(tokens[index]) === normalizedEnglishToken(word.word);
+      const ordered = start !== null && end !== null && end > start
+        && start >= sourceStart - 1e-9 && end <= sourceEnd + 1e-9
+        && start >= previousEnd - 1e-9 && end >= previousEnd - 1e-9;
+      previousEnd = end ?? previousEnd;
+      return tokenMatches && ordered;
+    });
+  if (!valid) return [segment];
+
+  const timedTokens = words.map((word, index) => ({
+    text: tokens[index], start: Number(word.start), end: Number(word.end),
+  }));
+  const refined = [];
+  let cue = null;
+  for (const token of timedTokens) {
+    const pauseBefore = cue && token.start - cue.end > MAX_MERGE_GAP_SECONDS + 1e-9;
+    const nextText = cue ? `${cue.text} ${token.text}` : token.text;
+    if (cue && (pauseBefore || nextText.length > 28)) {
+      refined.push(cue);
+      cue = null;
+    }
+    if (cue) {
+      cue.text = `${cue.text} ${token.text}`;
+      cue.end = token.end;
+    } else {
+      cue = { start: token.start, end: token.end, text: token.text };
+      if (segment.speaker !== undefined) cue.speaker = segment.speaker;
+    }
+  }
+  if (cue) refined.push(cue);
+  return refined;
+}
+
+export function refineEnglishSegmentsWithWordTimings(segments) {
+  return segments.flatMap(refineEnglishSegment);
+}
+
 export async function processTranscriptionSegments(segments, language) {
   // 교정 전에 합친다. GPT가 잘린 조각이 아니라 온전한 문장을 보게 된다.
   const repetitionFilteredSegments = filterWhisperRepetitionLoops(segments);
@@ -184,7 +259,12 @@ export async function processTranscriptionSegments(segments, language) {
       `[transcribe] Whisper 반복 환각 세그먼트 ${segments.length - repetitionFilteredSegments.length}개 제거`,
     );
   }
-  const filteredSegments = mergeShortSegments(filterSilentSegments(repetitionFilteredSegments));
+  const nonSilentSegments = filterSilentSegments(repetitionFilteredSegments);
+  // 영어는 단어 타임코드가 있는 원래 세그먼트를 기준으로 나눈다. 짧은 문장을
+  // 합치면 무음까지 하나의 자막으로 늘어날 수 있으므로 이 단계에서는 병합하지 않는다.
+  const filteredSegments = normalizeLanguage(language) === 'en'
+    ? refineEnglishSegmentsWithWordTimings(nonSilentSegments)
+    : mergeShortSegments(nonSilentSegments);
   const correctionStartedAt = performance.now();
   let processedSegments;
   let correctionTimings;
@@ -199,9 +279,9 @@ export async function processTranscriptionSegments(segments, language) {
   }
 
   return {
-    segments: processedSegments.map((segment) => ({
+    segments: processedSegments.map(({ sourceWords: ignoredSourceWords, ...segment }) => ({
       ...segment,
-      text: removeCommas(segment.text),
+      text: normalizeLanguage(language) === 'en' ? segment.text : removeCommas(segment.text),
     })),
     correctionTimings,
     correctionMs: performance.now() - correctionStartedAt,

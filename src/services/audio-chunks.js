@@ -72,7 +72,22 @@ export function mergeChunkSegments(chunkResults) {
       if (end <= chunk.ownedStart + EPSILON_SECONDS) continue;
       if (end > chunk.ownedEnd + EPSILON_SECONDS) continue;
 
-      merged.push({ ...segment, start, end });
+      const sourceWords = (Array.isArray(response.words) ? response.words : [])
+        .filter((word) => {
+          if (!word || typeof word !== 'object') return false;
+          const wordStart = Number(word.start);
+          const wordEnd = Number(word.end);
+          return Number.isFinite(wordStart) && Number.isFinite(wordEnd)
+            && wordEnd > wordStart
+            && wordStart >= Number(segment.start)
+            && wordEnd <= Number(segment.end);
+        })
+        .map((word) => ({
+          ...word,
+          start: Number(word.start) + chunk.inputStart,
+          end: Number(word.end) + chunk.inputStart,
+        }));
+      merged.push({ ...segment, start, end, sourceWords });
     }
   }
 

@@ -106,12 +106,9 @@ function normalizeCueTimeline(cues) {
     if (!next) break;
 
     if (cue.end > next.start) cue.end = next.start;
-    if (cue.end - cue.start < MIN_CUE_SECONDS) {
-      cue.end = Math.min(cue.start + MIN_CUE_SECONDS, next.start);
-    }
   }
 
-  return sorted;
+  return sorted.filter((cue) => cue.end > cue.start);
 }
 
 function buildCues(segments) {
