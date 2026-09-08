@@ -5,7 +5,6 @@ import {
   generateASS,
   generateSRT,
   generateTXT,
-  MIN_CUE_SECONDS,
   SUBTITLE_MAX_CHARS,
 } from '../src/services/subtitle.js';
 
@@ -152,8 +151,8 @@ test('carries rounded subtitle timestamps into the next second', () => {
   assert.doesNotMatch(ass, /\.100(?:,|$)/m);
 });
 
-test('short cues are stretched to a readable minimum when the gap allows', () => {
-  // "네!"가 0.2초짜리 자막이 되던 경우. 뒤에 빈 시간이 있으면 최소 길이까지 늘린다.
+test('short cues preserve their recorded end even when silence follows', () => {
+  // 실제 발화가 끝난 뒤 무음 구간까지 자막을 연장하지 않는다.
   const srt = generateSRT([
     { start: 0, end: 0.2, text: '네!' },
     { start: 5, end: 6.5, text: '그렇게 하겠습니다' },
@@ -164,7 +163,7 @@ test('short cues are stretched to a readable minimum when the gap allows', () =>
   });
 
   assert.equal(first.start, 0);
-  assert.equal(first.end, MIN_CUE_SECONDS * 1000);
+  assert.equal(first.end, 200);
 });
 
 test('a short cue never grows into the next one', () => {
@@ -177,7 +176,7 @@ test('a short cue never grows into the next one', () => {
     return { start, end };
   });
 
-  assert.equal(ranges[0].end, 400);
+  assert.equal(ranges[0].end, 200);
   assert.ok(ranges[0].end <= ranges[1].start);
 });
 
@@ -205,4 +204,13 @@ test('empty cues never reach the file', () => {
 
   assert.equal(srt.split('\n\n').length, 1);
   assert.match(srt, /남는 자막/);
+});
+
+test('same-start cues do not emit zero-duration SRT or ASS entries', () => {
+  const input = [
+    { start: 0, end: 1, text: '먼저 시작한 자막' },
+    { start: 0, end: 2, text: '같이 시작한 자막' },
+  ];
+  assert.doesNotMatch(generateSRT(input), /00:00:00,000 --> 00:00:00,000/);
+  assert.doesNotMatch(generateASS(input), /0:00:00\.00,0:00:00\.00/);
 });

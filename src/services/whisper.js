@@ -9,6 +9,7 @@ import { randomUUID } from 'crypto';
 import { performance } from 'perf_hooks';
 import { buildAudioChunkPlan, mapWithConcurrency, mergeChunkSegments } from './audio-chunks.js';
 import { normalizeProviderSpeakerLabels } from './speakers.js';
+import { normalizeLanguage } from './language.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 4 });
 const execFileAsync = promisify(execFile);
@@ -22,6 +23,25 @@ const PARALLEL_TRANSCRIBE_MIN_SECONDS = 6 * 60;
 const PARALLEL_TRANSCRIBE_CHUNK_SECONDS = 3 * 60;
 const PARALLEL_TRANSCRIBE_CONCURRENCY = 2;
 const PARALLEL_TRANSCRIBE_ENABLED = process.env.PARALLEL_TRANSCRIBE_ENABLED !== 'false';
+
+export function requestsWordTimings(language) {
+  return !language || normalizeLanguage(language) === 'en';
+}
+
+export function attachSourceWords(segments, words) {
+  return (segments ?? []).map((segment) => ({
+    ...segment,
+    sourceWords: (Array.isArray(words) ? words : []).filter((word) => {
+      if (!word || typeof word !== 'object') return false;
+      const wordStart = Number(word.start);
+      const wordEnd = Number(word.end);
+      return Number.isFinite(wordStart) && Number.isFinite(wordEnd)
+        && wordEnd > wordStart
+        && wordStart >= Number(segment.start)
+        && wordEnd <= Number(segment.end);
+    }),
+  }));
+}
 
 // The production API rejects diarized audio longer than 1,400 seconds. Keep the
 // product limit at the previously proven 20 minutes, leaving enough operational
@@ -476,7 +496,7 @@ export async function transcribe(buffer, originalname, language, { durationSecon
     const params = {
       model: 'whisper-1',
       response_format: 'verbose_json',
-      timestamp_granularities: ['segment'],
+      timestamp_granularities: requestsWordTimings(language) ? ['segment', 'word'] : ['segment'],
     };
 
     if (language) {
@@ -507,7 +527,7 @@ export async function transcribe(buffer, originalname, language, { durationSecon
 
     return {
       text: response.text,
-      segments: response.segments ?? [],
+      segments: attachSourceWords(response.segments, response.words),
       language: response.language ?? language ?? 'unknown',
       timings,
     };
