@@ -2,7 +2,7 @@ import { createServer, build } from 'vite';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { homeStructuredData, publicPages, sitemapXml } from '../client/src/public-pages.js';
+import { llmsTxt, publicPages, sitemapXml } from '../client/src/public-pages.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const clientRoot = resolve(root, 'client');
@@ -14,8 +14,8 @@ function publicMetadata(page) {
   const title = escapeHtml(page.title);
   const description = escapeHtml(page.description);
   const canonicalUrl = escapeHtml(page.canonicalUrl);
-  const structuredData = page.path === '/'
-    ? `<script type="application/ld+json" id="public-structured-data">${JSON.stringify(homeStructuredData).replace(/</g, '\\u003c')}</script>`
+  const structuredData = page.structuredData
+    ? `<script type="application/ld+json" id="public-structured-data">${JSON.stringify(page.structuredData).replace(/</g, '\\u003c')}</script>`
     : '';
   return `<title>${title}</title>\n    <meta name="description" content="${description}" />\n    <meta name="robots" content="index, follow, max-image-preview:large" />\n    <meta property="og:site_name" content="프리뷰 자막 머신" />\n    <meta property="og:title" content="${title}" />\n    <meta property="og:description" content="${description}" />\n    <meta property="og:type" content="website" />\n    <meta property="og:url" content="${canonicalUrl}" />\n    <meta property="og:image" content="https://pr-text.com/og-image.jpg" />\n    <meta property="og:image:secure_url" content="https://pr-text.com/og-image.jpg" />\n    <meta property="og:image:type" content="image/jpeg" />\n    <meta property="og:image:width" content="1200" />\n    <meta property="og:image:height" content="630" />\n    <meta property="og:image:alt" content="구름 위 조용한 공간에서 자막을 편집하는 프리뷰 자막 머신" />\n    <meta property="og:locale" content="ko_KR" />\n    <meta name="twitter:card" content="summary_large_image" />\n    <meta name="twitter:title" content="${title}" />\n    <meta name="twitter:description" content="${description}" />\n    <meta name="twitter:image" content="https://pr-text.com/og-image.jpg" />\n    <meta name="twitter:image:alt" content="구름 위 조용한 공간에서 자막을 편집하는 프리뷰 자막 머신" />\n    <link rel="canonical" href="${canonicalUrl}" />\n    ${structuredData}`;
 }
@@ -46,6 +46,7 @@ if (!initialTemplate.includes('<!-- public-metadata:start -->') || !initialTempl
 const spaShellPath = resolve(distRoot, 'spa.html');
 await writeFile(spaShellPath, privateSpaShell(initialTemplate), 'utf8');
 await writeFile(resolve(distRoot, 'sitemap.xml'), sitemapXml(), 'utf8');
+await writeFile(resolve(distRoot, 'llms.txt'), llmsTxt(), 'utf8');
 const vite = await createServer({ configFile: viteConfig, server: { middlewareMode: true }, appType: 'custom' });
 try {
   const template = initialTemplate;

@@ -5,7 +5,9 @@ import { sitemapXml } from '../client/src/public-pages.js';
 
 const indexUrl = new URL('../client/index.html', import.meta.url);
 const introUrl = new URL('../client/src/pages/IntroPage.jsx', import.meta.url);
-const guideUrl = new URL('../client/src/pages/GuidePage.jsx', import.meta.url);
+// The guide's step copy moved into a shared module so the HowTo structured data
+// and the rendered page cannot drift apart.
+const guideUrl = new URL('../client/src/content/guide-steps.js', import.meta.url);
 const ogImageUrl = new URL('../client/public/og-image.jpg', import.meta.url);
 const robotsUrl = new URL('../client/public/robots.txt', import.meta.url);
 const sitemapUrl = new URL('../client/public/sitemap.xml', import.meta.url);

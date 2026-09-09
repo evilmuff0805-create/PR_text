@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { homeStructuredData, publicPageForPath } from './public-pages.js';
+import { publicPageForPath } from './public-pages.js';
 
 function setMeta(selector, content) {
   let element = document.head.querySelector(selector);
@@ -24,7 +24,7 @@ function ensureCanonical() {
   return canonical;
 }
 
-function ensureHomeStructuredData() {
+function ensurePageStructuredData(page) {
   let structuredData = document.getElementById('public-structured-data');
   if (!structuredData) {
     structuredData = document.createElement('script');
@@ -32,7 +32,7 @@ function ensureHomeStructuredData() {
     structuredData.type = 'application/ld+json';
     document.head.appendChild(structuredData);
   }
-  structuredData.textContent = JSON.stringify(homeStructuredData);
+  structuredData.textContent = JSON.stringify(page.structuredData);
 }
 
 function setPublicSocialMetadata(page) {
@@ -74,7 +74,7 @@ export default function PublicMetadata() {
     setPublicSocialMetadata(page);
     if (robots) robots.setAttribute('content', 'index, follow, max-image-preview:large');
     ensureCanonical().setAttribute('href', page.canonicalUrl);
-    if (page.path === '/') ensureHomeStructuredData();
+    if (page.structuredData) ensurePageStructuredData(page);
     else if (structuredData) structuredData.remove();
   }, [pathname]);
   return null;
