@@ -1,7 +1,14 @@
 import OpenAI from 'openai';
 import { performance } from 'perf_hooks';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// 사용자가 화면에서 결과를 기다리는 동기 경로라 멈춘 호출이 그대로 체감된다.
+// 실측 39건에서 p95 8.3초, 최대 9.1초였다. SDK 기본 600초는 이 화면에 너무 길다.
+export const CAPTION_IDEA_REQUEST_TIMEOUT_MS = 60_000;
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  timeout: CAPTION_IDEA_REQUEST_TIMEOUT_MS,
+  maxRetries: 0,
+});
 
 export const CAPTION_IDEA_MODES = Object.freeze({
   entertainment: {
