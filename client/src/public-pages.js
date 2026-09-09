@@ -1,8 +1,8 @@
 const siteUrl = 'https://pr-text.com';
 
 const pageDefinitions = [
-  { path: '/', title: '프리뷰 자막 머신 | 음성·영상 자막 변환과 편집', description: '휴대폰 녹음과 영상 파일을 자막으로 변환하고 직접 편집한 뒤, CapCut·Premiere Pro에서 불러올 수 있는 SRT와 TXT·ASS로 내려받으세요.' },
-  { path: '/guide', title: '음성 파일에서 SRT 자막까지 | 프리뷰 자막 머신 사용법', description: '음성·영상 파일 업로드부터 자막 편집, Premiere Pro·CapCut용 SRT 다운로드까지 프리뷰 자막 머신 사용법을 확인하세요.' },
+  { path: '/', title: '자동 자막 생성·SRT 변환 | PR-text 프리뷰 자막 머신', description: '음성·영상에서 자동 자막을 만들고 직접 편집하세요. CapCut·Premiere Pro에서 불러올 수 있는 SRT와 TXT·ASS로 내려받을 수 있습니다.' },
+  { path: '/guide', title: '프리미어 자막 작업 자동화·SRT 사용법 | PR-text', description: '음성·영상에서 자동 자막을 생성하고 SRT로 내려받아 Premiere Pro로 가져오는 방법을 확인하세요. 업로드부터 자막 편집까지 단계별로 안내합니다.' },
   { path: '/payment', title: '변환 시간 요금 | 프리뷰 자막 머신', description: '필요한 만큼 충전해 음성과 영상 파일을 자막으로 변환하세요. 프리뷰 자막 머신의 변환 시간 요금을 확인할 수 있습니다.' },
   { path: '/support', title: '고객센터와 자주 묻는 질문 | 프리뷰 자막 머신', description: '지원 파일 형식, 변환 시간, 파일 보관 기준 등 프리뷰 자막 머신 이용 중 자주 묻는 질문을 확인하세요.' },
   { path: '/terms', title: '이용약관 | 프리뷰 자막 머신', description: '프리뷰 자막 머신 서비스 이용약관과 환불 기준을 확인하세요.' },

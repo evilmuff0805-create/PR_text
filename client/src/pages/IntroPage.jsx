@@ -197,7 +197,7 @@ export default function IntroPage() {
         <div className="landing-hero__veil" aria-hidden="true" />
 
         <div className="landing-hero__copy">
-          <p className="eyebrow">음성·영상 자막 편집 도구 <span>V.1.1</span></p>
+          <p className="eyebrow">음성·영상에서 자동 자막 만들기 <span>V.1.1</span></p>
           <h1 id="landing-title">프리뷰 자막 머신</h1>
           <p className="landing-hero__statement">
             자막에서 자유롭고 싶은 편집자라면?
