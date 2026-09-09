@@ -2,7 +2,7 @@ import { createServer, build } from 'vite';
 import { readFile, writeFile, mkdir } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { llmsTxt, publicPages, sitemapXml } from '../client/src/public-pages.js';
+import { indexNowKey, llmsTxt, publicPages, sitemapXml } from '../client/src/public-pages.js';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const clientRoot = resolve(root, 'client');
@@ -47,6 +47,8 @@ const spaShellPath = resolve(distRoot, 'spa.html');
 await writeFile(spaShellPath, privateSpaShell(initialTemplate), 'utf8');
 await writeFile(resolve(distRoot, 'sitemap.xml'), sitemapXml(), 'utf8');
 await writeFile(resolve(distRoot, 'llms.txt'), llmsTxt(), 'utf8');
+// IndexNow 소유 확인 파일. 키 상수에서 생성하므로 파일명과 내용이 어긋날 수 없다.
+await writeFile(resolve(distRoot, `${indexNowKey}.txt`), indexNowKey, 'utf8');
 const vite = await createServer({ configFile: viteConfig, server: { middlewareMode: true }, appType: 'custom' });
 try {
   const template = initialTemplate;

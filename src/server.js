@@ -12,6 +12,7 @@ import translateRouter from './routes/translate.js';
 import captionIdeasRouter from './routes/caption-ideas.js';
 import { requestObservability, apiErrorHandler } from './middleware/observability.js';
 import { startDiarizationJobWorker, stopDiarizationJobWorker } from './services/diarization-jobs.js';
+import { startIndexNowSubmission } from './services/indexnow.js';
 import { startCaptionIdeaMaintenance } from './services/caption-idea-store.js';
 import { startPaymentOrderMaintenance } from './services/payment-orders.js';
 import { startCreditLedgerMaintenance } from './services/credit-ledger.js';
@@ -189,6 +190,7 @@ const server = app.listen(PORT, () => {
   startCaptionIdeaMaintenance();
   startPaymentOrderMaintenance();
   startCreditLedgerMaintenance();
+  startIndexNowSubmission();
 });
 
 // Railway sends SIGTERM before replacing the container on every deploy. Hand the
