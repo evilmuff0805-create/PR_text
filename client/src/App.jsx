@@ -15,10 +15,12 @@ import RedownloadPage from './pages/RedownloadPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import PasswordResetPage from './pages/PasswordResetPage.jsx';
 import CaptionIdeasPage from './pages/CaptionIdeasPage.jsx';
+import PublicMetadata from './public-metadata.jsx';
 
 function App() {
   return (
     <Layout>
+      <PublicMetadata />
       <Routes>
         <Route path="/" element={<IntroPage />} />
         <Route path="/transcribe" element={<HomePage />} />

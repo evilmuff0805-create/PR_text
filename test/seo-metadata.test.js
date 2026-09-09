@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile, stat } from 'node:fs/promises';
 import test from 'node:test';
+import { sitemapXml } from '../client/src/public-pages.js';
 
 const indexUrl = new URL('../client/index.html', import.meta.url);
 const introUrl = new URL('../client/src/pages/IntroPage.jsx', import.meta.url);
@@ -43,7 +44,7 @@ test('social metadata references a real 1200 by 630 JPEG preview', async () => {
   assert.match(html, /property="og:image:alt"/);
   assert.match(html, /name="twitter:image:alt"/);
 
-  const structuredData = html.match(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/);
+  const structuredData = html.match(/<script type="application\/ld\+json"[^>]*>([\s\S]*?)<\/script>/);
   assert.ok(structuredData);
   const application = JSON.parse(structuredData[1]);
   assert.equal(application['@type'], 'WebApplication');
@@ -56,6 +57,7 @@ test('crawler files avoid redirect and private workflow URLs', async () => {
     readFile(sitemapUrl, 'utf8'),
   ]);
 
+  assert.equal(sitemap.replace(/\r\n/g, '\n'), sitemapXml());
   assert.doesNotMatch(sitemap, /https:\/\/pr-text\.com\/intro/);
   assert.match(robots, /Disallow: \/settings/);
   assert.match(robots, /Disallow: \/usage/);
