@@ -60,7 +60,7 @@ function LandingHeader() {
 export default function Layout({ children }) {
   const location = useLocation();
   const isLanding = location.pathname === '/' || location.pathname === '/intro';
-  const [isMobile, setIsMobile] = useState(() => window.innerWidth <= 768);
+  const [isMobile, setIsMobile] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const mobileMenuButtonRef = useRef(null);
 

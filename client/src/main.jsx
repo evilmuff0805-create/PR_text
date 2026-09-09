@@ -6,14 +6,17 @@ import { AuthProvider } from './contexts/AuthContext.jsx';
 import { TranscriptionProvider } from './contexts/TranscriptionContext.jsx';
 import './global.css';
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+const rootElement = document.getElementById('root');
+const wasPrerendered = document.documentElement.dataset.prerendered === 'true';
+const app = (
   <React.StrictMode>
     <BrowserRouter>
-      <AuthProvider>
-        <TranscriptionProvider>
-          <App />
-        </TranscriptionProvider>
+      <AuthProvider initialLoading={!wasPrerendered}>
+        <TranscriptionProvider><App /></TranscriptionProvider>
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>
 );
+
+if (wasPrerendered) ReactDOM.hydrateRoot(rootElement, app);
+else ReactDOM.createRoot(rootElement).render(app);

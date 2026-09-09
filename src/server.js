@@ -18,7 +18,7 @@ import { startCreditLedgerMaintenance } from './services/credit-ledger.js';
 import { validateTossKeyPair } from './services/toss-payments.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import { existsSync } from 'fs';
+import { addStaticSiteRoutes } from './static-site.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const distPath = join(__dirname, '../dist');
@@ -180,15 +180,8 @@ app.use('/api', (req, res) => {
   });
 });
 
-// Static files (production)
-if (existsSync(distPath)) {
-  app.use(express.static(distPath));
-
-  // SPA fallback
-  app.get('*', (req, res) => {
-    res.sendFile(join(distPath, 'index.html'));
-  });
-}
+// Static public documents and the private SPA have intentionally different crawl behavior.
+addStaticSiteRoutes(app, distPath);
 
 const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

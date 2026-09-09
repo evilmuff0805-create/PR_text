@@ -9,7 +9,7 @@ import {
 } from '../utils/password-recovery.js';
 import { authReturnPathFromSearch, safeAuthReturnPath } from '../utils/auth-navigation.js';
 
-const AuthContext = createContext(null);
+export const AuthContext = createContext(null);
 
 function normalizeUser(data) {
   return {
@@ -21,12 +21,12 @@ function normalizeUser(data) {
   };
 }
 
-export function AuthProvider({ children }) {
+export function AuthProvider({ children, initialLoading = true }) {
   const [user, setUser] = useState(null);
   const [token, setToken] = useState(() => localStorage.getItem('token'));
   const [recoverySession, setRecoverySession] = useState(null);
   const [recoveryError, setRecoveryError] = useState('');
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(initialLoading);
   const navigate = useNavigate();
 
   const applyPasswordRecoveryHash = useCallback(() => {
