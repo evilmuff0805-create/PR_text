@@ -8,4 +8,38 @@ Disallow: /reset-password
 Disallow: /result
 Disallow: /settings
 Disallow: /usage
+
+# AI crawlers come in three kinds: training, search indexing, and live fetch on a
+# user's question. The wildcard above already allows them, but naming each one
+# makes the choice explicit so a future edit does not silently cut off citations.
+# Blocking search or fetch agents removes the service from AI answers entirely.
+
+# Training — brand knowledge in future models
+User-agent: GPTBot
+Allow: /
+User-agent: ClaudeBot
+Allow: /
+User-agent: Google-Extended
+Allow: /
+User-agent: Applebot-Extended
+Allow: /
+User-agent: CCBot
+Allow: /
+
+# Search indexing — citations in ChatGPT, Claude, Perplexity search
+User-agent: OAI-SearchBot
+Allow: /
+User-agent: Claude-SearchBot
+Allow: /
+User-agent: PerplexityBot
+Allow: /
+
+# Live fetch — the page is opened while answering a question
+User-agent: ChatGPT-User
+Allow: /
+User-agent: Claude-User
+Allow: /
+User-agent: Perplexity-User
+Allow: /
+
 Sitemap: https://pr-text.com/sitemap.xml
