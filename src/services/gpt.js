@@ -1,7 +1,18 @@
 import OpenAI from 'openai';
 import { estimateCorrectionCostUsd, normalizeTokenUsage } from './correction-pricing.js';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+// 교정·번역은 30 세그먼트씩 잘라 보낸다. 실측 32건에서 p50 9.2초, p95 18.1초였고,
+// 한 건이 SDK 기본 타임아웃 600초에 걸려 작업 전체를 10분 붙잡은 적이 있다.
+// 관측 p95의 6배를 예산으로 두어 느리지만 정상인 호출은 살리고 멈춘 호출은 끊는다.
+export const GPT_REQUEST_TIMEOUT_MS = 120_000;
+// 재시도는 아래 withRetry 한 겹만 쓴다. SDK 기본 재시도(2회)를 그대로 두면
+// 앱 3회 x SDK 3회 = 9회가 쌓여 최악 대기가 90분까지 늘어난다.
+export const GPT_MAX_ATTEMPTS = 3;
+const openai = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY,
+  timeout: GPT_REQUEST_TIMEOUT_MS,
+  maxRetries: 0,
+});
 const DEFAULT_CORRECTION_MODEL = 'gpt-5.6-luna';
 const CORRECTION_FALLBACK_MODEL = 'gpt-4o';
 
@@ -34,7 +45,7 @@ export function buildCorrectionRequest(text, model) {
   return request;
 }
 
-async function withRetry(fn, retries = 2) {
+async function withRetry(fn, retries = GPT_MAX_ATTEMPTS - 1) {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       return await fn();
