@@ -18,7 +18,7 @@ const steps = [
     title: '언어와 화자 선택',
     summary: '자동 감지를 사용하거나 원본 음성의 언어를 직접 선택합니다.',
     details: [
-      '한국어, 영어, 일본어, 중국어를 선택할 수 있으며 자동 번역은 하지 않습니다.',
+      '한국어, 영어, 일본어, 중국어를 선택할 수 있으며 자막 변환 단계에서는 원본 언어를 유지합니다.',
       `여러 사람이 말하는 파일은 인물 여러 명을 켭니다. 다화자 모드는 최대 ${DIARIZATION_MAX_MINUTES}분까지 지원합니다.`,
     ],
   },
@@ -89,8 +89,8 @@ export default function GuidePage() {
             {step.title}
           </a>
         ))}
-        <a href="#guide-answers"><span>05</span>자주 묻는 질문</a>
       </nav>
+      <p><a href="#guide-answers">자동 자막 질문과 답변 바로가기</a></p>
 
       <section className="guide-steps" aria-label="자막 제작 순서">
         {steps.map((step) => (
@@ -120,7 +120,7 @@ export default function GuidePage() {
             ['SRT, TXT, ASS 중 어떤 파일을 받으면 되나요?', '편집툴에 시간 정보가 있는 자막을 넣으려면 SRT를 선택하세요. 문장만 필요한 대본 정리에는 TXT를, 자막 스타일 정보를 담으려면 ASS를 선택할 수 있습니다. 스타일 적용 방식은 가져오는 프로그램의 지원 범위에 따라 달라집니다.'],
             ['프리미어 프로에 자동 자막을 어떻게 넣나요?', 'PR-text에서 SRT를 내려받은 뒤 Premiere Pro 프로젝트 패널로 가져오고, 타임라인의 원본 영상 시작 위치에 맞춰 배치합니다. 이후 프리미어에서 글꼴·크기·위치를 조절합니다. 아래 이미지 설명서에서 순서를 확인할 수 있습니다.'],
             ['자동 자막을 만든 뒤 문장을 고칠 수 있나요?', '네. 완료 화면에서 전체 텍스트 또는 구간별 문장을 직접 수정할 수 있습니다. 편집한 내용은 이후 내려받는 자막 파일에 반영됩니다. 말자막을 정리한 뒤 필요한 형식으로 다운로드하세요.'],
-            ['한국어 외의 음성은 자동으로 번역되나요?', '자동 번역은 하지 않습니다. 원본 음성의 언어를 자동 감지하거나 한국어·영어·일본어·중국어를 직접 선택해 자막을 만듭니다. 번역문이 필요한 작업과 원문 자막을 만드는 작업은 구분해서 진행하세요.'],
+            ['한국어 외의 음성은 자동으로 번역되나요?', '자막 변환 단계에서는 원본 음성의 언어를 자동 감지하거나 한국어·영어·일본어·중국어를 직접 선택해 원문 자막을 만듭니다. 한국어 자막은 완료 화면에서 영어 번역 만들기를 별도로 사용해 번역 TXT로 받을 수 있습니다.'],
           ].map(([question, answer], index) => (
             <details key={question} open>
               <summary><span>{String(index + 1).padStart(2, '0')}</span><strong>{question}</strong><span className="support-faq__indicator" aria-hidden="true">+</span></summary>
