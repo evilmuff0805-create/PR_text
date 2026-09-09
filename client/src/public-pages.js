@@ -102,3 +102,18 @@ export const llmsTxt = () => [
   '- 인용 시 표기: pr-text.com',
   '',
 ].join('\n');
+
+// IndexNow는 "여기 있다"만 말하는 사이트맵과 달리 "방금 바뀌었다"를 전한다.
+// 참여 검색엔진은 Bing과 네이버를 포함하므로 한 번의 제출이 두 곳에 모두 닿는다.
+// 키는 비밀이 아니다. 도메인에서 서빙된다는 사실 자체가 소유 증명이라 공개가 전제다.
+export const indexNowKey = '3fd9cf2c8f254e54b0d6aa9fb02d034f';
+export const indexNowKeyPath = `/${indexNowKey}.txt`;
+export const indexNowHost = new URL(siteUrl).host;
+
+// 제출 목록도 사이트맵과 같은 배열에서 파생시켜, 공개 페이지가 늘어도 뒤처질 수 없게 한다.
+export const indexNowPayload = () => ({
+  host: indexNowHost,
+  key: indexNowKey,
+  keyLocation: `${siteUrl}${indexNowKeyPath}`,
+  urlList: publicPages.map((page) => page.canonicalUrl),
+});

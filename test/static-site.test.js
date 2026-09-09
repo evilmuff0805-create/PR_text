@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import express from 'express';
-import { publicPages } from '../client/src/public-pages.js';
+import { indexNowKey, indexNowKeyPath, publicPages } from '../client/src/public-pages.js';
 import { addStaticSiteRoutes } from '../src/static-site.js';
 
 const privatePaths = ['/transcribe', '/caption-ideas', '/result', '/payment/success', '/payment/fail', '/usage', '/redownload', '/settings', '/auth/reset', '/reset-password'];
@@ -17,6 +17,7 @@ async function startStaticTestServer(t) {
   await writeFile(join(distPath, 'spa.html'), '<!doctype html><title>app</title><div id="root"></div>');
   await Promise.all(publicPages.filter((page) => page.path !== '/').map((page) => writeFile(join(distPath, 'public-pages', `${page.path.slice(1)}.html`), `<!doctype html><title>${page.path}</title><main>${page.path}</main>`)));
   await writeFile(join(distPath, 'asset.js'), 'asset');
+  await writeFile(join(distPath, `${indexNowKey}.txt`), indexNowKey);
   const app = express(); addStaticSiteRoutes(app, distPath);
   const server = await new Promise((resolve) => { const instance = app.listen(0, '127.0.0.1', () => resolve(instance)); });
   t.after(() => new Promise((resolve) => server.close(resolve)));
@@ -33,6 +34,15 @@ test('serves every public document for GET and HEAD and preserves intro query st
   }
   const intro = await fetch(`${origin}/intro?source=test`, { redirect: 'manual' });
   assert.equal(intro.status, 301); assert.equal(intro.headers.get('location'), '/?source=test');
+});
+
+test('serves the IndexNow key file so search engines can verify ownership', async (t) => {
+  // 정적 라우터는 .html만 막는다. 키 파일이 404가 되면 IndexNow 제출이 403으로 거절된다.
+  const origin = await startStaticTestServer(t);
+  const response = await fetch(`${origin}${indexNowKeyPath}`);
+
+  assert.equal(response.status, 200);
+  assert.equal((await response.text()).trim(), indexNowKey);
 });
 
 test('serves every private SPA route with noindex and never exposes generated HTML paths', async (t) => {
