@@ -230,9 +230,9 @@ export default function IntroPage() {
       </section>
 
       <section className="landing-section landing-product-proof" aria-labelledby="product-proof-title">
-        <div className="section-heading landing-product-proof__copy">
+        <div className="section-heading landing-product-proof__copy landing-heading-fit">
           <p className="eyebrow">실제 편집 흐름</p>
-          <h2 id="product-proof-title">변환한 뒤에도,<br />내가 끝까지 다듬을 수 있게.</h2>
+          <h2 id="product-proof-title"><span>변환한 뒤에도,</span>{' '}<span>내가 끝까지 다듬을 수 있게</span></h2>
           <p>
             구간별 문장과 화자를 확인하고 직접 수정하세요. 편집한 내용은
             SRT, TXT, ASS 다운로드 파일에 그대로 반영됩니다.
@@ -242,9 +242,9 @@ export default function IntroPage() {
       </section>
 
       <section id="features" className="landing-section feature-section" aria-labelledby="feature-title">
-        <div className="section-heading">
+        <div className="section-heading landing-heading-fit">
           <p className="eyebrow">편집 작업을 위한 기준</p>
-          <h2 id="feature-title">원문은 지키고,<br />손이 가는 과정은 줄입니다.</h2>
+          <h2 id="feature-title"><span>원문은 지키고,</span>{' '}<span>손이 가는 과정은 줄입니다</span></h2>
           <p>빠르게 만드는 것만큼, 결과를 다시 다룰 수 있는지가 중요하니까요.</p>
         </div>
 
