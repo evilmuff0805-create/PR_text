@@ -72,7 +72,7 @@ export default function GuidePage() {
           <div>
             <h1 id="guide-title" className="workspace-title">음성 파일에서 자막까지</h1>
             <p className="workspace-description">
-              업로드, 변환, 편집, 다운로드 순서로 필요한 작업만 빠르게 확인하세요.
+              프리미어 자막 작업 자동화는 음성·영상에서 자동 자막을 만든 뒤, SRT 파일을 Premiere Pro로 가져오는 흐름으로 진행합니다. 업로드부터 편집·다운로드까지 순서대로 확인하세요.
             </p>
           </div>
           <div className="info-heading__actions">
