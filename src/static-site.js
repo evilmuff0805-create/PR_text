@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { publicPages } from '../client/src/public-pages.js';
 
 const publicPageFiles = new Map(publicPages.map((page) => [page.path, page.path === '/' ? 'index.html' : join('public-pages', `${page.path.slice(1)}.html`)]));
-const privateSpaPaths = new Set(['/transcribe', '/caption-ideas', '/result', '/payment/success', '/payment/fail', '/usage', '/redownload', '/settings', '/auth/reset', '/reset-password']);
+const privateSpaPaths = new Set(['/transcribe', '/caption-ideas', '/result', '/payment/success', '/payment/fail', '/usage', '/redownload', '/settings', '/auth/callback', '/auth/reset', '/reset-password']);
 function sendHtml(res, filePath, noindex = false) { if (noindex) res.set('X-Robots-Tag', 'noindex, nofollow'); res.type('html').sendFile(filePath); }
 function isGeneratedHtmlPath(pathname) { return pathname === '/index.html' || pathname === '/spa.html' || pathname.startsWith('/public-pages/') || pathname.toLowerCase().endsWith('.html'); }
 

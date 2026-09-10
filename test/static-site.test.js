@@ -7,7 +7,7 @@ import express from 'express';
 import { indexNowKey, indexNowKeyPath, publicPages } from '../client/src/public-pages.js';
 import { addStaticSiteRoutes } from '../src/static-site.js';
 
-const privatePaths = ['/transcribe', '/caption-ideas', '/result', '/payment/success', '/payment/fail', '/usage', '/redownload', '/settings', '/auth/reset', '/reset-password'];
+const privatePaths = ['/transcribe', '/caption-ideas', '/result', '/payment/success', '/payment/fail', '/usage', '/redownload', '/settings', '/auth/callback', '/auth/reset', '/reset-password'];
 
 async function startStaticTestServer(t) {
   const distPath = await mkdtemp(join(tmpdir(), 'pr-text-static-'));
@@ -56,4 +56,13 @@ test('serves every private SPA route with noindex and never exposes generated HT
     const response = await fetch(`${origin}${path}`);
     assert.equal(response.status, 404, path);
   }
+});
+
+test('serves the OAuth callback shell so the browser can consume Supabase tokens', async (t) => {
+  const origin = await startStaticTestServer(t);
+  const response = await fetch(`${origin}/auth/callback?next=%2Fsettings`);
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('x-robots-tag'), 'noindex, nofollow');
+  assert.match(await response.text(), /<div id="root"><\/div>/);
 });
