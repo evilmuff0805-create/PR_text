@@ -5,6 +5,7 @@ import {
   AccountDeletionError,
   accountDeletionStore,
   removeAccountAudio,
+  removeTerminalOperationAudio,
   toAccountDeletionPreview,
   verifyAccountDeletionIdentity,
 } from '../services/account-deletion.js';
@@ -66,6 +67,7 @@ export function createAccountRouter({
       });
 
       await store.recordWelcomeCreditClaim(req.user.welcomeIdentityHashes);
+      if (store.terminalOperations) await removeTerminalOperationAudio(storage, req.user.id, await store.terminalOperations(req.user.id));
       await removeAccountAudio(storage, req.user.id);
       deletion = await store.begin(req.user.id);
 

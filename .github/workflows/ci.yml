@@ -40,3 +40,40 @@ jobs:
 
       - name: Build production bundle
         run: npm run build
+
+  database-regressions:
+    name: PostgreSQL 17 recovery and concurrency
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: fixture
+          POSTGRES_PASSWORD: fixture-test-only
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: fixture
+      PGPASSWORD: fixture-test-only
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+      - name: Install isolated database test client
+        run: npm install --prefix "$RUNNER_TEMP/db-client" pg@8.23.0 --ignore-scripts --no-audit --no-fund
+      - name: Replay migrations and test recovery races
+        run: |
+          export PG_CLIENT_PATH="$RUNNER_TEMP/db-client/node_modules/pg"
+          node scripts/validation/db-operations.cjs
+          node scripts/validation/db-concurrency.cjs

@@ -102,7 +102,7 @@ test('llms.txt does not promise translation the product refuses to do', () => {
 });
 
 test('robots.txt names AI crawlers across training, search, and live fetch', async () => {
-  const robots = await readFile(new URL('../client/public/robots.txt', import.meta.url), 'utf8');
+  const robots = (await readFile(new URL('../client/public/robots.txt', import.meta.url), 'utf8')).replace(/\r\n/g, '\n');
 
   for (const agent of [
     'GPTBot', 'ClaudeBot', 'Google-Extended',

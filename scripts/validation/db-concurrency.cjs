@@ -1,0 +1,30 @@
+const {boot}=require('./db-replay.cjs');const assert=require('assert/strict');const {randomUUID}=require('crypto');
+(async()=>{const db=await boot(),a=await db.peer(),b=await db.peer();let passed=0;const ok=n=>{console.log('PASS '+n);passed++};
+const user=randomUUID(),key=randomUUID(),hash='a'.repeat(64),token=randomUUID();await db.query('insert into profiles(id,credits) values($1,100)',[user]);await db.query("insert into credit_lots(user_id,source,granted,available) values($1,'legacy',100,100)",[user]);
+const create=(c,k=key,u=user)=>c.query('select * from create_transcription_operation($1,$2,$3,$4,$5,$6,$7,$8)',[u,k,hash,'fixture.wav','audio/wav',100,'ko',120]);
+let results=await Promise.all([create(a),create(b)]);const id=results[0].rows[0].operation_id;assert.equal(id,results[1].rows[0].operation_id);ok('two independent sessions duplicate create');
+const queue=c=>c.query('select * from queue_transcription_operation($1,$2,$3,$4)',[id,user,JSON.stringify([{path:user+'/'+id+'/0000',bytes:100,sha256:hash}]),2]);await Promise.all([queue(a),queue(b)]);assert.equal((await db.query('select credits from profiles where id=$1',[user])).rows[0].credits,98);ok('concurrent queue reserves once');
+await db.query('select * from claim_transcription_operation($1)',[token]);await db.query('select checkpoint_transcription_operation($1,$2,$3,$4,$5,$6)',[id,token,'test','[]','ko','{}']);
+await Promise.all([a.query('select * from finalize_transcription_operation($1,$2)',[id,token]),b.query('select * from finalize_transcription_operation($1,$2)',[id,token])]);assert.equal((await db.query('select count(*)::int n from transcription_logs where user_id=$1',[user])).rows[0].n,1);ok('concurrent finalize stores one result and charge');
+const du=randomUUID();await db.query('insert into profiles(id,credits) values($1,0)',[du]);
+await a.query('begin');await a.query("select pg_advisory_xact_lock(hashtextextended('credit-user:' || $1::text,0))",[du]);
+const deletion=b.query('select * from begin_account_deletion($1,$2)',[du,hash]).then(()=>({allowed:true}),e=>({code:e.code}));
+await create(a,randomUUID(),du);await a.query('commit');assert.equal((await deletion).code,'AD002');ok('account deletion serialized behind new staged work');
+const running=(await create(db,randomUUID())).rows[0].operation_id;await db.query('select * from queue_transcription_operation($1,$2,$3,$4)',[running,user,JSON.stringify([{path:user+'/'+running+'/0000',bytes:100,sha256:hash}]),2]);await db.query('select * from claim_transcription_operation($1)',[token]);
+await db.query('select * from cancel_transcription_operation($1,$2)',[running,user]);
+assert.equal((await db.query('select checkpoint_transcription_operation($1,$2,$3,$4,$5,$6) as ok',[running,token,'test','[]','ko','{}'])).rows[0].ok,false);ok('cancel request fences checkpoint');
+
+assert.equal((await db.query('select * from finalize_transcription_operation($1,$2)',[running,token])).rows[0].completed,false);ok('cancelled worker cannot finalize after restart');
+const paid=randomUUID(),order='fixture-'+randomUUID(),payment='fixture-'+randomUUID();await db.query('insert into profiles(id,credits) values($1,20)',[paid]);
+await db.query("insert into payment_orders(order_id,user_id,plan_id,plan_name,amount,credits,status,payment_key) values($1,$2,'fixture','fixture',1000,20,'paid',$3)",[order,paid,payment]);
+await db.query("insert into credit_lots(user_id,source,payment_order_id,granted,available,expires_at) values($1,'payment',$2,20,20,now()+interval '1 year')",[paid,order]);
+const pid=(await create(db,randomUUID(),paid)).rows[0].operation_id;
+await db.query('select * from queue_transcription_operation($1,$2,$3,$4)',[pid,paid,JSON.stringify([{path:paid+'/'+pid+'/0000',bytes:100,sha256:hash}]),2]);
+await Promise.all([a.query('select * from reconcile_partial_payment_cancellation($1,$2,$3)',[order,payment,500]),b.query('select * from cancel_transcription_operation($1,$2)',[pid,paid])]);
+assert.equal((await db.query('select credits from profiles where id=$1',[paid])).rows[0].credits,10);assert.equal((await db.query('select reserved from credit_lots where user_id=$1',[paid])).rows[0].reserved,0);ok('concurrent payment cancellation and job cancellation reconcile without deadlock');
+const malformed=(await create(db,randomUUID())).rows[0].operation_id;
+await assert.rejects(()=>db.query('select * from queue_transcription_operation($1,$2,$3,$4)',[malformed,user,'[{"bytes":100,"sha256":"'+hash+'"}]',2]),e=>e.code==='TO001');ok('missing manifest path rejected');
+await db.query('select * from queue_transcription_operation($1,$2,$3,$4)',[malformed,user,JSON.stringify([{path:user+'/'+malformed+'/0000',bytes:100,sha256:hash}]),2]);await db.query('select * from claim_transcription_operation($1)',[token]);await db.query('select checkpoint_transcription_operation($1,$2,$3,$4,$5,$6)',[malformed,token,'test','[]','ko','{}']);
+await db.query("delete from credit_allocations where operation_id=$1",['operation:'+malformed]);await assert.rejects(()=>db.query('select * from finalize_transcription_operation($1,$2)',[malformed,token]),e=>e.code==='CR003');ok('partial reservation cannot finalize');
+await a.end();await b.end();await db.close();console.log('TOTAL',passed);process.exit(0)
+})().catch(e=>{console.error('FAIL',e.message,e.code);process.exit(1)});

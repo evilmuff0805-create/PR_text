@@ -10,6 +10,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from './AuthContext.jsx';
 import { validatePreparedUploadFile } from '../utils/upload-validation.js';
 
+import { pendingOperationStorageKey, readPendingOperation, classifyOperationResponse, canSubmitOperation } from '../utils/transcription-operation.js';
+
 const TranscriptionContext = createContext(null);
 const BUSY_STATUSES = new Set(['uploading', 'queued', 'processing']);
 
@@ -23,14 +25,16 @@ function createIdleState(ownerId = null) {
     error: '',
     activeDiarize: false,
     activeJobId: null,
+    activeOperationKey: null,
     result: null,
   };
 }
 
-function uploadTranscription({ formData, token, onProgress, onUploadComplete }) {
+function uploadTranscription({ formData, token, onProgress, onUploadComplete, operationKey = null }) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/transcribe');
+    xhr.open('POST', operationKey ? '/api/transcribe/v2' : '/api/transcribe');
+    if (operationKey) xhr.setRequestHeader('X-Transcription-Operation-Key', operationKey);
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
     xhr.responseType = 'json';
 
@@ -75,6 +79,9 @@ export function TranscriptionProvider({ children }) {
   const navigate = useNavigate();
   const location = useLocation();
   const locationRef = useRef(location.pathname);
+  const ownerRef = useRef(user?.id);
+  ownerRef.current = user?.id;
+  const [recoveryRevision, setRecoveryRevision] = useState(0);
 
   useEffect(() => {
     locationRef.current = location.pathname;
@@ -87,6 +94,7 @@ export function TranscriptionProvider({ children }) {
       progress: '',
       error: '',
       activeJobId: null,
+      activeOperationKey: null,
       result,
     }));
     setNotice({
@@ -129,6 +137,8 @@ export function TranscriptionProvider({ children }) {
     setJob((current) => {
       if (current.ownerId === user.id) return current;
 
+      const savedOperation = readPendingOperation(localStorage, user.id) || readPendingOperation(localStorage, 'completed:' + user.id);
+      if (savedOperation?.operationKey) return { ...createIdleState(user.id), activeOperationKey: savedOperation.operationKey, status: 'queued', progress: '이전 변환 작업을 확인 중입니다...' };
       const savedJobId = localStorage.getItem(pendingJobStorageKey(user.id));
       if (!savedJobId) return createIdleState(user.id);
 
@@ -195,8 +205,103 @@ export function TranscriptionProvider({ children }) {
     };
   }, [completeTranscription, failTranscription, job.activeJobId, token, updateCredits, user?.id]);
 
+  useEffect(() => {
+    if (!user?.id) return;
+    const restore = (event) => {
+      if (event.key !== pendingOperationStorageKey(user.id)) return;
+      const saved = readPendingOperation(localStorage, user.id);
+      if (saved?.operationKey) setJob((current) => ({ ...current, activeOperationKey: saved.operationKey, status: 'queued', progress: '다른 탭에서 접수한 작업을 확인 중입니다...' }));
+    };
+    window.addEventListener('storage', restore);
+    return () => window.removeEventListener('storage', restore);
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!job.activeOperationKey || !token || !user?.id) return;
+    let disposed = false, timeout, errors = 0, stagedChecks = 0;
+    const controller = new AbortController();
+    const owner = user.id, key = job.activeOperationKey;
+    async function poll() {
+      try {
+        const response = await fetch('/api/transcribe/v2/by-key/' + key, { headers: { Authorization: 'Bearer ' + token }, signal: controller.signal });
+        const data = await response.json();
+        if (disposed || ownerRef.current !== owner) return;
+        const kind = classifyOperationResponse(response.status, data);
+        if (kind === 'login' || kind === 'missing') {
+          if (kind === 'missing' && errors++ < 3) { timeout = window.setTimeout(poll, 5_000); return; }
+          setJob((current) => ({ ...current, status: 'recovery', error: kind === 'login' ? '로그인이 필요합니다. 다시 로그인하면 작업 상태를 확인할 수 있습니다.' : '접수 여부를 확인하지 못했습니다. 같은 파일로 다시 시도하면 기존 작업을 먼저 확인합니다.', progress: '' }));
+          return;
+        }
+        if (kind === 'retry') throw new Error('연결 확인 필요');
+        errors = 0;
+        if (data.creditsRemaining !== undefined) updateCredits(data.creditsRemaining);
+        if (kind === 'completed') {
+          localStorage.setItem(pendingOperationStorageKey('completed:' + owner), JSON.stringify({ operationKey: key }));
+          localStorage.removeItem(pendingOperationStorageKey(owner));
+          setJob((current) => ({ ...current, activeOperationKey: null }));
+          completeTranscription(resultFromResponse(data, false)); return;
+        }
+        if (kind === 'terminal') {
+          localStorage.removeItem(pendingOperationStorageKey(owner));
+          setJob((current) => ({ ...current, activeOperationKey: null }));
+          failTranscription(data.error || '작업이 종료되었습니다. 유효한 예약 시간은 반환되었습니다.'); return;
+        }
+        if (kind === 'staged') {
+          if (!readPendingOperation(localStorage, owner)?.lastError && ++stagedChecks < 24) {
+            setJob((current) => ({ ...current, status: 'queued', error: '', progress: '원본을 안전하게 저장하고 있습니다. 잠시 기다려주세요.' }));
+            timeout = window.setTimeout(poll, 5_000); return;
+          }
+          setJob((current) => ({ ...current, status: 'recovery', progress: '', error: readPendingOperation(localStorage, owner)?.lastError || '파일 접수를 마치지 못했습니다. 같은 파일로 다시 시도해주세요.' }));
+          return;
+        }
+        setJob((current) => ({ ...current, status: data.status === 'queued' ? 'queued' : 'processing', error: '', progress: data.status === 'finalizing' ? '완성된 자막을 안전하게 저장하고 있습니다.' : data.status === 'queued' ? '먼저 접수된 작업이 끝나면 변환을 시작합니다.' : '음성 전사와 자막 생성을 진행하고 있습니다.' }));
+        timeout = window.setTimeout(poll, 5_000);
+      } catch {
+        if (disposed || ownerRef.current !== owner) return;
+        if (++errors >= 6) {
+          setJob((current) => ({ ...current, status: 'recovery', progress: '', error: '작업 상태 연결을 확인하지 못했습니다. 잠시 후 다시 확인해주세요. 접수된 변환은 서버에서 계속됩니다.' })); return;
+        }
+        setJob((current) => ({ ...current, progress: '작업 상태 연결을 다시 확인 중입니다...' }));
+        timeout = window.setTimeout(poll, Math.min(5_000 * 2 ** (errors - 1), 30_000));
+      }
+    }
+    poll();
+    return () => { disposed = true; controller.abort(); window.clearTimeout(timeout); };
+  }, [job.activeOperationKey, token, user?.id, recoveryRevision, completeTranscription, failTranscription, updateCredits]);
+
+  const retryOperationStatus = useCallback(() => {
+    setJob((current) => ({ ...current, status: 'queued', error: '', progress: '작업 상태를 다시 확인 중입니다...' }));
+    setRecoveryRevision((value) => value + 1);
+  }, []);
+
+  const startNewOperation = useCallback(() => {
+    if (!user?.id || BUSY_STATUSES.has(job.status)) return;
+    if (readPendingOperation(localStorage, user.id)) return;
+    localStorage.removeItem(pendingOperationStorageKey(user.id));
+    localStorage.removeItem(pendingOperationStorageKey('completed:' + user.id));
+    setJob(createIdleState(user.id)); setNotice(null);
+  }, [user?.id, job.status]);
+
+  const cancelOperation = useCallback(async () => {
+    if (!user?.id || !token || !job.activeOperationKey || isCancelling) return;
+    setIsCancelling(true);
+    try {
+      const response = await fetch('/api/transcribe/v2/by-key/' + job.activeOperationKey, { headers: { Authorization: 'Bearer ' + token } });
+      const operation = await response.json();
+      if (!response.ok) throw new Error('접수된 작업을 확인하지 못했습니다. 잠시 후 다시 확인해주세요.');
+      const cancelled = await fetch('/api/transcribe/v2/' + operation.id, { method: 'DELETE', headers: { Authorization: 'Bearer ' + token } });
+      if (!cancelled.ok && cancelled.status !== 409) throw new Error('취소 여부를 확인하지 못했습니다. 다시 확인해주세요.');
+      retryOperationStatus();
+    } catch (error) { setJob((current) => ({ ...current, error: error.message })); }
+    finally { setIsCancelling(false); }
+  }, [user?.id, token, job.activeOperationKey, isCancelling, retryOperationStatus]);
+
   const startTranscription = useCallback(async ({ file, language, diarize }) => {
     if (!user?.id || BUSY_STATUSES.has(job.status)) return;
+    if (!canSubmitOperation(readPendingOperation(localStorage, user.id), diarize)) {
+      setJob((current) => ({ ...current, status: 'recovery', error: '기존 일반 변환을 완료하거나 취소한 뒤 다화자 변환을 시작해주세요.' }));
+      return;
+    }
 
     const uploadValidationError = validatePreparedUploadFile(file);
     if (uploadValidationError) {
@@ -212,7 +317,14 @@ export function TranscriptionProvider({ children }) {
       activeDiarize: diarize,
     });
 
+    let operationKey;
+    const owner = user.id;
     try {
+      if (!diarize) {
+        localStorage.removeItem(pendingOperationStorageKey('completed:' + owner));
+        operationKey = readPendingOperation(localStorage, owner)?.operationKey || crypto.randomUUID();
+        localStorage.setItem(pendingOperationStorageKey(owner), JSON.stringify({ operationKey }));
+      }
       const formData = new FormData();
       formData.append('audio', file);
       if (language) formData.append('language', language);
@@ -221,6 +333,7 @@ export function TranscriptionProvider({ children }) {
       const currentToken = getToken();
       const { status, ok, data, requestId } = await uploadTranscription({
         formData,
+        operationKey,
         token: currentToken,
         onProgress: (ratio) => {
           const percent = Math.min(Math.round(ratio * 100), 100);
@@ -237,10 +350,25 @@ export function TranscriptionProvider({ children }) {
         },
       });
 
+      if (ownerRef.current !== owner) return;
+      if (status === 409 && data.legacyFallback && !diarize) {
+        localStorage.removeItem(pendingOperationStorageKey(owner));
+        operationKey = null;
+        const legacy = await uploadTranscription({ formData, token: currentToken, onProgress: () => {}, onUploadComplete: () => {} });
+        if (ownerRef.current !== owner) return;
+        if (!legacy.ok) throw new Error(legacy.data.error || '변환 요청을 확인하지 못했습니다.');
+        if (legacy.data.creditsRemaining !== undefined) updateCredits(legacy.data.creditsRemaining);
+        completeTranscription(resultFromResponse(legacy.data, false)); return;
+      }
+      if (status === 202 && data.operationId && !diarize) {
+        setJob((current) => ({ ...current, activeOperationKey: operationKey, status: 'queued', progress: '접수된 변환을 확인 중입니다...' }));
+        return;
+      }
       if (status === 401) {
         throw new Error('로그인이 필요합니다. 좌측 사이드바에서 로그인해주세요.');
       }
       if (status === 402) {
+        if (operationKey) localStorage.setItem(pendingOperationStorageKey(owner), JSON.stringify({ operationKey, lastError: '변환 가능 시간이 부족합니다. 충전 후 같은 작업으로 다시 시도해주세요.' }));
         throw new Error(`변환 가능 시간이 부족합니다. 필요: ${data.creditsNeeded}분, 보유: ${data.creditsHave}분. 결제 페이지에서 충전해주세요.`);
       }
       if (!ok) {
@@ -263,7 +391,11 @@ export function TranscriptionProvider({ children }) {
 
       completeTranscription(resultFromResponse(data, data.diarize === true));
     } catch (error) {
-      failTranscription(error.message || '오류가 발생했습니다.');
+      if (ownerRef.current !== owner) return;
+      if (operationKey) {
+        setJob((current) => ({ ...current, activeOperationKey: operationKey, status: 'recovery', progress: '', error: error.message || '접수 상태를 확인하고 있습니다.' }));
+        setRecoveryRevision((value) => value + 1);
+      } else failTranscription(error.message || '오류가 발생했습니다.');
     }
   }, [completeTranscription, failTranscription, getToken, job.status, updateCredits, user?.id]);
 
@@ -313,7 +445,7 @@ export function TranscriptionProvider({ children }) {
 
   useEffect(() => {
     const shouldWarn = job.status === 'uploading'
-      || (job.status === 'processing' && !job.activeJobId);
+      || (job.status === 'processing' && !job.activeJobId && !job.activeOperationKey);
     if (!shouldWarn) return;
 
     const handleBeforeUnload = (event) => {
@@ -322,7 +454,7 @@ export function TranscriptionProvider({ children }) {
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
     return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [job.activeJobId, job.status]);
+  }, [job.activeJobId, job.activeOperationKey, job.status]);
 
   const isBusy = BUSY_STATUSES.has(job.status);
 
@@ -333,6 +465,9 @@ export function TranscriptionProvider({ children }) {
       isCancelling,
       startTranscription,
       cancelDiarization,
+      cancelOperation,
+      retryOperationStatus,
+      startNewOperation,
       clearError,
       openResult,
     }}>
