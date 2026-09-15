@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { createPasswordClient, supabaseAdmin } from '../lib/supabase.js';
 
 const STORAGE_BUCKET = 'transcription-jobs';
+const OPERATION_STORAGE_BUCKET = 'transcription-operation-audio';
 export const RECENT_LOGIN_WINDOW_MS = 10 * 60 * 1000;
 
 const BLOCKER_MESSAGES = {
@@ -114,6 +115,11 @@ export function createAccountDeletionStore(database = supabaseAdmin) {
   }
 
   return {
+    async terminalOperations(userId) {
+      const { data, error } = await database.from('transcription_operations').select('id,status').eq('user_id', userId).in('status', ['completed', 'failed', 'cancelled']);
+      if (error) throw error;
+      return data;
+    },
     async preview(userId) {
       const { data, error } = await database.rpc('preview_account_deletion', {
         p_user_id: userId,
@@ -192,3 +198,16 @@ export async function removeAccountAudio(storage, userId) {
 }
 
 export const accountDeletionStore = createAccountDeletionStore();
+
+// Only terminal operation prefixes are eligible here. Active work is blocked by
+// the deletion RPC before this cleanup is reached.
+export async function removeTerminalOperationAudio(storage, userId, operations) {
+  const bucket = storage.from(OPERATION_STORAGE_BUCKET);
+  for (const operation of operations || []) {
+    if (!['completed', 'failed', 'cancelled'].includes(operation.status)) continue;
+    const { data, error } = await bucket.list(`${userId}/${operation.id}`, { limit: 1000 });
+    if (error) throw error;
+    const paths = (data || []).filter((item) => item.id).map((item) => `${userId}/${operation.id}/${item.name}`);
+    if (paths.length) { const { error: removeError } = await bucket.remove(paths); if (removeError) throw removeError; }
+  }
+}

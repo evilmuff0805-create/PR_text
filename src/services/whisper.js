@@ -338,7 +338,7 @@ async function createTranscriptionWithFallback({
   }
 }
 
-async function transcribeLongAudioInParallel({ buffer, originalname, params, durationSeconds }) {
+async function transcribeLongAudioInParallel({ buffer, originalname, params, durationSeconds, signal }) {
   const splitStartedAt = performance.now();
   let chunks;
   try {
@@ -361,6 +361,7 @@ async function transcribeLongAudioInParallel({ buffer, originalname, params, dur
         originalname: `chunk-${chunk.index}.mp3`,
         params,
         logPrefix: `whisper chunk ${chunk.index + 1}/${chunks.length}`,
+        requestOptions: signal ? { signal } : undefined,
       });
       return { chunk, response, timings };
     }
@@ -491,7 +492,7 @@ export async function transcribeWithDiarization(
  * @param {string} [language] - ISO-639-1 언어 코드 (없으면 자동 감지)
  * @returns {{ text: string, segments: object[], language: string }}
  */
-export async function transcribe(buffer, originalname, language, { durationSeconds } = {}) {
+export async function transcribe(buffer, originalname, language, { durationSeconds, signal } = {}) {
   try {
     const params = {
       model: 'whisper-1',
@@ -509,6 +510,7 @@ export async function transcribe(buffer, originalname, language, { durationSecon
         originalname,
         params,
         durationSeconds,
+        signal,
       });
       if (parallelResult) {
         return {
@@ -523,6 +525,7 @@ export async function transcribe(buffer, originalname, language, { durationSecon
       originalname,
       params,
       logPrefix: 'whisper',
+      requestOptions: signal ? { signal } : undefined,
     });
 
     return {

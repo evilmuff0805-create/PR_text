@@ -32,6 +32,10 @@ export function requestObservability(req, res, next) {
     logRequest(level, payload);
   });
 
+  res.on('close', () => {
+    if (res.writableFinished || !apiPath(req).startsWith('/api/')) return;
+    logRequest('warn', { requestId, method: req.method, path: apiPath(req), outcome: 'response_disconnected', durationMs: Math.round(performance.now() - startedAt) });
+  });
   next();
 }
 

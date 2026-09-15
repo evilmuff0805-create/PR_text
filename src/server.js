@@ -7,11 +7,13 @@ import accountRouter from './routes/account.js';
 import paymentRouter, { paymentWebhookRouter } from './routes/payment.js';
 import transcribeRouter from './routes/transcribe.js';
 import transcriptionJobsRouter from './routes/transcription-jobs.js';
+import transcriptionOperationsRouter from './routes/transcription-operations.js';
 import downloadRouter from './routes/download.js';
 import translateRouter from './routes/translate.js';
 import captionIdeasRouter from './routes/caption-ideas.js';
 import { requestObservability, apiErrorHandler } from './middleware/observability.js';
 import { startDiarizationJobWorker, stopDiarizationJobWorker } from './services/diarization-jobs.js';
+import { startTranscriptionOperationWorker, stopTranscriptionOperationWorker } from './services/transcription-operations.js';
 import { startIndexNowSubmission } from './services/indexnow.js';
 import { startCaptionIdeaMaintenance } from './services/caption-idea-store.js';
 import { startPaymentOrderMaintenance } from './services/payment-orders.js';
@@ -166,6 +168,8 @@ app.use('/api/account', accountDeletionLimiter, generalLimiter, accountRouter);
 app.use('/api/payment/webhook', paymentWebhookLimiter, paymentWebhookRouter);
 app.use('/api/payment', generalLimiter, paymentRouter);
 app.use('/api/transcribe/jobs', generalLimiter, transcriptionJobsRouter);
+app.post('/api/transcribe/v2', transcribeLimiter);
+app.use('/api/transcribe/v2', generalLimiter, transcriptionOperationsRouter);
 app.use('/api/transcribe', transcribeLimiter, transcribeRouter);
 app.use('/api/download', downloadLimiter, downloadRouter);
 app.use('/api/translate', translateLimiter, translateRouter);
@@ -187,6 +191,8 @@ addStaticSiteRoutes(app, distPath);
 const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   startDiarizationJobWorker();
+  console.log('[transcription.operations]', JSON.stringify({ admissionsEnabled: process.env.TRANSCRIPTION_OPERATIONS_ENABLED === 'true', workerConcurrency: 1 }));
+  startTranscriptionOperationWorker();
   startCaptionIdeaMaintenance();
   startPaymentOrderMaintenance();
   startCreditLedgerMaintenance();
@@ -205,7 +211,8 @@ async function shutdown(signal) {
   server.close();
 
   try {
-    await stopDiarizationJobWorker();
+    const releases = await Promise.allSettled([stopDiarizationJobWorker(), stopTranscriptionOperationWorker()]);
+    releases.forEach((result, index) => { if (result.status === 'rejected') console.error('[shutdown.worker_release_failed]', JSON.stringify({ worker: index === 0 ? 'diarization' : 'ordinary', code: result.reason?.code || result.reason?.name })); });
   } catch (error) {
     console.error(`[shutdown] 다화자 worker 정리 실패: ${error.message}`);
   }

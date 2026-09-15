@@ -20,7 +20,7 @@ const router = Router();
 
 function createTiming(req, res, next) {
   req.transcriptionTiming = {
-    requestId: randomUUID(),
+    requestId: req.requestId || randomUUID(),
     startedAt: performance.now(),
     wallStartedAt: Date.now(),
   };

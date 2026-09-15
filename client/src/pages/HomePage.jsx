@@ -53,11 +53,15 @@ export default function HomePage() {
     progress,
     error: transcriptionError,
     activeJobId,
+    activeOperationKey,
     result,
     isBusy,
     isCancelling,
     startTranscription,
     cancelDiarization,
+    cancelOperation,
+    retryOperationStatus,
+    startNewOperation,
     clearError,
     openResult,
   } = useTranscription();
@@ -381,6 +385,7 @@ export default function HomePage() {
         <input
           type="checkbox"
           checked={diarize}
+          disabled={Boolean(activeOperationKey)}
           onChange={(event) => setDiarize(event.target.checked)}
         />
         <div>
@@ -415,7 +420,7 @@ export default function HomePage() {
             ? progress
             : isProcessing
               ? 'PROCESSING'
-              : '변환 시작'}
+              : activeOperationKey ? '같은 작업 다시 시도' : '변환 시작'}
       </button>
 
       {status === 'uploading' && (
@@ -439,11 +444,11 @@ export default function HomePage() {
           <p className="transcription-processing__detail">
             다른 메뉴로 이동해도 변환은 계속됩니다.
           </p>
-          {activeJobId && (
+          {(activeJobId || activeOperationKey) && (
             <button
               type="button"
               className="transcription-processing__cancel"
-              onClick={handleCancelDiarizationJob}
+              onClick={activeOperationKey ? cancelOperation : handleCancelDiarizationJob}
               disabled={isCancelling}
             >
               {isCancelling ? '취소 처리 중...' : '작업 취소'}
@@ -464,6 +469,13 @@ export default function HomePage() {
         </section>
       )}
 
+      {(status === 'recovery' || status === 'completed') && (
+        <div className="transcription-complete-inline">
+          {activeOperationKey && <button type="button" className="button" onClick={retryOperationStatus}>작업 상태 다시 확인</button>}
+          {activeOperationKey && <button type="button" className="button" disabled={isCancelling} onClick={cancelOperation}>작업 취소</button>}
+          <button type="button" className="button" disabled={Boolean(activeOperationKey)} onClick={startNewOperation}>새 변환 시작</button>
+        </div>
+      )}
       {/* 에러 메시지 */}
       {displayError && (
         <div style={{ marginTop: '16px', textAlign: 'center' }}>
