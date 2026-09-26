@@ -28,7 +28,7 @@ router.post('/', authMiddleware, upload, async (req, res, next) => {
         contentType: req.file.mimetype, language,
       });
       console.log('[transcription.operation.accepted]', JSON.stringify({
-        requestId: req.requestId, operationId: queued.operationId, existing: queued.existing,
+        requestId: req.requestId, operationId: queued.operationId, mode: 'ordinary', existing: queued.existing,
         responseClosed: res.writableEnded,
       }));
       return res.status(202).json({ operationId: queued.operationId, status: queued.status, creditsRemaining: queued.creditsRemaining });

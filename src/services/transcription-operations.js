@@ -13,6 +13,150 @@ export const sha256 = (value) => createHash('sha256').update(value).digest('hex'
 export const operationPayloadHash = (buffer, language) => createHash('sha256').update(buffer).update(`\n${language || ''}\nordinary`).digest('hex');
 const terminal = (status) => ['completed', 'failed', 'cancelled'].includes(status);
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const MAX_FAILURE_DIAGNOSTIC_BYTES = 32 * 1024;
+const MAX_FAILURE_DIAGNOSTIC_ITEMS = 50;
+
+function withoutUndefined(value) {
+  return Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined));
+}
+
+function finiteNumber(value, { integer = false } = {}) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return undefined;
+  return integer ? Math.trunc(number) : Number(number.toFixed(1));
+}
+
+function safeToken(value, maxLength = 200) {
+  if (typeof value !== 'string' || value.length === 0 || value.length > maxLength) return undefined;
+  return /^[a-zA-Z0-9._:-]+$/.test(value) ? value : undefined;
+}
+
+function summarizeOpenAIAttempt(attempt) {
+  if (!attempt || typeof attempt !== 'object') return null;
+  return withoutUndefined({
+    phase: safeToken(attempt.phase, 50),
+    outcome: ['success', 'error'].includes(attempt.outcome) ? attempt.outcome : undefined,
+    durationMs: finiteNumber(attempt.durationMs),
+    clientRequestId: safeToken(attempt.clientRequestId),
+    requestId: safeToken(attempt.requestId),
+    maxRetries: finiteNumber(attempt.maxRetries, { integer: true }),
+  });
+}
+
+function summarizeChunkTiming(chunk) {
+  if (!chunk || typeof chunk !== 'object') return null;
+  const attempts = Array.isArray(chunk.openaiAttempts)
+    ? chunk.openaiAttempts
+      .slice(0, MAX_FAILURE_DIAGNOSTIC_ITEMS)
+      .map(summarizeOpenAIAttempt)
+      .filter(Boolean)
+    : undefined;
+  return withoutUndefined({
+    index: finiteNumber(chunk.index, { integer: true }),
+    ownedStartSeconds: finiteNumber(chunk.ownedStartSeconds),
+    ownedEndSeconds: finiteNumber(chunk.ownedEndSeconds),
+    inputStartSeconds: finiteNumber(chunk.inputStartSeconds),
+    inputEndSeconds: finiteNumber(chunk.inputEndSeconds),
+    compressionMs: finiteNumber(chunk.compressionMs),
+    openaiMs: finiteNumber(chunk.openaiMs),
+    preconvertedM4a: typeof chunk.preconvertedM4a === 'boolean' ? chunk.preconvertedM4a : undefined,
+    openaiAttempts: attempts?.length ? attempts : undefined,
+  });
+}
+
+function summarizeProviderTimings(rawTimings) {
+  if (!rawTimings || typeof rawTimings !== 'object') return undefined;
+  const attempts = Array.isArray(rawTimings.openaiAttempts)
+    ? rawTimings.openaiAttempts
+      .slice(0, MAX_FAILURE_DIAGNOSTIC_ITEMS)
+      .map(summarizeOpenAIAttempt)
+      .filter(Boolean)
+    : undefined;
+  const completedChunks = Array.isArray(rawTimings.completedChunkTimings)
+    ? rawTimings.completedChunkTimings
+      .slice(0, MAX_FAILURE_DIAGNOSTIC_ITEMS)
+      .map(summarizeChunkTiming)
+      .filter(Boolean)
+    : undefined;
+  const failedChunk = summarizeChunkTiming(rawTimings.failedChunk);
+  const summary = withoutUndefined({
+    compressionMs: finiteNumber(rawTimings.compressionMs),
+    splitMs: finiteNumber(rawTimings.splitMs),
+    openaiMs: finiteNumber(rawTimings.openaiMs),
+    openaiAggregateMs: finiteNumber(rawTimings.openaiAggregateMs),
+    chunkCount: finiteNumber(rawTimings.chunkCount, { integer: true }),
+    preconvertedM4a: typeof rawTimings.preconvertedM4a === 'boolean'
+      ? rawTimings.preconvertedM4a
+      : undefined,
+    openaiAttempts: attempts?.length ? attempts : undefined,
+    failedChunk: failedChunk && Object.keys(failedChunk).length ? failedChunk : undefined,
+    completedChunkTimings: completedChunks?.length ? completedChunks : undefined,
+  });
+  return Object.keys(summary).length ? summary : undefined;
+}
+
+function boundFailureTimingLog(timingLog) {
+  const serialized = JSON.stringify(timingLog);
+  const originalBytes = Buffer.byteLength(serialized);
+  if (originalBytes <= MAX_FAILURE_DIAGNOSTIC_BYTES) return timingLog;
+
+  const provider = timingLog.provider ?? {};
+  const failedChunk = provider.failedChunk;
+  return {
+    ...timingLog,
+    provider: withoutUndefined({
+      diagnosticTruncated: true,
+      originalBytes,
+      compressionMs: provider.compressionMs,
+      splitMs: provider.splitMs,
+      openaiMs: provider.openaiMs,
+      openaiAggregateMs: provider.openaiAggregateMs,
+      chunkCount: provider.chunkCount,
+      preconvertedM4a: provider.preconvertedM4a,
+      openaiAttempts: provider.openaiAttempts?.slice(0, 3),
+      failedChunk: failedChunk ? {
+        ...failedChunk,
+        openaiAttempts: failedChunk.openaiAttempts?.slice(0, 3),
+      } : undefined,
+      completedChunkTimings: provider.completedChunkTimings?.slice(0, 3).map((chunk) => ({
+        ...chunk,
+        openaiAttempts: chunk.openaiAttempts?.slice(0, 1),
+      })),
+    }),
+  };
+}
+
+export function createTranscriptionOperationFailureTimingLog({
+  operation,
+  error,
+  startedAt,
+  completedAt = Date.now(),
+  failureResult,
+}) {
+  const safeStartedAt = finiteNumber(startedAt) ?? completedAt;
+  const safeCompletedAt = finiteNumber(completedAt) ?? Date.now();
+  const providerStatus = finiteNumber(error?.providerStatus ?? error?.status, { integer: true });
+  const timingLog = withoutUndefined({
+    operationId: safeToken(operation?.id),
+    mode: 'ordinary',
+    outcome: 'error',
+    attempt: finiteNumber(operation?.attempt_count, { integer: true }),
+    audioSeconds: finiteNumber(operation?.duration_seconds),
+    wallStartedAt: new Date(safeStartedAt).toISOString(),
+    wallCompletedAt: new Date(safeCompletedAt).toISOString(),
+    elapsedMs: Math.max(0, safeCompletedAt - safeStartedAt),
+    failureRecorded: failureResult?.updated === true,
+    creditsRestored: finiteNumber(failureResult?.credits_restored, { integer: true }),
+    error: withoutUndefined({
+      code: safeToken(error?.code, 100) ?? 'UNKNOWN',
+      type: safeToken(error?.providerErrorType ?? error?.constructor?.name, 100),
+      status: providerStatus,
+      requestId: safeToken(error?.providerRequestId),
+    }),
+    provider: summarizeProviderTimings(error?.timings),
+  });
+  return boundFailureTimingLog(timingLog);
+}
 
 export function createTranscriptionOperations({
   database = supabaseAdmin, probe = probeAudioDuration, transcribeAudio = transcribe,
@@ -116,6 +260,29 @@ export function createTranscriptionOperations({
   async function release(context, delaySeconds = 0) {
     await rpc('release_transcription_operation_lease', { p_operation_id: context.operation.id, p_worker_token: context.workerToken, p_delay_seconds: delaySeconds });
   }
+  async function persistFailureTimings(operation, workerToken, timingLog) {
+    try {
+      const { error } = await database
+        .from('transcription_operations')
+        .update({ timings: timingLog })
+        .eq('id', operation.id)
+        .eq('worker_token', workerToken)
+        .eq('status', 'failed');
+      if (error) {
+        console.warn('[transcription.operation.diagnostics_failed]', JSON.stringify({
+          operationId: operation.id,
+          mode: 'ordinary',
+          code: safeToken(error.code, 100) ?? safeToken(error.name, 100) ?? 'UPDATE_FAILED',
+        }));
+      }
+    } catch (error) {
+      console.warn('[transcription.operation.diagnostics_failed]', JSON.stringify({
+        operationId: operation.id,
+        mode: 'ordinary',
+        code: safeToken(error?.code, 100) ?? safeToken(error?.name, 100) ?? 'UPDATE_FAILED',
+      }));
+    }
+  }
   async function processNext() {
     if (busy || stopping) return;
     busy = true;
@@ -127,7 +294,7 @@ export function createTranscriptionOperations({
       context.operation = (await rpc('claim_transcription_operation', { p_worker_token: context.workerToken }))?.[0];
       const operation = context.operation;
       if (!operation) return;
-      console.log('[transcription.operation.claimed]', JSON.stringify({ operationId: operation.id, attempt: operation.attempt_count, queueAgeMs: Date.now() - Date.parse(operation.created_at) }));
+      console.log('[transcription.operation.claimed]', JSON.stringify({ operationId: operation.id, mode: 'ordinary', attempt: operation.attempt_count, queueAgeMs: Date.now() - Date.parse(operation.created_at) }));
       if (stopping) { await release(context); return; }
       heartbeat = setInterval(async () => {
         try { if (!await rpc('renew_transcription_operation_lease', { p_operation_id: operation.id, p_worker_token: context.workerToken })) context.controller.abort(); }
@@ -161,21 +328,34 @@ export function createTranscriptionOperations({
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
           const finalized = (await rpc('finalize_transcription_operation', { p_operation_id: operation.id, p_worker_token: context.workerToken }))?.[0];
-          if (finalized?.completed) { console.log('[transcription.operation.completed]', JSON.stringify({ operationId: operation.id, durationMs: Date.now() - started })); return; }
+          if (finalized?.completed) { console.log('[transcription.operation.completed]', JSON.stringify({ operationId: operation.id, mode: 'ordinary', durationMs: Date.now() - started })); return; }
           const current = await row(operation.id);
           if (terminal(current?.status) || current?.worker_token !== context.workerToken) return;
         } catch { if (attempt < 2) await delay(retryDelay); }
       }
     } catch (error) {
-      if (context.operation && !stopping && !providerFinished && !context.controller.signal.aborted) {
-        // Read failure leaves the outcome unknown. Do not turn uncertainty into a refund.
-        const current = await row(context.operation.id);
-        if (current?.status === 'running' && current.worker_token === context.workerToken) {
-          await rpc('fail_transcription_operation', { p_operation_id: current.id, p_worker_token: context.workerToken,
-            p_error_message: '변환 처리 중 오류가 발생했습니다. 유효한 예약 시간은 반환되었습니다.' });
+      let failureResult;
+      try {
+        if (context.operation && !stopping && !providerFinished && !context.controller.signal.aborted) {
+          // Read failure leaves the outcome unknown. Do not turn uncertainty into a refund.
+          const current = await row(context.operation.id);
+          if (current?.status === 'running' && current.worker_token === context.workerToken) {
+            failureResult = (await rpc('fail_transcription_operation', { p_operation_id: current.id, p_worker_token: context.workerToken,
+              p_error_message: '변환 처리 중 오류가 발생했습니다. 유효한 예약 시간은 반환되었습니다.' }))?.[0];
+          }
+        }
+      } finally {
+        const timingLog = createTranscriptionOperationFailureTimingLog({
+          operation: context.operation,
+          error,
+          startedAt: started,
+          failureResult,
+        });
+        console.warn('[transcription.operation.interrupted]', JSON.stringify(timingLog));
+        if (context.operation && failureResult?.updated) {
+          await persistFailureTimings(context.operation, context.workerToken, timingLog);
         }
       }
-      console.warn('[transcription.operation.interrupted]', JSON.stringify({ operationId: context.operation?.id, code: error.code || error.name }));
     } finally {
       clearInterval(heartbeat);
       if (context.operation) { try { await release(context, providerFinished || context.operation.status === 'finalizing' ? 30 : 0); } catch { /* Lease expiry is the recovery fallback. */ } }
