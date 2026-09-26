@@ -11,7 +11,8 @@ import { buildAudioChunkPlan, mapWithConcurrency, mergeChunkSegments } from './a
 import { normalizeProviderSpeakerLabels } from './speakers.js';
 import { normalizeLanguage } from './language.js';
 
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: 4 });
+const OPENAI_MAX_RETRIES = 4;
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: OPENAI_MAX_RETRIES });
 const execFileAsync = promisify(execFile);
 
 const WHISPER_LIMIT = 25 * 1024 * 1024; // 25MB
@@ -110,6 +111,16 @@ function isInvalidFileFormatError(err) {
 
 function createTempPath(prefix, extension) {
   return join(tmpdir(), `${prefix}-${randomUUID()}${extension}`);
+}
+
+export function buildTranscriptionRequestOptions(requestOptions, clientRequestId) {
+  return {
+    ...(requestOptions ?? {}),
+    headers: {
+      ...(requestOptions?.headers ?? {}),
+      'X-Client-Request-Id': clientRequestId,
+    },
+  };
 }
 
 export async function probeAudioDuration(buffer, originalname) {
@@ -289,17 +300,34 @@ async function createTranscriptionWithFallback({
 
   async function requestTranscription(sourceBuffer, sourceName, phase) {
     const startedAt = performance.now();
+    const clientRequestId = randomUUID();
+    let requestId;
     let outcome = 'success';
     try {
       const file = await toFile(sourceBuffer, sourceName);
-      return await openai.audio.transcriptions.create({ ...params, file }, requestOptions);
+      const response = await openai.audio.transcriptions.create(
+        { ...params, file },
+        buildTranscriptionRequestOptions(requestOptions, clientRequestId),
+      );
+      requestId = response?._request_id;
+      return response;
     } catch (err) {
       outcome = 'error';
+      requestId = err?.request_id;
       throw err;
     } finally {
       const durationMs = performance.now() - startedAt;
       timings.openaiMs += durationMs;
-      timings.openaiAttempts.push({ phase, outcome, durationMs });
+      timings.openaiAttempts.push({
+        phase,
+        outcome,
+        durationMs,
+        clientRequestId,
+        requestId,
+        maxRetries: Number.isInteger(requestOptions?.maxRetries)
+          ? requestOptions.maxRetries
+          : OPENAI_MAX_RETRIES,
+      });
     }
   }
 
@@ -352,20 +380,59 @@ async function transcribeLongAudioInParallel({ buffer, originalname, params, dur
   if (chunks.length < 2) return null;
 
   const openaiStartedAt = performance.now();
-  const chunkResults = await mapWithConcurrency(
-    chunks,
-    PARALLEL_TRANSCRIBE_CONCURRENCY,
-    async (chunk) => {
-      const { response, timings } = await createTranscriptionWithFallback({
-        buffer: chunk.buffer,
-        originalname: `chunk-${chunk.index}.mp3`,
-        params,
-        logPrefix: `whisper chunk ${chunk.index + 1}/${chunks.length}`,
-        requestOptions: signal ? { signal } : undefined,
-      });
-      return { chunk, response, timings };
-    }
-  );
+  const completedChunkTimings = [];
+  let chunkResults;
+  try {
+    chunkResults = await mapWithConcurrency(
+      chunks,
+      PARALLEL_TRANSCRIBE_CONCURRENCY,
+      async (chunk) => {
+        try {
+          const { response, timings } = await createTranscriptionWithFallback({
+            buffer: chunk.buffer,
+            originalname: `chunk-${chunk.index}.mp3`,
+            params,
+            logPrefix: `whisper chunk ${chunk.index + 1}/${chunks.length}`,
+            requestOptions: signal ? { signal } : undefined,
+          });
+          completedChunkTimings.push({
+            index: chunk.index,
+            compressionMs: timings.compressionMs,
+            openaiMs: timings.openaiMs,
+            openaiAttempts: timings.openaiAttempts,
+          });
+          return { chunk, response, timings };
+        } catch (error) {
+          const failedTimings = error?.timings;
+          error.timings = {
+            splitMs,
+            chunkCount: chunks.length,
+            failedChunk: {
+              index: chunk.index,
+              ownedStartSeconds: chunk.ownedStart,
+              ownedEndSeconds: chunk.ownedEnd,
+              inputStartSeconds: chunk.inputStart,
+              inputEndSeconds: chunk.inputEnd,
+              compressionMs: failedTimings?.compressionMs,
+              openaiMs: failedTimings?.openaiMs,
+              openaiAttempts: failedTimings?.openaiAttempts,
+              preconvertedM4a: failedTimings?.preconvertedM4a,
+            },
+          };
+          throw error;
+        }
+      }
+    );
+  } catch (error) {
+    error.timings = {
+      ...error.timings,
+      openaiMs: performance.now() - openaiStartedAt,
+      completedChunkTimings: completedChunkTimings
+        .slice()
+        .sort((left, right) => left.index - right.index),
+    };
+    throw error;
+  }
   const openaiMs = performance.now() - openaiStartedAt;
   const segments = mergeChunkSegments(chunkResults);
 
@@ -535,19 +602,41 @@ export async function transcribe(buffer, originalname, language, { durationSecon
       timings,
     };
   } catch (err) {
-    if (err instanceof OpenAI.APIConnectionError) {
-      const e = new Error('OpenAI 서버 연결이 일시적으로 불안정합니다. 잠시 후 다시 시도해주세요.');
-      e.code = 'CONNECTION';
-      throw e;
-    }
-    if (err.status === 429) {
-      const quota = err.code === 'insufficient_quota';
-      const e = new Error(quota
-        ? '변환 서버(OpenAI) 사용량이 소진되었습니다. 관리자에게 문의해주세요.'
-        : '요청이 일시적으로 많습니다. 잠시 후 다시 시도해주세요.');
-      e.code = quota ? 'QUOTA' : 'RATELIMIT';
-      throw e;
-    }
-    throw new Error(`Whisper API 오류: ${err.message}`);
+    throw normalizeTranscriptionError(err);
   }
+}
+
+function carryTranscriptionDiagnostics(target, source) {
+  target.timings = source?.timings;
+  target.providerErrorType = source?.constructor?.name;
+  target.providerStatus = source?.status;
+  target.providerRequestId = source?.request_id;
+  return target;
+}
+
+export function normalizeTranscriptionError(err) {
+  // APIConnectionTimeoutError extends APIConnectionError, so this branch must
+  // stay first or every timeout is misreported as a generic connection failure.
+  if (err instanceof OpenAI.APIConnectionTimeoutError) {
+    const error = new Error('음성 변환이 제한 시간 안에 끝나지 않았습니다. 잠시 후 다시 시도해주세요.');
+    error.code = 'TIMEOUT';
+    return carryTranscriptionDiagnostics(error, err);
+  }
+  if (err instanceof OpenAI.APIConnectionError) {
+    const error = new Error('OpenAI 서버 연결이 일시적으로 불안정합니다. 잠시 후 다시 시도해주세요.');
+    error.code = 'CONNECTION';
+    return carryTranscriptionDiagnostics(error, err);
+  }
+  if (err?.status === 429) {
+    const quota = err.code === 'insufficient_quota';
+    const error = new Error(quota
+      ? '변환 서버(OpenAI) 사용량이 소진되었습니다. 관리자에게 문의해주세요.'
+      : '요청이 일시적으로 많습니다. 잠시 후 다시 시도해주세요.');
+    error.code = quota ? 'QUOTA' : 'RATELIMIT';
+    return carryTranscriptionDiagnostics(error, err);
+  }
+  return carryTranscriptionDiagnostics(
+    new Error(`Whisper API 오류: ${err?.message || '알 수 없는 오류'}`),
+    err,
+  );
 }
