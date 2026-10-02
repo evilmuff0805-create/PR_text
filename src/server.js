@@ -19,6 +19,7 @@ import { startCaptionIdeaMaintenance } from './services/caption-idea-store.js';
 import { startPaymentOrderMaintenance } from './services/payment-orders.js';
 import { startCreditLedgerMaintenance } from './services/credit-ledger.js';
 import { validateTossKeyPair } from './services/toss-payments.js';
+import { stopSilenceObservation } from './services/silence-observation.js';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { addStaticSiteRoutes } from './static-site.js';
@@ -192,6 +193,7 @@ const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   startDiarizationJobWorker();
   console.log('[transcription.operations]', JSON.stringify({ admissionsEnabled: process.env.TRANSCRIPTION_OPERATIONS_ENABLED === 'true', workerConcurrency: 1 }));
+  console.log('[transcription.silence_observation]', JSON.stringify({ mode: process.env.SILENCE_OBSERVATION_MODE === 'shadow' ? 'shadow' : 'off' }));
   startTranscriptionOperationWorker();
   startCaptionIdeaMaintenance();
   startPaymentOrderMaintenance();
@@ -211,8 +213,9 @@ async function shutdown(signal) {
   server.close();
 
   try {
-    const releases = await Promise.allSettled([stopDiarizationJobWorker(), stopTranscriptionOperationWorker()]);
-    releases.forEach((result, index) => { if (result.status === 'rejected') console.error('[shutdown.worker_release_failed]', JSON.stringify({ worker: index === 0 ? 'diarization' : 'ordinary', code: result.reason?.code || result.reason?.name })); });
+    const workerNames = ['diarization', 'ordinary', 'silence_observation'];
+    const releases = await Promise.allSettled([stopDiarizationJobWorker(), stopTranscriptionOperationWorker(), stopSilenceObservation()]);
+    releases.forEach((result, index) => { if (result.status === 'rejected') console.error('[shutdown.worker_release_failed]', JSON.stringify({ worker: workerNames[index], code: result.reason?.code || result.reason?.name })); });
   } catch (error) {
     console.error(`[shutdown] 다화자 worker 정리 실패: ${error.message}`);
   }

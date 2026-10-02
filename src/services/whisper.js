@@ -10,6 +10,7 @@ import { performance } from 'perf_hooks';
 import { buildAudioChunkPlan, mapWithConcurrency, mergeChunkSegments } from './audio-chunks.js';
 import { normalizeProviderSpeakerLabels } from './speakers.js';
 import { normalizeLanguage } from './language.js';
+import { scheduleSilenceObservation, SILENCE_OBSERVATION_MODE } from './silence-observation.js';
 
 const OPENAI_MAX_RETRIES = 4;
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: OPENAI_MAX_RETRIES });
@@ -571,6 +572,7 @@ export async function transcribe(buffer, originalname, language, { durationSecon
       params.language = language;
     }
 
+    let result;
     if (PARALLEL_TRANSCRIBE_ENABLED && Number.isFinite(durationSeconds) && durationSeconds >= PARALLEL_TRANSCRIBE_MIN_SECONDS) {
       const parallelResult = await transcribeLongAudioInParallel({
         buffer,
@@ -580,27 +582,44 @@ export async function transcribe(buffer, originalname, language, { durationSecon
         signal,
       });
       if (parallelResult) {
-        return {
+        result = {
           ...parallelResult,
           language: parallelResult.language === 'unknown' ? (language ?? 'unknown') : parallelResult.language,
         };
       }
     }
 
-    const { response, timings } = await createTranscriptionWithFallback({
-      buffer,
-      originalname,
-      params,
-      logPrefix: 'whisper',
-      requestOptions: signal ? { signal } : undefined,
-    });
+    if (!result) {
+      const { response, timings } = await createTranscriptionWithFallback({
+        buffer,
+        originalname,
+        params,
+        logPrefix: 'whisper',
+        requestOptions: signal ? { signal } : undefined,
+      });
 
-    return {
-      text: response.text,
-      segments: attachSourceWords(response.segments, response.words),
-      language: response.language ?? language ?? 'unknown',
-      timings,
-    };
+      result = {
+        text: response.text,
+        segments: attachSourceWords(response.segments, response.words),
+        language: response.language ?? language ?? 'unknown',
+        timings,
+      };
+    }
+
+    if (SILENCE_OBSERVATION_MODE === 'shadow') {
+      const attempts = result.timings?.openaiAttempts
+        ?? result.timings?.chunkTimings?.flatMap((chunk) => chunk.openaiAttempts ?? [])
+        ?? [];
+      scheduleSilenceObservation({
+        buffer,
+        originalname,
+        segments: result.segments,
+        signal,
+        clientRequestIds: attempts.map((attempt) => attempt.clientRequestId).filter((id) => typeof id === 'string'),
+      });
+    }
+
+    return result;
   } catch (err) {
     throw normalizeTranscriptionError(err);
   }
