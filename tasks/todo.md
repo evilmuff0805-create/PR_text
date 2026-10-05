@@ -429,3 +429,19 @@
 - The first branch was repaired with follow-up validation migrations after the defect was found, so a fresh branch replay of the final migration files was required before production approval.
 - A fresh disposable branch then applied all 23 repository migration files in order without follow-up patches. The same functional SQL scenarios passed, all six ledger/cleanup invariants were zero, server-only privileges were enforced, and the branch was deleted after verification.
 - Local verification after the fix passed the full 250-test suite, the 63-module production build, and `git diff --check`. Chrome QA at 1440x900 and 393x852 found no horizontal overflow, no console errors, a 14px minimum visible font size, all three plans, and the required business contact.
+
+# 2026-10-05 PR_text documentation and Notion synchronization
+
+## Acceptance criteria
+
+- [x] Store essential PR_text product and engineering rules in a repository Markdown file read by future agents.
+- [x] Correct stale silence-duration, correction-model, language, and subtitle-boundary guidance.
+- [x] Record the SRT/login and diarization changes with verified commit, CI, and production evidence.
+- [ ] Update the supplied PR_text Notion page and publish the Markdown rules, then re-read the page to verify persistence.
+
+## Working notes
+
+- Rules are in `AGENTS.md`; the update record is `docs/updates/2026-10-05-subtitles-and-login.md`.
+- Application commit `9d00498` passed 342 tests, production build, both GitHub CI jobs, and production health with the matching commit and homepage HTTP 200.
+- Target Notion page: `39a825f6-6465-818f-9aae-cf2f2c0ade25`.
+- Notion publication remains blocked by missing connector/authentication. Do not mark remote synchronization complete based on local files alone.
