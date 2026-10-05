@@ -73,6 +73,64 @@ test('short adjacent segments merge through a 0.3 second pause', () => {
   assert.equal(merged[0].text, '네 맞습니다');
 });
 
+test('diarized short segments preserve even brief same-speaker silence', () => {
+  for (const offset of [0, 180]) {
+    for (const gap of [0.01, 0.2, 0.3]) {
+      const source = [
+        { start: offset, end: offset + 0.2, text: '네', speaker: 0 },
+        { start: offset + 0.2 + gap, end: offset + 2, text: '계속 이야기합니다', speaker: 0 },
+      ];
+      const original = structuredClone(source);
+      assert.deepEqual(mergeShortSegments(source), original, `offset=${offset}, gap=${gap}`);
+      assert.deepEqual(source, original);
+    }
+  }
+});
+
+test('continuous diarized speech can still merge without crossing speaker boundaries', () => {
+  for (const offset of [0, 180]) {
+    const source = [
+      { start: offset, end: offset + 0.2, text: '네', speaker: 0 },
+      { start: offset + 0.2, end: offset + 2, text: '계속 이야기합니다', speaker: 0 },
+    ];
+    assert.deepEqual(mergeShortSegments(source), [{
+      start: offset, end: offset + 2, text: '네 계속 이야기합니다', speaker: 0,
+    }]);
+    assert.deepEqual(mergeShortSegments([
+      source[0], { ...source[1], speaker: 1 },
+    ]), [source[0], { ...source[1], speaker: 1 }]);
+  }
+});
+
+test('diarized merging tolerates timestamp precision without swallowing measurable pauses', () => {
+  const first = { start: 180, end: 181, text: '네', speaker: 0 };
+  assert.equal(mergeShortSegments([
+    first, { start: 181 + 1e-10, end: 183, text: '계속 이야기합니다', speaker: 0 },
+  ]).length, 1);
+  assert.equal(mergeShortSegments([
+    first, { start: 181 + 1e-6, end: 183, text: '계속 이야기합니다', speaker: 0 },
+  ]).length, 2);
+});
+
+test('processed diarized subtitles retain speech ends and silent gaps in SRT and ASS', async () => {
+  // Japanese bypasses Korean correction while exercising the shared processing
+  // pipeline used by diarized jobs. No provider request is needed for this check.
+  const result = await processTranscriptionSegments([
+    { start: 180, end: 180.2, text: 'はい', speaker: 0 },
+    { start: 180.4, end: 182, text: '話を続けます', speaker: 0 },
+  ], 'ja');
+  assert.deepEqual(result.segments, [
+    { start: 180, end: 180.2, text: 'はい', speaker: 0 },
+    { start: 180.4, end: 182, text: '話を続けます', speaker: 0 },
+  ]);
+  const srt = generateSRT(result.segments);
+  assert.match(srt, /00:03:00,000 --> 00:03:00,200/);
+  assert.match(srt, /00:03:00,400 --> 00:03:02,000/);
+  const ass = generateASS(result.segments);
+  assert.match(ass, /0:03:00\.00,0:03:00\.20/);
+  assert.match(ass, /0:03:00\.40,0:03:02\.00/);
+});
+
 test('English word timings preserve punctuation, pauses, and source boundaries', async () => {
   const result = await processTranscriptionSegments([{
     start: 0, end: 3, text: 'Hello, there.', sourceWords: [

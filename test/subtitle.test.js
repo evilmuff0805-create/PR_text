@@ -159,6 +159,105 @@ test('keeps Korean words intact when selecting a subtitle line boundary', () => 
   )), false);
 });
 
+test('speaker-labelled Korean subtitles keep quoted questions with their predicates', () => {
+  const cases = [
+    ['아니 아빠한테도 전화는 드렸는데 그냥 뭐라고 그러셨더라?',
+      ['아니 아빠한테도 전화는 드렸는데', '그냥 뭐라고 그러셨더라?']],
+    ['파일을 받아서 설명해 드렸는데 어떻게 하라고 하셨더라?',
+      ['파일을 받아서 설명해 드렸는데', '어떻게 하라고 하셨더라?']],
+    ['아까 요청했던 내용을 전달했는데 왜 늦었다고 이야기하셨지?',
+      ['아까 요청했던 내용을 전달했는데', '왜 늦었다고 이야기하셨지?']],
+    ['지난 회의에서 이미 말씀드렸는데 이제는 뭘 하자고 제안하셨더라?',
+      ['지난 회의에서 이미 말씀드렸는데', '이제는 뭘 하자고 제안하셨더라?']],
+    ['아까 팀장님께 설명드렸는데 지금 뭘 했냐고 다시 물어보셨어요?',
+      ['아까 팀장님께 설명드렸는데', '지금 뭘 했냐고 다시 물어보셨어요?']],
+  ];
+
+  for (const [text, expected] of cases) {
+    const input = [{ start: 3.25, end: 12.75, text, speaker: 0 }];
+    const original = structuredClone(input);
+    const srtTexts = dialogueBlocks(generateSRT(input))
+      .map((block) => block.split('\n').slice(2).join('\n'));
+    const assTexts = generateASS(input).split('\n')
+      .filter((line) => line.startsWith('Dialogue:'))
+      .map((line) => line.slice(line.lastIndexOf(',,') + 2));
+
+    assert.deepEqual(srtTexts, expected, text);
+    assert.deepEqual(assTexts, expected, text);
+    assert.equal(srtTexts.join(' '), text);
+    assert.ok(srtTexts.every((line) => line.length <= SUBTITLE_MAX_CHARS));
+    assert.deepEqual(input, original);
+  }
+});
+
+test('speaker-labelled Korean subtitles preserve ordinary clauses and dependent phrases', () => {
+  const cases = [
+    ['회의 때 의견은 말씀드렸지만 어떤 식으로 정리해야 할까요?',
+      ['회의 때 의견은 말씀드렸지만', '어떤 식으로 정리해야 할까요?']],
+    ['자료는 모두 전달했는데 무슨 일을 해야 하는지 모르겠어요',
+      ['자료는 모두 전달했는데', '무슨 일을 해야 하는지 모르겠어요']],
+    ['새로운 일정에 대해서 이야기하고 어디서 만나기로 했는지 물었어요',
+      ['새로운 일정에 대해서 이야기하고', '어디서 만나기로 했는지 물었어요']],
+  ];
+
+  for (const [text, expected] of cases) {
+    const lines = dialogueBlocks(generateSRT([{ start: 3, end: 9, text, speaker: 1 }]))
+      .map((block) => block.split('\n').slice(2).join('\n'));
+    assert.deepEqual(lines, expected, text);
+    assert.equal(lines.join(' '), text);
+  }
+});
+
+test('a long Korean phrase keeps its adjective with its following noun when a shorter cut fits', () => {
+  const text = '아주 오래도록 오랫동안 준비했던 매우 아름다운 사진들을 보여드릴게요';
+  const lines = dialogueBlocks(generateSRT([{ start: 3, end: 9, text, speaker: 1 }]))
+    .map((block) => block.split('\n').slice(2).join('\n'));
+
+  assert.ok(lines.some((line) => line.includes('아름다운 사진들을')));
+  assert.equal(lines.join(' '), text);
+  assert.ok(lines.every((line) => line.length <= SUBTITLE_MAX_CHARS));
+});
+
+test('Korean clause splitting preserves the speaker and complete source time span in both exports', () => {
+  const input = [{
+    start: 3.25, end: 12.75, speaker: 2,
+    text: '아니 아빠한테도 전화는 드렸는데 그냥 뭐라고 그러셨더라?',
+  }];
+  const colors = { 2: '#FFE600' };
+  const blocks = dialogueBlocks(generateSRT(input, colors));
+  const ranges = blocks.map((block) => {
+    assert.match(block, /<font color="#FFE600">/);
+    const [start, end] = block.split('\n')[1].split(' --> ').map(parseSrtTime);
+    return { start, end };
+  });
+
+  assert.equal(ranges.length, 2);
+  assert.equal(ranges[0].start, 3250);
+  assert.equal(ranges.at(-1).end, 12750);
+  assert.equal(ranges[0].end, ranges[1].start);
+  assert.ok(ranges.every(({ start, end }) => end > start));
+
+  const assLines = generateASS(input, {}, colors).split('\n')
+    .filter((line) => line.startsWith('Dialogue:'));
+  assert.equal(assLines.length, 2);
+  assert.match(assLines[0], /^Dialogue: 0,0:00:03\.25,/);
+  assert.match(assLines[1], /^Dialogue: 0,[^,]+,0:00:12\.75,/);
+  assert.ok(assLines.every((line) => line.includes(',Speaker2,')));
+});
+
+test('Korean clause rules leave unlabelled subtitles and speaker-labelled English unchanged', () => {
+  const text = '아니 아빠한테도 전화는 드렸는데 그냥 뭐라고 그러셨더라?';
+  for (const speaker of [undefined, null, '']) {
+    const lines = dialogueBlocks(generateSRT([{ start: 3, end: 9, text, speaker }]))
+      .map((block) => block.split('\n').slice(2).join('\n'));
+    assert.deepEqual(lines, ['아니 아빠한테도 전화는 드렸는데 그냥 뭐라고', '그러셨더라?']);
+  }
+
+  const english = { start: 3, end: 9, text: 'We asked about the schedule and where we should meet later.' };
+  assert.equal(generateSRT([{ ...english, speaker: 0 }]), generateSRT([english]));
+  assert.equal(generateASS([{ ...english, speaker: 0 }]), generateASS([english]));
+});
+
 test('preserves the original timeline when long subtitle text is split', () => {
   const longSegment = [{
     start: 3.25,

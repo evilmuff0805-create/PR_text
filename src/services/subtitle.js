@@ -23,6 +23,16 @@ const SENTENCE_PUNCTUATION = /[!?]$/;
 const CONJUNCTIVE = /[면고서며]$|지만$|는데$|니까$|므로$|거나$|든지$/;
 const POSTPOSITION = /[은는이가을를에도로]$/;
 
+// 다화자 자막은 어절 단위로 절의 끝을 먼저 찾는다. 마지막 한 글자만 보면
+// 인용형 "-라고"를 "-고"로, "어디서"를 "-서"로 잘못 판단한다.
+// 형태소 분석 대신 확실한 복합 어미를 우선하며, 종속된 구문은 뒤 말과 붙인다.
+const KOREAN_CLAUSE_END = /(?:지만|는데|던데|더니|으니까|니까|므로|거나|든지|다면|으면|으며|면서|아서|어서|여서|해서|아도|어도|해도)$/;
+const KOREAN_SENTENCE_END = /(?:습니다|습니까|어요|아요|해요|예요|이에요|세요|네요|데요|군요|지요|잖아요|거든요|더라고요|더라|죠|까요|이다|했다|한다|된다|있다|없다|겠다|였다|란다)$/;
+const KOREAN_QUOTED_END = /(?:라고|다고|냐고|자고)$/;
+const KOREAN_DEPENDENT_WORD = /^(?:누구|누가|누굴|누구를|누구에게|언제|어디|어디서|어디로|어떻게|왜|무엇|무엇을|뭐|뭘|무슨|어떤|어느|몇|얼마나)$/;
+const KOREAN_LINKING_WORD = /^(?:그리고|그러고|그래서|그러면|그러므로|그러니까|하지만|그런데|그렇지만|또는|혹은|그래도|그럼|대해서|위해서|비해서|따라서)$/;
+const KOREAN_ADNOMINAL_END = /(?:하는|되는|있는|없는|했던|됐던|있던|없던|로운|다운|적인|한|된)$/;
+
 // 문장 끝 마침표만 지운다. 숫자와 영문 사이의 마침표는 의미가 있으므로 남긴다.
 // (예: "3.5초"가 "35초"로, "www.naver.com"이 "wwwnavercom"으로 뭉개지던 문제)
 const DECORATIVE_PERIOD = /\.(?![0-9A-Za-z])|(?<![0-9A-Za-z])\./g;
@@ -62,15 +72,43 @@ function findCutAt(text, maxLen) {
   return maxLen;
 }
 
+function findKoreanSpeakerCutAt(text, maxLen) {
+  const boundaries = [];
+  for (let cutAt = 1; cutAt <= maxLen; cutAt += 1) {
+    if (text[cutAt] !== ' ') continue;
+    const word = text.slice(0, cutAt).match(/\S+$/)?.[0] ?? '';
+    boundaries.push({ cutAt, word });
+  }
+
+  const latest = (predicate) => boundaries.findLast(({ word }) => predicate(word))?.cutAt;
+  const dependent = (word) => KOREAN_QUOTED_END.test(word)
+    || KOREAN_DEPENDENT_WORD.test(word) || KOREAN_LINKING_WORD.test(word)
+    || KOREAN_ADNOMINAL_END.test(word);
+
+  return latest((word) => SENTENCE_PUNCTUATION.test(word))
+    ?? latest((word) => !dependent(word) && KOREAN_SENTENCE_END.test(word))
+    ?? latest((word) => !dependent(word)
+      && (KOREAN_CLAUSE_END.test(word) || CONJUNCTIVE.test(word)))
+    ?? latest((word) => !dependent(word) && POSTPOSITION.test(word))
+    ?? latest((word) => !dependent(word))
+    // 28자 안에 완결 가능한 구문이 없으면 어절은 보존하되 길이 제한을 지킨다.
+    ?? boundaries.at(-1)?.cutAt
+    ?? maxLen;
+}
+
 function splitSegment(segment, maxLen = SUBTITLE_MAX_CHARS) {
   let text = cleanText(segment.text);
   const spk = segment.speaker;
   let start = segment.start;
   const end = segment.end;
   const split = [];
+  const splitKoreanSpeakerText = spk !== undefined && spk !== null && spk !== ''
+    && /[가-힣]/.test(text);
 
   while (text.length > maxLen) {
-    const cutAt = findCutAt(text, maxLen);
+    const cutAt = splitKoreanSpeakerText
+      ? findKoreanSpeakerCutAt(text, maxLen)
+      : findCutAt(text, maxLen);
     const frontText = text.slice(0, cutAt).trimEnd();
     const backText = text.slice(cutAt).trimStart();
     if (!frontText || !backText) break;
@@ -94,8 +132,8 @@ function splitSegment(segment, maxLen = SUBTITLE_MAX_CHARS) {
 }
 
 // 자막 큐가 겹치면 편집 프로그램에서 트랙이 어긋난다. 특히 다화자 동시 발화에서
-// 겹친 구간이 그대로 나온다. 시간순으로 정렬한 뒤 겹침을 잘라내고,
-// 뒤에 빈 시간이 있으면 너무 짧은 큐를 최소 표시 시간까지 늘린다.
+// 겹친 구간이 그대로 나온다. 시간순으로 정렬한 뒤 겹침만 잘라낸다.
+// 실제 발화 뒤의 빈 시간까지 자막 표시를 연장하지 않는다.
 function normalizeCueTimeline(cues) {
   const sorted = [...cues]
     .map((cue) => ({ ...cue, end: Math.max(cue.end, cue.start) }))

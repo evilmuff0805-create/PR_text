@@ -148,9 +148,12 @@ function canMergeAdjacentSegments(left, right) {
   const rightStart = numericValue(right.start);
   const rightEnd = numericValue(right.end);
   const gap = rightStart === null || leftEnd === null ? null : rightStart - leftEnd;
+  // 다화자 자막은 발화가 끝나면 사라져야 한다. 화자가 같더라도 공급자가
+  // 표시한 무음은 합치지 않고, 부동소수점 오차 범위의 연속 발화만 합친다.
+  const maxGap = hasSpeakerLabel(left) ? 0 : MAX_MERGE_GAP_SECONDS;
   return leftStart !== null && leftEnd !== null && leftEnd >= leftStart
     && rightStart !== null && rightEnd !== null && rightEnd >= rightStart
-    && gap !== null && gap >= 0 && gap <= MAX_MERGE_GAP_SECONDS + 1e-9;
+    && gap !== null && gap >= 0 && gap <= maxGap + 1e-9;
 }
 
 export function mergeShortSegments(segments, minChars = MIN_SEGMENT_CHARS) {
@@ -163,8 +166,8 @@ export function mergeShortSegments(segments, minChars = MIN_SEGMENT_CHARS) {
     const text = (segment.text || '').trim();
 
     if (pending) {
-      // 화자와 발화 사이의 짧은 간격까지 같을 때만 합친다.
-      // 긴 무음까지 자막 시간이 늘어나는 것을 막는다.
+      // 다화자는 무음 없이 이어지는 같은 화자의 발화만 합친다.
+      // 일반 전사의 기존 짧은 간격 병합은 유지한다.
       if (canMergeAdjacentSegments(pending, segment)) {
         merged.push({
           ...segment,
