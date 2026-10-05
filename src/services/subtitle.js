@@ -8,6 +8,7 @@ export const DEFAULT_SPEAKER_COLORS = [
 ];
 
 export const SUBTITLE_MAX_CHARS = 28;
+export const SRT_START_MARKER_TEXT = '0~2초 자막 시작 구간입니다!';
 
 // ASS 기준 해상도. Fontsize와 여백은 이 좌표계의 픽셀로 해석된다.
 export const ASS_PLAY_RES_X = 1920;
@@ -135,16 +136,19 @@ function formatASS(seconds) {
 }
 
 export function generateSRT(segments, speakerColors = null) {
-  if (!segments || segments.length === 0) return '';
-  const split = buildCues(segments);
-  return split.map((seg, i) => {
+  // Keep the marker outside dialogue normalization: trimming overlaps would erase
+  // either the two-second marker or speech at the start of the original audio.
+  const marker = `1\n${formatSRT(0)} --> ${formatSRT(2)}\n<font size="48"><b>${SRT_START_MARKER_TEXT}</b></font>`;
+  const split = buildCues(segments ?? []);
+  const dialogue = split.map((seg, i) => {
     let line = seg.text;
     if (speakerColors && seg.speaker !== undefined) {
       const color = speakerColors[String(seg.speaker)] ?? '#FFFFFF';
       line = `<font color="${color}">${line}</font>`;
     }
-    return `${i + 1}\n${formatSRT(seg.start)} --> ${formatSRT(seg.end)}\n${line}`;
-  }).join('\n\n');
+    return `${i + 2}\n${formatSRT(seg.start)} --> ${formatSRT(seg.end)}\n${line}`;
+  });
+  return [marker, ...dialogue].join('\n\n');
 }
 
 export function generateTXT(segments) {

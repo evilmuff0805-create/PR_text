@@ -7,7 +7,11 @@ import {
   parsePasswordRecoveryHash,
   savePasswordRecoverySession,
 } from '../utils/password-recovery.js';
-import { authReturnPathFromSearch, safeAuthReturnPath } from '../utils/auth-navigation.js';
+import {
+  authReturnPathFromSearch,
+  DEFAULT_AUTH_RETURN_PATH,
+  safeAuthReturnPath,
+} from '../utils/auth-navigation.js';
 
 export const AuthContext = createContext(null);
 
@@ -127,7 +131,7 @@ export function AuthProvider({ children, initialLoading = true }) {
     return () => window.removeEventListener('hashchange', applyPasswordRecoveryHash);
   }, [applyPasswordRecoveryHash]);
 
-  const login = async (email, password) => {
+  const login = async (email, password, returnPath = DEFAULT_AUTH_RETURN_PATH) => {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -136,15 +140,17 @@ export function AuthProvider({ children, initialLoading = true }) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
 
-    localStorage.setItem('token', data.token);
-    setToken(data.token);
-
     // 유저 상세 정보(credits 포함) 로드
     const meRes = await fetch('/api/auth/me', {
       headers: { Authorization: `Bearer ${data.token}` },
     });
     const me = await meRes.json();
+    if (!meRes.ok || me.error) throw new Error(me.error || '로그인 정보를 불러오지 못했습니다.');
+
+    localStorage.setItem('token', data.token);
+    setToken(data.token);
     setUser(normalizeUser(me));
+    navigate(safeAuthReturnPath(returnPath), { replace: true });
   };
 
   const signup = async (email, password) => {
@@ -158,11 +164,9 @@ export function AuthProvider({ children, initialLoading = true }) {
     // 회원가입 후 이메일 인증 필요 → 자동 로그인 안 함
   };
 
-  const loginWithGoogle = (returnPath = '/') => {
+  const loginWithGoogle = (returnPath = DEFAULT_AUTH_RETURN_PATH) => {
     const next = safeAuthReturnPath(returnPath);
-    window.location.href = next === '/'
-      ? '/api/auth/google'
-      : `/api/auth/google?next=${encodeURIComponent(next)}`;
+    window.location.href = `/api/auth/google?next=${encodeURIComponent(next)}`;
   };
 
   const clearSession = useCallback(() => {

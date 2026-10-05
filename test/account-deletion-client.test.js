@@ -10,10 +10,10 @@ import {
 test('allows only approved application pages as OAuth return paths', () => {
   assert.equal(safeAuthReturnPath('/settings'), '/settings');
   assert.equal(safeAuthReturnPath('/caption-ideas'), '/caption-ideas');
-  assert.equal(safeAuthReturnPath('https://attacker.example'), '/');
+  assert.equal(safeAuthReturnPath('https://attacker.example'), '/transcribe');
   assert.equal(authReturnPathFromSearch('?next=%2Fsettings'), '/settings');
   assert.equal(authReturnPathFromSearch('?next=%2Fcaption-ideas'), '/caption-ideas');
-  assert.equal(authReturnPathFromSearch('?next=%2F%2Fattacker.example'), '/');
+  assert.equal(authReturnPathFromSearch('?next=%2F%2Fattacker.example'), '/transcribe');
 });
 
 test('renders paid-credit blockers and explicit free-credit consent', async () => {
@@ -29,7 +29,7 @@ test('renders paid-credit blockers and explicit free-credit consent', async () =
   assert.match(settings, /재가입 시 무료 10분 미지급/);
   assert.match(settings, /결제 내역 확인/);
   assert.match(settings, /Google로 다시 인증/);
-  assert.match(authContext, /loginWithGoogle = \(returnPath = '\/'\)/);
+  assert.match(authContext, /loginWithGoogle = \(returnPath = DEFAULT_AUTH_RETURN_PATH\)/);
   assert.match(
     authContext,
     /const returnPath = authReturnPathFromSearch\(window\.location\.search\);[\s\S]*window\.history\.replaceState[\s\S]*navigate\(returnPath/,

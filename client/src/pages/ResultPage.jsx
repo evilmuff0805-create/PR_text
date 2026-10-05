@@ -827,6 +827,7 @@ export default function ResultPage() {
               ))}
             </div>
 
+            <p className="result-tool-note">SRT에는 첫 0~2초 시작 안내 자막이 포함됩니다. 글자 크기는 편집 프로그램에 따라 달라질 수 있습니다.</p>
             {hasSpeakers && (
               <p className="result-tool-note">화자 색상은 SRT와 ASS에 포함됩니다.</p>
             )}

@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useDialogAccessibility } from '../utils/use-dialog-accessibility.js';
+import { DEFAULT_AUTH_RETURN_PATH } from '../utils/auth-navigation.js';
 
-export default function AuthModal({ isOpen, onClose, restoreFocusRef, returnPath = '/' }) {
+export default function AuthModal({ isOpen, onClose, restoreFocusRef, returnPath = DEFAULT_AUTH_RETURN_PATH }) {
   const { login, signup, loginWithGoogle } = useAuth();
   const [mode, setMode] = useState('login'); // 'login' | 'signup' | 'reset'
   const [email, setEmail] = useState('');
@@ -57,7 +58,7 @@ export default function AuthModal({ isOpen, onClose, restoreFocusRef, returnPath
     setLoading(true);
     try {
       if (mode === 'login') {
-        await login(email, password);
+        await login(email, password, returnPath);
         onClose();
       } else if (mode === 'signup') {
         await signup(email, password);

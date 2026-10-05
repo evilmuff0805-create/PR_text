@@ -102,7 +102,7 @@ export default function RedownloadPage() {
         <p className="workspace-kicker">TRANSCRIPTION ARCHIVE</p>
         <h1 className="workspace-title">변환_재다운로드</h1>
         <p className="workspace-description">
-          완료된 변환 기록을 확인하고 자막 파일을 다시 다운로드합니다.
+          완료된 변환 기록을 확인하고 자막 파일을 다시 다운로드합니다. SRT에는 첫 0~2초 시작 안내 자막이 포함됩니다.
         </p>
       </header>
 

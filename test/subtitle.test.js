@@ -13,6 +13,53 @@ const segments = [
   { start: 1.25, end: 2.5, text: '반갑습니다', speaker: 1 },
 ];
 
+// Existing dialogue invariants still apply after the new standalone start cue.
+function dialogueBlocks(srt) {
+  return srt.split('\n\n').slice(1);
+}
+
+test('SRT starts with one large two-second marker even when speech starts later', () => {
+  const input = [{ start: 8.5, end: 10, text: '무음 뒤 첫 대사', speaker: 1 }];
+  const original = structuredClone(input);
+  const blocks = generateSRT(input, { 1: '#39FF14' }).split('\n\n');
+
+  assert.equal(blocks[0], '1\n00:00:00,000 --> 00:00:02,000\n<font size="48"><b>0~2초 자막 시작 구간입니다!</b></font>');
+  assert.equal(blocks[1], '2\n00:00:08,500 --> 00:00:10,000\n<font color="#39FF14">무음 뒤 첫 대사</font>');
+  assert.deepEqual(input, original);
+});
+
+test('SRT marker preserves speech before and across the two-second boundary', () => {
+  const blocks = generateSRT([
+    { start: 0, end: 0.5, text: '첫 대사' },
+    { start: 1, end: 3, text: '2초에 걸친 대사' },
+    { start: 5, end: 6, text: '다음 대사' },
+  ]).split('\n\n');
+
+  assert.equal(blocks.length, 4);
+  assert.match(blocks[0], /00:00:00,000 --> 00:00:02,000/);
+  assert.equal(blocks[1], '2\n00:00:00,000 --> 00:00:00,500\n첫 대사');
+  assert.equal(blocks[2], '3\n00:00:01,000 --> 00:00:03,000\n2초에 걸친 대사');
+  assert.equal(blocks[3], '4\n00:00:05,000 --> 00:00:06,000\n다음 대사');
+});
+
+test('SRT emits its start marker even without usable dialogue', () => {
+  for (const input of [undefined, null, [], [{ start: 0, end: 1, text: ' ' }], [{ start: 0, end: 0, text: '길이 없음' }]]) {
+    const blocks = generateSRT(input).split('\n\n');
+    assert.equal(blocks.length, 1);
+    assert.match(blocks[0], /^1\n00:00:00,000 --> 00:00:02,000\n/);
+    assert.match(blocks[0], /0~2초 자막 시작 구간입니다!/);
+  }
+  assert.equal(generateTXT([]), '');
+  assert.equal(generateASS([]), '');
+});
+
+test('the SRT start marker is not added to TXT or ASS exports', () => {
+  assert.equal(generateTXT(segments), '안녕하세요 반갑습니다');
+  const ass = generateASS(segments);
+  assert.doesNotMatch(ass, /0~2초 자막 시작 구간입니다!/);
+  assert.equal(ass.split('\n').filter((line) => line.startsWith('Dialogue:')).length, 2);
+});
+
 test('generates SRT and TXT with expected text handling', () => {
   const srt = generateSRT(segments, { 0: '#FFFFFF', 1: '#39FF14' });
 
@@ -51,7 +98,7 @@ test('SRT and ASS normalize edited whitespace into one visual line', () => {
   const srt = generateSRT(input);
   const ass = generateASS(input);
 
-  const srtBlock = srt.split('\n');
+  const srtBlock = dialogueBlocks(srt)[0].split('\n');
   assert.equal(srtBlock.length, 3);
   assert.equal(srtBlock[2], '앞줄 뒷줄 마지막 {b1}');
   const dialogue = ass.split('\n').filter((line) => line.startsWith('Dialogue:'));
@@ -83,7 +130,7 @@ test('limits SRT and ASS display text to 28 characters', () => {
   const longSegment = [{ start: 2, end: 14, text, speaker: 0 }];
 
   const srt = generateSRT(longSegment);
-  const srtBlocks = srt.split('\n\n');
+  const srtBlocks = dialogueBlocks(srt);
   const srtTexts = srtBlocks.map((block) => block.split('\n').slice(2).join('\n'));
   assert.ok(srtTexts.length > 1);
   assert.ok(srtTexts.every((line) => line.length <= SUBTITLE_MAX_CHARS));
@@ -99,7 +146,7 @@ test('limits SRT and ASS display text to 28 characters', () => {
 test('keeps Korean words intact when selecting a subtitle line boundary', () => {
   const sentence = '안녕하세요 오늘은 다른 옷을 입고 오셨네요, 너무 예뻐요!';
   const srt = generateSRT([{ start: 0, end: 8, text: sentence }]);
-  const lines = srt.split('\n\n').map((block) => block.split('\n').slice(2).join('\n'));
+  const lines = dialogueBlocks(srt).map((block) => block.split('\n').slice(2).join('\n'));
 
   assert.ok(lines.length > 1);
   assert.ok(lines.every((line) => line.length <= SUBTITLE_MAX_CHARS));
@@ -119,7 +166,7 @@ test('preserves the original timeline when long subtitle text is split', () => {
     text: '긴 자막 분할 테스트 문장입니다 '.repeat(30),
   }];
 
-  const blocks = generateSRT(longSegment).split('\n\n');
+  const blocks = dialogueBlocks(generateSRT(longSegment));
   const ranges = blocks.map((block) => {
     const [, timing] = block.split('\n');
     const [start, end] = timing.split(' --> ').map(parseSrtTime);
@@ -157,7 +204,7 @@ test('short cues preserve their recorded end even when silence follows', () => {
     { start: 0, end: 0.2, text: '네!' },
     { start: 5, end: 6.5, text: '그렇게 하겠습니다' },
   ]);
-  const [first] = srt.split('\n\n').map((block) => {
+  const [first] = dialogueBlocks(srt).map((block) => {
     const [start, end] = block.split('\n')[1].split(' --> ').map(parseSrtTime);
     return { start, end };
   });
@@ -171,7 +218,7 @@ test('a short cue never grows into the next one', () => {
     { start: 0, end: 0.2, text: '네!' },
     { start: 0.4, end: 2, text: '바로 이어지는 말' },
   ]);
-  const ranges = srt.split('\n\n').map((block) => {
+  const ranges = dialogueBlocks(srt).map((block) => {
     const [start, end] = block.split('\n')[1].split(' --> ').map(parseSrtTime);
     return { start, end };
   });
@@ -186,7 +233,7 @@ test('overlapping speaker cues are trimmed so players do not desync', () => {
     { start: 0, end: 4, text: '먼저 말한 사람', speaker: 0 },
     { start: 2, end: 6, text: '끼어든 사람', speaker: 1 },
   ]);
-  const ranges = srt.split('\n\n').map((block) => {
+  const ranges = dialogueBlocks(srt).map((block) => {
     const [start, end] = block.split('\n')[1].split(' --> ').map(parseSrtTime);
     return { start, end };
   });
@@ -202,7 +249,7 @@ test('empty cues never reach the file', () => {
     { start: 1, end: 2, text: '남는 자막' },
   ]);
 
-  assert.equal(srt.split('\n\n').length, 1);
+  assert.equal(dialogueBlocks(srt).length, 1);
   assert.match(srt, /남는 자막/);
 });
 
