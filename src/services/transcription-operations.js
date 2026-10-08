@@ -227,7 +227,7 @@ export function createTranscriptionOperations({
     return { operationId: queued.operation_id, status: queued.status, creditsRemaining: queued.credits_remaining, existing: queued.already_queued };
   }
   async function cleanAudio(operation) {
-    if (!terminal(operation.status)) return;
+    if (!terminal(operation.status) || operation.audio_deleted_at) return;
     const prefix = `${operation.user_id}/${operation.id}`;
     const { data, error } = await bucket.list(prefix, { limit: 100 });
     if (error) throw error;
@@ -363,6 +363,11 @@ export function createTranscriptionOperations({
     }
   }
   let orphanOffset = 0;
+  async function operationExists(id) {
+    const { data, error } = await database.from('transcription_operations').select('id').eq('id', id).maybeSingle();
+    if (error) throw error;
+    return Boolean(data);
+  }
   async function cleanOrphans() {
     const owners = await bucket.list('', { limit: 20, offset: orphanOffset, sortBy: { column: 'name', order: 'asc' } });
     if (owners.error) throw owners.error;
@@ -372,7 +377,7 @@ export function createTranscriptionOperations({
       const folders = await bucket.list(owner.name, { limit: 1000 });
       if (folders.error) throw folders.error;
       for (const folder of folders.data || []) {
-        if (!isTranscriptionOperationId(folder.name) || await row(folder.name)) continue;
+        if (!isTranscriptionOperationId(folder.name) || await operationExists(folder.name)) continue;
         const prefix = owner.name + '/' + folder.name;
         const objects = await bucket.list(prefix, { limit: 100 });
         if (objects.error) throw objects.error;
@@ -391,7 +396,7 @@ export function createTranscriptionOperations({
       const expired = await database.from('transcription_operations').select('id,user_id').eq('status','queued').lt('expires_at',new Date().toISOString()).limit(20);
       if (expired.error) throw expired.error;
       for (const operation of expired.data || []) await cancel(operation.id, operation.user_id);
-      const { data, error } = await database.from('transcription_operations').select('*').in('status', ['completed', 'failed', 'cancelled']).order('audio_deleted_at', { ascending: true, nullsFirst: true }).limit(20);
+      const { data, error } = await database.from('transcription_operations').select('id,user_id,status,audio_deleted_at').in('status', ['completed', 'failed', 'cancelled']).is('audio_deleted_at', null).order('audio_deleted_at', { ascending: true, nullsFirst: true }).limit(20);
       if (error) throw error;
       for (const operation of data || []) await cleanAudio(operation);
       await cleanOrphans();
