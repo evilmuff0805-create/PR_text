@@ -30,6 +30,116 @@ function fixture(options={}) {
   const service=createTranscriptionOperations({database,retryDelay:0,transcribeAudio:async(...args)=>{providerCalls++;return options.transcribe?options.transcribe(...args):{segments:[{text:'test',start:0,end:1}],language:'ko'}},processSegments:async segments=>({segments}),probe:async()=>120});
   return {service,operation,calls,removed,uploads,diagnosticUpdates,options,buffer,providerCalls:()=>providerCalls,finalizations:()=>finalizations};
 }
+function maintenanceFixture({operations=[], owners=[], files={}, listErrors={}, removeError, updateError, existenceError}={}) {
+  const rows=operations.map(operation=>({...operation})), selectCalls=[], lists=[], removed=[], updates=[];
+  const failureState={listErrors:{...listErrors},removeError,updateError,existenceError};
+  const bucket={
+    async list(prefix,options={}) { if(prefix)lists.push(prefix); if(failureState.listErrors[prefix])return {error:Error('list failed')};
+      if(prefix==='')return {data:owners.map(name=>({name}))};
+      if(rows.some(row=>`${row.user_id}/${row.id}`===prefix))return {data:files[prefix]||[]};
+      const owner=owners.find(name=>name===prefix); if(owner)return {data:(files[owner]||[]).map(({name})=>({name}))};
+      return {data:files[prefix]||[]};
+    },
+    async remove(paths) { removed.push(...paths); return failureState.removeError?{error:Error('remove failed')}:{data:paths.map(path=>({name:path.split('/').at(-1)}))}; },
+  };
+  const database={storage:{from:()=>bucket},from(table) {
+    const filters=[], selections={fields:'*'}, sorts=[], query={
+      select(fields='*'){selections.fields=fields;return this;},
+      eq(key,value){filters.push(row=>row[key]===value);return this;},
+      is(key,value){filters.push(row=>row[key]===value);return this;},
+      in(key,values){filters.push(row=>values.includes(row[key]));return this;},
+      lt(key,value){filters.push(row=>row[key]<value);return this;},
+      order(key,options){sorts.push({key,...options});return this;},
+      limit(value){selections.limit=value;return this;},
+      update(values){selections.update=values;return this;},
+      async maybeSingle(){
+        if(table!=='transcription_operations')return {data:null};
+        const candidates=rows.filter(row=>filters.every(filter=>filter(row)));
+        if(failureState.existenceError&&selections.fields==='id')return {error:Error('existence lookup failed')};
+        return {data:candidates[0]?{id:candidates[0].id}:null};
+      },
+      then(resolve,reject) {
+        if(table!=='transcription_operations')return Promise.resolve({data:null,error:null}).then(resolve,reject);
+        if(selections.update) {
+          if(Object.hasOwn(selections.update,'audio_deleted_at'))updates.push({fields:selections.update,filters:selections.fields});
+          if(failureState.updateError&&Object.hasOwn(selections.update,'audio_deleted_at'))return Promise.resolve({data:null,error:Error('update failed')}).then(resolve,reject);
+          for(const row of rows)if(filters.every(filter=>filter(row)))Object.assign(row,selections.update);
+          return Promise.resolve({data:null,error:null}).then(resolve,reject);
+        }
+        if(selections.fields==='id,user_id,status,audio_deleted_at')selectCalls.push({fields:selections.fields,filters:filters.length,limit:selections.limit,order:sorts.map(({key,ascending,nullsFirst})=>({key,ascending,nullsFirst}))});
+        let data=rows.filter(row=>filters.every(filter=>filter(row)));
+        for(const {key,ascending=true,nullsFirst=false} of sorts)data=data.sort((a,b)=>{
+          const av=a[key],bv=b[key]; if(av==null||bv==null)return av==null?(bv==null?0:(nullsFirst?-1:1)):(nullsFirst?1:-1);
+          const compared=av<bv?-1:av>bv?1:0;return ascending?compared:-compared;
+        });
+        if(selections.limit!==undefined)data=data.slice(0,selections.limit);
+        const fields=selections.fields==='*'?null:selections.fields.split(',');
+        return Promise.resolve({data:fields?data.map(row=>Object.fromEntries(fields.map(field=>[field,row[field]]))):data,error:null}).then(resolve,reject);
+      },
+    };
+    return query;
+  },async rpc(name){if(name==='cancel_transcription_operation')return {data:[{updated:true}]};return {data:true};}};
+  return {service:createTranscriptionOperations({database}),rows,selectCalls,lists,removed,updates,failureState};
+}
+
+test('maintenance excludes already cleaned terminal operations and requests only cleanup fields',async()=>{
+  const f=maintenanceFixture({operations:[{id,user_id:user,status:'completed',audio_deleted_at:'2026-01-01'}],owners:[]});
+  await f.service.maintenance();
+  const terminalQuery=f.selectCalls.find(call=>call.limit===20);
+  assert.deepEqual(terminalQuery,{fields:'id,user_id,status,audio_deleted_at',filters:2,limit:20,order:[{key:'audio_deleted_at',ascending:true,nullsFirst:true}]});
+  assert.deepEqual(f.lists,[]);assert.deepEqual(f.removed,[]);assert.deepEqual(f.updates,[]);
+});
+
+test('maintenance cleans a new terminal operation and marks audio deleted',async()=>{
+  const prefix=`${user}/${id}`,f=maintenanceFixture({operations:[{id,user_id:user,status:'completed',audio_deleted_at:null}],owners:[],files:{[prefix]:[{id:'object',name:'0000'}]}});
+  await f.service.maintenance();
+  assert.deepEqual(f.lists,[prefix]);assert.deepEqual(f.removed,[`${prefix}/0000`]);assert.equal(f.rows[0].audio_deleted_at!==null,true);
+  assert.equal(f.updates.filter(update=>update.fields.audio_deleted_at).length,1);
+});
+
+test('maintenance retries storage listing, removal, and database update failures',async()=>{
+  const prefix=`${user}/${id}`;
+  for(const failure of ['list','remove','update']) {
+    const f=maintenanceFixture({operations:[{id,user_id:user,status:'failed',audio_deleted_at:null}],owners:[],files:{[prefix]:[{id:'object',name:'0000'}]},listErrors:failure==='list'?{[prefix]:true}:{},removeError:failure==='remove',updateError:failure==='update'});
+    await assert.rejects(()=>f.service.maintenance());assert.equal(f.rows[0].audio_deleted_at,null);
+    if(failure==='list')assert.deepEqual(f.removed,[]);
+    if(failure==='remove')assert.deepEqual(f.updates,[]);
+    if(failure==='update')assert.equal(f.removed.length,1);
+    if(failure==='list')delete f.failureState.listErrors[prefix];
+    if(failure==='remove')f.failureState.removeError=false;
+    if(failure==='update')f.failureState.updateError=false;
+    await f.service.maintenance();assert.ok(f.rows[0].audio_deleted_at);
+  }
+});
+
+test('maintenance preserves staged, queued, and running operations',async()=>{
+  const f=maintenanceFixture({operations:['staged','queued','running'].map(status=>({id,user_id:user,status,audio_deleted_at:null,expires_at:'2999-01-01'})),owners:[]});
+  await f.service.maintenance();assert.deepEqual(f.lists,[]);assert.deepEqual(f.removed,[]);assert.ok(f.rows.every(row=>row.status!=='cancelled'));
+});
+
+test('maintenance applies terminal filters and the twenty row cleanup limit',async()=>{
+  const eligible=Array.from({length:22},(_,index)=>({id:`c8b1dc79-6f44-4a9d-9e7e-${String(index+1).padStart(12,'0')}`,user_id:user,status:['completed','failed','cancelled'][index%3],audio_deleted_at:null}));
+  const alreadyCleaned={id:'d8b1dc79-6f44-4a9d-9e7e-000000000001',user_id:user,status:'completed',audio_deleted_at:'2026-01-01'};
+  const f=maintenanceFixture({operations:[...eligible,alreadyCleaned,{id:'e8b1dc79-6f44-4a9d-9e7e-000000000001',user_id:user,status:'running',audio_deleted_at:null}],owners:[]});
+  await f.service.maintenance();
+  assert.equal(f.updates.length,20);assert.ok(f.rows.slice(0,20).every(row=>row.audio_deleted_at));
+  assert.ok(f.rows.slice(20).every(row=>row.audio_deleted_at===null||row.audio_deleted_at==='2026-01-01'));
+  assert.equal(f.selectCalls[0].limit,20);assert.equal(f.selectCalls[0].filters,2);
+});
+
+test('orphan cleanup preserves existing operations and removes only old files for missing operations',async()=>{
+  const existing='c8b1dc79-6f44-4a9d-9e7e-0c0f0f6a9de1',missing='d8b1dc79-6f44-4a9d-9e7e-0c0f0f6a9de1',old='2020-01-01T00:00:00.000Z',recent=new Date().toISOString();
+  const existingPrefix=`${user}/${existing}`,missingPrefix=`${user}/${missing}`;
+  const f=maintenanceFixture({operations:[{id:existing,user_id:user,status:'completed',audio_deleted_at:'2026-01-01'}],owners:[user],files:{[user]:[{name:existing},{name:missing}],[existingPrefix]:[{id:'kept',name:'0000',created_at:old}],[missingPrefix]:[{id:'old',name:'0000',created_at:old},{id:'new',name:'0001',created_at:recent}]}});
+  await f.service.maintenance();assert.deepEqual(f.removed,[`${missingPrefix}/0000`]);
+});
+
+test('orphan cleanup stops when operation existence cannot be determined',async()=>{
+  const missing='d8b1dc79-6f44-4a9d-9e7e-0c0f0f6a9de1';
+  const f=maintenanceFixture({owners:[user],files:{[user]:[{name:missing}]},existenceError:true});
+  await assert.rejects(()=>f.service.maintenance(),/existence lookup failed/);assert.deepEqual(f.removed,[]);
+});
+
 test('lost checkpoint and finalize responses do not cause refunds, deletion, or duplicate provider work',async()=>{const f=fixture({checkpointResponseLost:true,finalizeResponseLost:true});await f.service.processNext();assert.equal(f.operation.status,'completed');assert.equal(f.providerCalls(),1);assert.equal(f.finalizations(),1);assert.ok(!f.calls.includes('fail_transcription_operation'));assert.deepEqual(f.removed,[])});
 test('finalize outage resumes from saved checkpoint without retranscribing',async()=>{const f=fixture({finalizeUnavailable:true});await f.service.processNext();assert.equal(f.operation.status,'queued');assert.ok(f.operation.checkpoint_segments);f.options.finalizeUnavailable=false;await f.service.processNext();assert.equal(f.operation.status,'completed');assert.equal(f.providerCalls(),1)});
 test('uncertain checkpoint never refunds or deletes potentially committed work',async()=>{const f=fixture({checkpointUnavailable:true});await f.service.processNext();assert.equal(f.operation.status,'queued');assert.ok(!f.calls.includes('fail_transcription_operation'));assert.deepEqual(f.removed,[])});
