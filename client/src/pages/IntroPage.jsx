@@ -104,7 +104,7 @@ function LandingHeroVideo() {
       disablePictureInPicture
       onError={() => setVideoFailed(true)}
     >
-      <source src="/videos/landing.mp4" type="video/mp4" />
+      <source src="/videos/landing-20261008.mp4" type="video/mp4" />
     </video>
   );
 }
