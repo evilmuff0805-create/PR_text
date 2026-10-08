@@ -94,6 +94,7 @@ function LandingHeroVideo() {
     <video
       ref={videoRef}
       className="landing-hero__media landing-hero__media--video"
+      poster="/images/hero-landing-20261008-desktop.webp"
       autoPlay
       muted
       loop
@@ -181,14 +182,14 @@ export default function IntroPage() {
         <picture className="landing-hero__media landing-hero__media--image" aria-hidden="true">
           <source
             media="(max-width: 768px)"
-            srcSet="/images/hero-editor-mobile.webp"
+            srcSet="/images/hero-landing-20261008-mobile.webp"
             type="image/webp"
           />
           <img
-            src="/images/hero-editor-desktop.webp"
+            src="/images/hero-landing-20261008-desktop.webp"
             alt=""
-            width="1672"
-            height="941"
+            width="1920"
+            height="1080"
             decoding="async"
             fetchpriority="high"
           />

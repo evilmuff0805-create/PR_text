@@ -474,7 +474,12 @@ textarea:focus-visible {
 
 .landing-hero__veil {
   z-index: -1;
-  background: rgba(4, 8, 12, 0.32);
+  background: transparent;
+}
+
+.landing-hero .eyebrow,
+.landing-hero .eyebrow span {
+  color: #111111;
 }
 
 .landing-hero__copy {
@@ -499,32 +504,29 @@ textarea:focus-visible {
 
 .landing-hero h1 {
   margin-top: 14px;
-  color: #ffffff;
+  color: #111111;
   font-size: 2.55rem;
   font-weight: 800;
   line-height: 1.08;
-  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.28);
 }
 
 .landing-hero__statement {
   max-width: 720px;
   margin-top: 22px;
-  color: #ffffff;
+  color: #111111;
   font-size: 3.85rem;
   font-weight: 750;
   line-height: 1.18;
   word-break: keep-all;
-  text-shadow: 0 3px 24px rgba(0, 0, 0, 0.36);
 }
 
 .landing-hero__description {
   max-width: 570px;
   margin-top: 20px;
-  color: rgba(255, 255, 255, 0.82);
+  color: #222222;
   font-size: 1rem;
   line-height: 1.8;
   word-break: keep-all;
-  text-shadow: 0 2px 14px rgba(0, 0, 0, 0.42);
 }
 
 .landing-hero__actions {
@@ -534,24 +536,37 @@ textarea:focus-visible {
   margin-top: 30px;
 }
 
+.landing-hero .button--secondary {
+  background: transparent;
+  border-color: #222222;
+  color: #111111;
+}
+
+.landing-hero .button--secondary:hover,
+.landing-hero .button--secondary:focus-visible {
+  background: transparent;
+  border-color: #111111;
+  color: #111111;
+}
+
 .hero-facts {
   display: grid;
   max-width: 650px;
   margin-top: 42px;
   padding-top: 20px;
-  border-top: 1px solid rgba(255, 255, 255, 0.24);
+  border-top: 1px solid rgba(17, 17, 17, 0.35);
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 18px;
 }
 
 .hero-facts dt {
-  color: rgba(255, 255, 255, 0.58);
+  color: #222222;
   font-size: 0.875rem;
 }
 
 .hero-facts dd {
   margin-top: 5px;
-  color: rgba(255, 255, 255, 0.88);
+  color: #111111;
   font-size: 0.875rem;
   font-weight: 600;
   line-height: 1.45;
