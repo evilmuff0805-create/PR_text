@@ -147,7 +147,21 @@ export async function probeAudioDuration(buffer, originalname) {
   }
 }
 
-async function compressAudio(buffer, originalname) {
+export function buildAudioCompressionArguments(inputPath, outputPath, { diarize = false } = {}) {
+  return [
+    '-i', inputPath,
+    // Avoid forcing mono/16kHz for diarization. The MP3 encoder can still adapt
+    // unsupported source formats, but quiet short replies should not always
+    // pass through the ordinary mono/16kHz/32kbps conversion.
+    ...(diarize
+      ? ['-vn', '-b:a', '128k']
+      : ['-ac', '1', '-ar', '16000', '-b:a', '32k']),
+    '-y',
+    outputPath,
+  ];
+}
+
+async function compressAudio(buffer, originalname, options) {
   const ext = getExtension(originalname) || '.audio';
   const inputPath = createTempPath('stt-input', ext);
   const outputPath = createTempPath('stt-output', '.mp3');
@@ -155,14 +169,7 @@ async function compressAudio(buffer, originalname) {
   try {
     await writeFile(inputPath, buffer);
 
-    await execFileAsync('ffmpeg', [
-      '-i', inputPath,
-      '-ac', '1',
-      '-ar', '16000',
-      '-b:a', '32k',
-      '-y',
-      outputPath,
-    ], { timeout: 120_000 });
+    await execFileAsync('ffmpeg', buildAudioCompressionArguments(inputPath, outputPath, options), { timeout: 120_000 });
 
     const compressed = await readFile(outputPath);
     return compressed;
@@ -196,7 +203,10 @@ export function buildDiarizationRequestOptions({ durationSeconds, signal } = {})
   };
 }
 
-export async function prepareDiarizationAudioForStorage({ buffer, originalname, contentType }) {
+export async function prepareDiarizationAudioForStorage(
+  { buffer, originalname, contentType },
+  { convertAudio = compressAudio } = {},
+) {
   if (!shouldCompressDiarizationAudioForStorage(buffer.length)) {
     return {
       buffer,
@@ -207,7 +217,7 @@ export async function prepareDiarizationAudioForStorage({ buffer, originalname, 
   }
 
   console.log(`[diarization] 대기열 저장 전 오디오만 mp3로 변환합니다. original=${originalname}, inputBytes=${buffer.length}`);
-  const compressed = await compressAudio(buffer, originalname);
+  const compressed = await convertAudio(buffer, originalname, { diarize: true });
   if (shouldCompressDiarizationAudioForStorage(compressed.length)) {
     const error = new Error(`다화자 변환용 오디오 파일이 저장 가능한 크기를 초과했습니다. ${Math.floor(DIARIZATION_MAX_AUDIO_SECONDS / 60)}분 이하 파일로 다시 시도해주세요.`);
     error.code = 'DIARIZATION_STORAGE_LIMIT';
@@ -279,13 +289,14 @@ async function prepareParallelChunks(buffer, originalname, durationSeconds) {
   }
 }
 
-async function createTranscriptionWithFallback({
+export async function createTranscriptionWithFallback({
   buffer,
   originalname,
   params,
   logPrefix,
   requestOptions,
-}) {
+  diarize = false,
+}, { client = openai, convertAudio = compressAudio } = {}) {
   let audioBuffer = buffer;
   let audioName = getSafeAudioName(originalname);
   const timings = { compressionMs: 0, openaiMs: 0, openaiAttempts: [], preconvertedM4a: false };
@@ -293,7 +304,7 @@ async function createTranscriptionWithFallback({
   async function compressWithTiming(sourceBuffer) {
     const startedAt = performance.now();
     try {
-      return await compressAudio(sourceBuffer, originalname);
+      return await convertAudio(sourceBuffer, originalname, { diarize });
     } finally {
       timings.compressionMs += performance.now() - startedAt;
     }
@@ -306,7 +317,7 @@ async function createTranscriptionWithFallback({
     let outcome = 'success';
     try {
       const file = await toFile(sourceBuffer, sourceName);
-      const response = await openai.audio.transcriptions.create(
+      const response = await client.audio.transcriptions.create(
         { ...params, file },
         buildTranscriptionRequestOptions(requestOptions, clientRequestId),
       );
@@ -333,7 +344,7 @@ async function createTranscriptionWithFallback({
   }
 
   try {
-    if (getExtension(originalname) === '.m4a') {
+    if (!diarize && getExtension(originalname) === '.m4a') {
       console.log(`[${logPrefix}] 휴대폰 m4a 호환성을 위해 mp3로 선제 변환합니다. original=${originalname}`);
       audioBuffer = await compressWithTiming(buffer);
       audioName = 'converted.mp3';
@@ -466,6 +477,7 @@ export async function transcribeWithDiarization(
   originalname,
   language,
   { durationSeconds, signal } = {},
+  dependencies,
 ) {
   try {
     const params = {
@@ -485,7 +497,8 @@ export async function transcribeWithDiarization(
       params,
       logPrefix: 'diarize',
       requestOptions: buildDiarizationRequestOptions({ durationSeconds, signal }),
-    });
+      diarize: true,
+    }, dependencies);
 
     const rawSegments = response.segments ?? [];
 

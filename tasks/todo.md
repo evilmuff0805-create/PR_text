@@ -445,3 +445,31 @@
 - Application commit `9d00498` passed 342 tests, production build, both GitHub CI jobs, and production health with the matching commit and homepage HTTP 200.
 - Target Notion page: `39a825f6-6465-818f-9aae-cf2f2c0ade25`.
 - Notion publication remains blocked by missing connector/authentication. Do not mark remote synchronization complete based on local files alone.
+
+
+# 2026-10-11 다화자 누락·화자별 자막 분리
+
+## 이번 범위
+
+- 기존 OpenAI 전사 서비스를 유지한다. 사용자가 추가 서비스 연동보다 누락·분리 수정 우선을 선택했다.
+- 화자 수 직접 지정과 새로운 전사 공급자, DB·정산·작업 상태 변경은 이번 범위에서 제외한다.
+- 실제 고객 음원과 운영 API 요청 없이 로컬 합성 오디오·모의 API로 검증한다.
+
+## 완료 기준
+
+- [x] 동일 시작 시각의 여러 화자 큐가 SRT·ASS에서 삭제되는 문제를 회귀 테스트로 재현한다.
+- [x] 공백 교정 결과와 순수 대사 삭제·추가를 감지하면 해당 줄의 원문·화자·시간을 보존한다.
+- [x] 다른 화자의 짧은 응답은 개별 큐로 유지하고 무음까지 늘리지 않는다.
+- [x] 다화자 M4A는 원본 전송을 우선하고 필요한 변환은 강제 모노·16kHz 대신 128kbps 정책을 적용한다.
+- [x] 대용량 WAV의 채널 평균으로 인한 위상 상쇄를 막고 업로드·메모리 한도를 유지한다.
+- [x] 독립 QA, Node.js 22 전체 테스트, 프로덕션 빌드, diff 검사를 완료한다.
+
+## 현재 검증 근거
+
+- 새 누락 회귀 7개를 수정 전에 실행해 5개 실패를 확인했다(동일 시작, 빈 큐 간섭, 공백·반복 삭제·추가).
+- Node.js 22.23.3에서 최종 전체 테스트 374/374 통과(실패·건너뜀 0), 프로덕션 빌드 68개 모듈 성공, git diff --check 성공. 독립 QA도 통과.
+- FFmpeg 9.0.2 실제 합성 검증: 20분 반대 위상 2채널 WAV → 채널 보존 32kHz WAV 153,600,044B → 128kbps MP3 19,201,580B. 길이 1,200초·2채널·양채널 RMS 약 0.26857 유지.
+- 첫 샌드박스 실행은 로컬 HTTP·realpath 제약으로 실패해 같은 명령을 제한 없이 재실행했다. 실 API 호출과 실제 고객 음원 검증은 하지 않았다.
+- 실제 음성 인식 정확도·인물 동일성은 아직 검증하지 않았다. 이번 수정은 공급자가 이미 누락하거나 잘못 나눈 말을 복원하지 않는다.
+- 이 기록은 로컬 코드·합성 음원 검증 근거다. 검토용 PR·원격 CI는 별도로 확인하며 운영 배포·운영 확인은 수행하지 않았다.
+- 상세 결과: docs/updates/2026-10-11-diarization-preservation.md.

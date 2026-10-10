@@ -10,6 +10,44 @@ function getCorrectionConcurrency() {
   return Math.min(Math.max(configured, 1), 4);
 }
 
+function speechCharacters(text) {
+  return Array.from(String(text ?? '').normalize('NFC').replace(/[^\p{L}\p{N}]/gu, ''));
+}
+
+function isSubsequence(shorter, longer) {
+  let index = 0;
+  for (const character of longer) {
+    if (character === shorter[index]) index += 1;
+  }
+  return index === shorter.length;
+}
+
+function changesRepeatedSpeech(sourceCharacters, candidateCharacters) {
+  const source = sourceCharacters.join('');
+  const candidate = candidateCharacters.join('');
+  const units = new Set();
+  for (const text of [source, candidate]) {
+    for (const match of text.matchAll(/([\p{L}\p{N}]{1,32}?)\1+/gu)) units.add(match[1]);
+  }
+  return [...units].some((unit) => source.split(unit).length !== candidate.split(unit).length);
+}
+
+function preserveSpokenText(original, corrected) {
+  const candidate = corrected.trim();
+  const sourceCharacters = speechCharacters(original);
+  const candidateCharacters = speechCharacters(candidate);
+  // 공백 결과 및 원문에서 글자만 빼거나 더한 교정은 대사 삭제/추가의 명확한
+  // 근거다. 해당 줄만 원문으로 되돌리고 다른 줄의 맞춤법 교정은 유지한다.
+  if (!candidate || (sourceCharacters.length > 0 && candidateCharacters.length === 0)) return original;
+  if (candidateCharacters.length < sourceCharacters.length
+    && isSubsequence(candidateCharacters, sourceCharacters)) return original;
+  if (sourceCharacters.length > 0 && candidateCharacters.length > sourceCharacters.length
+    && isSubsequence(sourceCharacters, candidateCharacters)) return original;
+  // 다른 부분의 맞춤법도 함께 바뀌어도 반복 대사를 줄이거나 늘리지 않는다.
+  if (changesRepeatedSpeech(sourceCharacters, candidateCharacters)) return original;
+  return candidate;
+}
+
 async function correctChunk(chunk, correct) {
   const allText = chunk.map(segment => segment.text).join('\n');
 
@@ -35,7 +73,7 @@ async function correctChunk(chunk, correct) {
     return {
       segments: chunk.map((segment, index) => ({
         ...segment,
-        text: (lines[index] || segment.text).trim(),
+        text: preserveSpokenText(segment.text, lines[index]),
       })),
       outcome: 'success',
       model: corrected.model,

@@ -2,7 +2,7 @@ export const WAV_READ_CHUNK_BYTES = 4 * 1024 * 1024;
 
 const MAX_METADATA_SCAN_BYTES = 16 * 1024 * 1024;
 const MAX_CHUNK_HEADERS = 256;
-const TARGET_SAMPLE_RATE = 16_000;
+const TARGET_SAMPLE_RATES = [48_000, 32_000, 24_000, 16_000];
 
 export class WavOptimizationError extends Error {
   constructor(message, code = 'WAV_OPTIMIZATION_FAILED') {
@@ -162,18 +162,13 @@ function readSample(view, byteOffset, audioFormat, bitsPerSample) {
   return view.getInt32(byteOffset, true) / 2_147_483_648;
 }
 
-function readMonoFrame(view, frameIndex, metadata) {
-  const frameOffset = frameIndex * metadata.blockAlign;
-  let sum = 0;
-  for (let channel = 0; channel < metadata.channels; channel += 1) {
-    sum += readSample(
-      view,
-      frameOffset + channel * metadata.bytesPerSample,
-      metadata.audioFormat,
-      metadata.bitsPerSample,
-    );
-  }
-  return sum / metadata.channels;
+function readChannelFrame(view, frameIndex, channel, metadata) {
+  return readSample(
+    view,
+    frameIndex * metadata.blockAlign + channel * metadata.bytesPerSample,
+    metadata.audioFormat,
+    metadata.bitsPerSample,
+  );
 }
 
 function writeAscii(view, offset, value) {
@@ -182,7 +177,7 @@ function writeAscii(view, offset, value) {
   }
 }
 
-export function createPcmWavHeader({ sampleRate, dataBytes }) {
+export function createPcmWavHeader({ sampleRate, channels = 1, dataBytes }) {
   const buffer = new ArrayBuffer(44);
   const view = new DataView(buffer);
   writeAscii(view, 0, 'RIFF');
@@ -191,10 +186,10 @@ export function createPcmWavHeader({ sampleRate, dataBytes }) {
   writeAscii(view, 12, 'fmt ');
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true);
-  view.setUint16(22, 1, true);
+  view.setUint16(22, channels, true);
   view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
+  view.setUint32(28, sampleRate * channels * 2, true);
+  view.setUint16(32, channels * 2, true);
   view.setUint16(34, 16, true);
   writeAscii(view, 36, 'data');
   view.setUint32(40, dataBytes, true);
@@ -206,24 +201,37 @@ function toPcm16(sample) {
   return Math.round(clamped < 0 ? clamped * 32_768 : clamped * 32_767);
 }
 
-export async function optimizeWavBlob(blob, { maxOutputBytes, onProgress } = {}) {
-  const metadata = await inspectWavBlob(blob);
-  const outputSampleRate = Math.min(metadata.sampleRate, TARGET_SAMPLE_RATE);
-  const inputFramesPerOutput = metadata.sampleRate / outputSampleRate;
-  const outputFrames = Math.ceil(metadata.totalFrames / inputFramesPerOutput);
-  const outputDataBytes = outputFrames * 2;
-  const outputBytes = outputDataBytes + 44;
-
+export function planWavOptimization(metadata, maxOutputBytes) {
   if (!Number.isFinite(maxOutputBytes) || maxOutputBytes <= 44) {
     throw new WavOptimizationError('최적화 파일 크기 제한이 올바르지 않습니다.', 'INVALID_OUTPUT_LIMIT');
   }
-  if (outputBytes > maxOutputBytes) {
-    throw new WavOptimizationError(
-      '최적화 후에도 파일이 150MB를 초과합니다. WAV를 여러 파일로 나눈 뒤 다시 시도해주세요.',
-      'OPTIMIZED_WAV_TOO_LARGE',
-    );
+
+  // Keep every channel: averaging can cancel opposite-phase speech entirely.
+  // Lower the rate only when needed to fit; never remove frames to meet the cap.
+  const sampleRates = [...new Set([
+    Math.min(metadata.sampleRate, TARGET_SAMPLE_RATES[0]),
+    ...TARGET_SAMPLE_RATES.slice(1).filter((sampleRate) => sampleRate <= metadata.sampleRate),
+  ])];
+  for (const outputSampleRate of sampleRates) {
+    const outputFrames = Math.ceil(metadata.totalFrames * outputSampleRate / metadata.sampleRate);
+    const outputDataBytes = outputFrames * metadata.channels * 2;
+    const outputBytes = outputDataBytes + 44;
+    if (outputBytes <= maxOutputBytes) {
+      return { outputSampleRate, outputFrames, outputDataBytes, outputBytes };
+    }
   }
 
+  throw new WavOptimizationError(
+    '최적화 후에도 파일이 150MB를 초과합니다. WAV를 여러 파일로 나눈 뒤 다시 시도해주세요.',
+    'OPTIMIZED_WAV_TOO_LARGE',
+  );
+}
+
+export async function optimizeWavBlob(blob, { maxOutputBytes, onProgress } = {}) {
+  const metadata = await inspectWavBlob(blob);
+  const { outputSampleRate, outputFrames, outputDataBytes } = planWavOptimization(metadata, maxOutputBytes);
+  const inputFramesPerOutput = metadata.sampleRate / outputSampleRate;
+  const outputBlockAlign = metadata.channels * 2;
   const sourceFramesPerBatch = Math.max(
     1,
     Math.floor((WAV_READ_CHUNK_BYTES - (2 * metadata.blockAlign)) / metadata.blockAlign),
@@ -233,6 +241,7 @@ export async function optimizeWavBlob(blob, { maxOutputBytes, onProgress } = {})
     Math.min(131_072, Math.floor(sourceFramesPerBatch / inputFramesPerOutput)),
   );
   const outputParts = [];
+  const weightedChannelSums = new Float64Array(metadata.channels);
 
   onProgress?.(0);
 
@@ -248,7 +257,7 @@ export async function optimizeWavBlob(blob, { maxOutputBytes, onProgress } = {})
       metadata.dataOffset + sourceEnd * metadata.blockAlign,
     ).arrayBuffer();
     const sourceView = new DataView(sourceBuffer);
-    const outputBuffer = new ArrayBuffer((outputEnd - outputStart) * 2);
+    const outputBuffer = new ArrayBuffer((outputEnd - outputStart) * outputBlockAlign);
     const outputView = new DataView(outputBuffer);
 
     for (let outputIndex = outputStart; outputIndex < outputEnd; outputIndex += 1) {
@@ -259,18 +268,27 @@ export async function optimizeWavBlob(blob, { maxOutputBytes, onProgress } = {})
       );
       const firstInputFrame = Math.floor(windowStart);
       const lastInputFrame = Math.ceil(windowEnd);
-      let weightedSum = 0;
+      weightedChannelSums.fill(0);
       let totalWeight = 0;
 
       for (let inputFrame = firstInputFrame; inputFrame < lastInputFrame; inputFrame += 1) {
         const weight = Math.min(windowEnd, inputFrame + 1) - Math.max(windowStart, inputFrame);
         if (weight <= 0) continue;
-        weightedSum += readMonoFrame(sourceView, inputFrame - sourceStart, metadata) * weight;
+        for (let channel = 0; channel < metadata.channels; channel += 1) {
+          weightedChannelSums[channel] += readChannelFrame(
+            sourceView, inputFrame - sourceStart, channel, metadata,
+          ) * weight;
+        }
         totalWeight += weight;
       }
 
-      const sample = totalWeight > 0 ? weightedSum / totalWeight : 0;
-      outputView.setInt16((outputIndex - outputStart) * 2, toPcm16(sample), true);
+      for (let channel = 0; channel < metadata.channels; channel += 1) {
+        const sample = totalWeight > 0 ? weightedChannelSums[channel] / totalWeight : 0;
+        outputView.setInt16(
+          (outputIndex - outputStart) * outputBlockAlign + channel * 2,
+          toPcm16(sample), true,
+        );
+      }
     }
 
     outputParts.push(new Uint8Array(outputBuffer));
@@ -279,6 +297,7 @@ export async function optimizeWavBlob(blob, { maxOutputBytes, onProgress } = {})
 
   const header = createPcmWavHeader({
     sampleRate: outputSampleRate,
+    channels: metadata.channels,
     dataBytes: outputDataBytes,
   });
   const outputBlob = new Blob([header, ...outputParts], { type: 'audio/wav' });
@@ -291,6 +310,7 @@ export async function optimizeWavBlob(blob, { maxOutputBytes, onProgress } = {})
       inputSampleRate: metadata.sampleRate,
       outputSampleRate,
       inputChannels: metadata.channels,
+      outputChannels: metadata.channels,
       durationSeconds: metadata.durationSeconds,
     },
   };

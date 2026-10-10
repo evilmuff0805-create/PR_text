@@ -131,28 +131,35 @@ function splitSegment(segment, maxLen = SUBTITLE_MAX_CHARS) {
   return split;
 }
 
-// 자막 큐가 겹치면 편집 프로그램에서 트랙이 어긋난다. 특히 다화자 동시 발화에서
-// 겹친 구간이 그대로 나온다. 시간순으로 정렬한 뒤 겹침만 잘라낸다.
-// 실제 발화 뒤의 빈 시간까지 자막 표시를 연장하지 않는다.
+// 서로 다른 시작 시간의 겹침은 다음 발화 시작에서 자른다. 같은 시각에
+// 시작한 큐끼리 자르면 앞 화자의 대사가 0초가 되어 사라지므로 각각 보존한다.
+// 실제 발화 뒤의 무음을 채우거나 근거 없는 발화 순서를 만들지 않는다.
 function normalizeCueTimeline(cues) {
-  const sorted = [...cues]
-    .map((cue) => ({ ...cue, end: Math.max(cue.end, cue.start) }))
+  const sorted = cues.map((cue) => ({ ...cue }))
     .sort((a, b) => a.start - b.start || a.end - b.end);
 
-  for (let index = 0; index < sorted.length; index += 1) {
-    const cue = sorted[index];
-    const next = sorted[index + 1];
-    if (!next) break;
-
-    if (cue.end > next.start) cue.end = next.start;
+  for (let index = 0; index < sorted.length;) {
+    let groupEnd = index + 1;
+    while (groupEnd < sorted.length && sorted[groupEnd].start === sorted[index].start) {
+      groupEnd += 1;
+    }
+    const next = sorted[groupEnd];
+    if (next) {
+      for (let groupIndex = index; groupIndex < groupEnd; groupIndex += 1) {
+        if (sorted[groupIndex].end > next.start) sorted[groupIndex].end = next.start;
+      }
+    }
+    index = groupEnd;
   }
 
-  return sorted.filter((cue) => cue.end > cue.start);
+  return sorted;
 }
 
 function buildCues(segments) {
-  return normalizeCueTimeline(segments.flatMap((segment) => splitSegment(segment)))
-    .filter((cue) => cue.text.trim() !== '');
+  // 빈 큐나 길이가 없는 큐가 실제 대사의 끝을 잘라내지 않도록 먼저 제외한다.
+  const cues = segments.flatMap((segment) => splitSegment(segment))
+    .filter((cue) => cue.text.trim() !== '' && cue.end > cue.start);
+  return normalizeCueTimeline(cues);
 }
 
 function formatSRT(seconds) {
