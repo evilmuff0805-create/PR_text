@@ -4308,7 +4308,7 @@ textarea:focus-visible {
 
 .result-segment-time {
   color: var(--text-muted);
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .result-segment-speaker {

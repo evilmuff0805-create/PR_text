@@ -75,9 +75,12 @@ export function mergeChunkSegments(chunkResults) {
       const sourceWords = (Array.isArray(response.words) ? response.words : [])
         .filter((word) => {
           if (!word || typeof word !== 'object') return false;
-          const wordStart = Number(word.start);
-          const wordEnd = Number(word.end);
-          return Number.isFinite(wordStart) && Number.isFinite(wordEnd)
+          // Validate provider numbers before offsetting: Number(null), false,
+          // or an empty string would otherwise become a fabricated zero time.
+          const wordStart = word.start;
+          const wordEnd = word.end;
+          return typeof wordStart === 'number' && typeof wordEnd === 'number'
+            && Number.isFinite(wordStart) && Number.isFinite(wordEnd)
             && wordEnd > wordStart
             && wordStart >= Number(segment.start)
             && wordEnd <= Number(segment.end);

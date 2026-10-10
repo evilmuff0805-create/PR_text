@@ -8,6 +8,7 @@ import {
 } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import { formatSegmentTime } from '../utils/format-segment-time.js';
 import {
   buildSceneText,
   CAPTION_IDEA_MODES,
@@ -62,14 +63,6 @@ function readStoredEdits(logId, segments) {
   } catch {
     return null;
   }
-}
-
-function formatSegmentTime(seconds) {
-  const value = Math.max(0, Number(seconds) || 0);
-  const minutes = Math.floor(value / 60);
-  const wholeSeconds = Math.floor(value % 60);
-  const tenths = Math.floor((value % 1) * 10);
-  return `${String(minutes).padStart(2, '0')}:${String(wholeSeconds).padStart(2, '0')}.${tenths}`;
 }
 
 // ASS 기준 해상도(src/services/subtitle.js와 동일). 글자 크기는 이 좌표계의 픽셀이다.
@@ -828,6 +821,7 @@ export default function ResultPage() {
             </div>
 
             <p className="result-tool-note">SRT에는 첫 0~2초 시작 안내 자막이 포함됩니다. 글자 크기는 편집 프로그램에 따라 달라질 수 있습니다.</p>
+            <p className="result-tool-note">SRT는 밀리초 타임코드로 저장됩니다. 프리미어 시퀀스의 프레임레이트를 원본 영상과 맞춰 주세요.</p>
             {hasSpeakers && (
               <p className="result-tool-note">화자 색상은 SRT와 ASS에 포함됩니다.</p>
             )}

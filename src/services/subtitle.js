@@ -1,3 +1,6 @@
+import { isKoreanDependentPredicateTail, splitKoreanSubtitleText } from './korean-subtitle.js';
+import { alignKoreanSegmentWithWordTimings } from './korean-word-timing.js';
+
 export const DEFAULT_SPEAKER_COLORS = [
   '#FFFFFF', // 0: 흰색
   '#39FF14', // 1: 형광 그린
@@ -102,13 +105,36 @@ function splitSegment(segment, maxLen = SUBTITLE_MAX_CHARS) {
   let start = segment.start;
   const end = segment.end;
   const split = [];
-  const splitKoreanSpeakerText = spk !== undefined && spk !== null && spk !== ''
-    && /[가-힣]/.test(text);
+  const hasSpeaker = spk !== undefined && spk !== null && spk !== '';
+  if (!hasSpeaker && segment.timingSource === 'word'
+    && Array.isArray(segment.wordAlignedCues)
+    && segment.wordAlignedCues.length <= text.length) {
+    // Long jobs keep bounded editor rows and their already validated cues.
+    // Revalidate against the current text/range: edited or stale metadata may
+    // never apply another phrase's timestamps to this text.
+    const aligned = alignKoreanSegmentWithWordTimings({
+      ...segment,
+      sourceWords: segment.wordAlignedCues.map((cue) => (
+        Array.isArray(cue) && cue.length === 3
+          ? { word: cue[2], start: cue[0], end: cue[1] } : null
+      )),
+    }, { maxChars: maxLen });
+    if (aligned.aligned) {
+      return aligned.segments.map((cue) => ({ ...cue, text: cleanText(cue.text), speaker: spk }));
+    }
+  }
+  const splitKoreanSpeakerText = hasSpeaker && /[가-힣]/.test(text);
+  // Plan once per source; recalculating the remaining text for every cue is quadratic.
+  const ordinaryParts = !hasSpeaker && /[가-힣]/.test(text)
+    ? splitKoreanSubtitleText(text, maxLen) : null;
+  let partIndex = 0;
 
   while (text.length > maxLen) {
-    const cutAt = splitKoreanSpeakerText
-      ? findKoreanSpeakerCutAt(text, maxLen)
-      : findCutAt(text, maxLen);
+    const cutAt = ordinaryParts
+      ? ordinaryParts[partIndex++].length
+      : splitKoreanSpeakerText
+        ? findKoreanSpeakerCutAt(text, maxLen)
+        : findCutAt(text, maxLen);
     const frontText = text.slice(0, cutAt).trimEnd();
     const backText = text.slice(cutAt).trimStart();
     if (!frontText || !backText) break;
@@ -131,28 +157,83 @@ function splitSegment(segment, maxLen = SUBTITLE_MAX_CHARS) {
   return split;
 }
 
-// 자막 큐가 겹치면 편집 프로그램에서 트랙이 어긋난다. 특히 다화자 동시 발화에서
-// 겹친 구간이 그대로 나온다. 시간순으로 정렬한 뒤 겹침만 잘라낸다.
-// 실제 발화 뒤의 빈 시간까지 자막 표시를 연장하지 않는다.
+// 서로 다른 시작 시간의 겹침은 다음 발화 시작에서 자른다. 같은 시각에
+// 시작한 큐끼리 자르면 앞 화자의 대사가 0초가 되어 사라지므로 각각 보존한다.
+// 실제 발화 뒤의 무음을 채우거나 근거 없는 발화 순서를 만들지 않는다.
 function normalizeCueTimeline(cues) {
-  const sorted = [...cues]
-    .map((cue) => ({ ...cue, end: Math.max(cue.end, cue.start) }))
+  const sorted = cues.map((cue) => ({ ...cue }))
     .sort((a, b) => a.start - b.start || a.end - b.end);
 
-  for (let index = 0; index < sorted.length; index += 1) {
-    const cue = sorted[index];
-    const next = sorted[index + 1];
-    if (!next) break;
-
-    if (cue.end > next.start) cue.end = next.start;
+  for (let index = 0; index < sorted.length;) {
+    let groupEnd = index + 1;
+    while (groupEnd < sorted.length && sorted[groupEnd].start === sorted[index].start) {
+      groupEnd += 1;
+    }
+    const next = sorted[groupEnd];
+    if (next) {
+      for (let groupIndex = index; groupIndex < groupEnd; groupIndex += 1) {
+        if (sorted[groupIndex].end > next.start) sorted[groupIndex].end = next.start;
+      }
+    }
+    index = groupEnd;
   }
 
-  return sorted.filter((cue) => cue.end > cue.start);
+  return sorted;
+}
+
+function prepareOrdinarySources(segments) {
+  // Source order is the only available ordering for unlabelled equal-start text.
+  const sorted = segments.map((segment) => ({ ...segment }))
+    .sort((a, b) => a.start - b.start);
+  const grouped = [];
+  for (let index = 0; index < sorted.length;) {
+    let groupEnd = index + 1;
+    while (groupEnd < sorted.length && sorted[groupEnd].start === sorted[index].start) groupEnd += 1;
+    const group = sorted.slice(index, groupEnd);
+    grouped.push({
+      ...group[0],
+      end: Math.max(...group.map((segment) => segment.end)),
+      text: group.map((segment) => String(segment.text).replace(/\s+/g, ' ').trim()).join(' '),
+      // Do not repair provider word-aligned text with a character-based estimate.
+      sourceWords: group.some((segment) => Array.isArray(segment.sourceWords)) ? [] : undefined,
+      timingSource: group.some((segment) => segment.timingSource === 'word') ? 'word' : undefined,
+    });
+    index = groupEnd;
+  }
+
+  const continued = [];
+  for (const segment of grouped) {
+    const previous = continued.at(-1);
+    const gap = previous ? segment.start - previous.end : Infinity;
+    // Match the existing ordinary 0.3s merge allowance; diarization never enters here.
+    if (previous && gap >= 0 && gap <= 0.3 + 1e-9
+      && !Array.isArray(previous.sourceWords) && !Array.isArray(segment.sourceWords)
+      && previous.timingSource !== 'word' && segment.timingSource !== 'word'
+      && isKoreanDependentPredicateTail(previous.text, segment.text)) {
+      previous.text = `${previous.text} ${segment.text}`;
+      previous.end = segment.end;
+    } else {
+      continued.push(segment);
+    }
+  }
+
+  // Clip source windows before splitting so later fragments cannot jump past
+  // the next source and interleave its text. Never extend a source into silence.
+  return continued.map((segment, index) => ({
+    ...segment,
+    end: index + 1 < continued.length
+      ? Math.min(segment.end, continued[index + 1].start) : segment.end,
+  }));
 }
 
 function buildCues(segments) {
-  return normalizeCueTimeline(segments.flatMap((segment) => splitSegment(segment)))
-    .filter((cue) => cue.text.trim() !== '');
+  // Invalid sources must not clip valid speech, even before long-text splitting.
+  const usable = segments.filter((segment) => cleanText(segment.text) !== '' && segment.end > segment.start);
+  const ordinary = usable.every(({ speaker }) => speaker === undefined || speaker === null || speaker === '');
+  if (ordinary) return prepareOrdinarySources(usable).flatMap((segment) => splitSegment(segment));
+
+  const cues = usable.flatMap((segment) => splitSegment(segment));
+  return normalizeCueTimeline(cues);
 }
 
 function formatSRT(seconds) {

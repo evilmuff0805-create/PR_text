@@ -1,8 +1,19 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { formatSegmentTime } from '../client/src/utils/format-segment-time.js';
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
+
+test('segment timestamps reveal millisecond gaps and round across second and minute boundaries', () => {
+  assert.equal(formatSegmentTime(1.001), '00:01.001');
+  assert.equal(formatSegmentTime(1.002), '00:01.002');
+  assert.equal(formatSegmentTime(9.9996), '00:10.000');
+  assert.equal(formatSegmentTime(59.9996), '01:00.000');
+  assert.equal(formatSegmentTime(3_600.123), '60:00.123');
+  assert.equal(formatSegmentTime(-1), '00:00.000');
+  assert.equal(formatSegmentTime(Number.NaN), '00:00.000');
+});
 
 test('full-text editing never shifts subtitles onto the wrong timecodes', async () => {
   const page = await read('client/src/pages/ResultPage.jsx');
