@@ -2052,6 +2052,32 @@ textarea:focus-visible {
   padding: 24px 0 64px;
 }
 
+.guide-tutorial {
+  margin-bottom: clamp(24px, 4vw, 32px);
+}
+
+.guide-tutorial__video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: #000;
+}
+
+.guide-tutorial__video:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.guide-tutorial__video:fullscreen {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+
 .info-heading {
   padding-bottom: 24px;
   border-bottom: 1px solid var(--border-color);
