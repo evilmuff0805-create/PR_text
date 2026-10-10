@@ -245,12 +245,12 @@ test('Korean clause splitting preserves the speaker and complete source time spa
   assert.ok(assLines.every((line) => line.includes(',Speaker2,')));
 });
 
-test('Korean clause rules leave unlabelled subtitles and speaker-labelled English unchanged', () => {
+test('ordinary Korean now keeps dependent questions together while English stays unchanged', () => {
   const text = '아니 아빠한테도 전화는 드렸는데 그냥 뭐라고 그러셨더라?';
   for (const speaker of [undefined, null, '']) {
     const lines = dialogueBlocks(generateSRT([{ start: 3, end: 9, text, speaker }]))
       .map((block) => block.split('\n').slice(2).join('\n'));
-    assert.deepEqual(lines, ['아니 아빠한테도 전화는 드렸는데 그냥 뭐라고', '그러셨더라?']);
+    assert.deepEqual(lines, ['아니 아빠한테도 전화는 드렸는데', '그냥 뭐라고 그러셨더라?']);
   }
 
   const english = { start: 3, end: 9, text: 'We asked about the schedule and where we should meet later.' };

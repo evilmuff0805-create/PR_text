@@ -1,3 +1,5 @@
+import { isKoreanDependentPredicateTail, splitKoreanSubtitleText } from './korean-subtitle.js';
+
 export const DEFAULT_SPEAKER_COLORS = [
   '#FFFFFF', // 0: 흰색
   '#39FF14', // 1: 형광 그린
@@ -102,13 +104,19 @@ function splitSegment(segment, maxLen = SUBTITLE_MAX_CHARS) {
   let start = segment.start;
   const end = segment.end;
   const split = [];
-  const splitKoreanSpeakerText = spk !== undefined && spk !== null && spk !== ''
-    && /[가-힣]/.test(text);
+  const hasSpeaker = spk !== undefined && spk !== null && spk !== '';
+  const splitKoreanSpeakerText = hasSpeaker && /[가-힣]/.test(text);
+  // Plan once per source; recalculating the remaining text for every cue is quadratic.
+  const ordinaryParts = !hasSpeaker && /[가-힣]/.test(text)
+    ? splitKoreanSubtitleText(text, maxLen) : null;
+  let partIndex = 0;
 
   while (text.length > maxLen) {
-    const cutAt = splitKoreanSpeakerText
-      ? findKoreanSpeakerCutAt(text, maxLen)
-      : findCutAt(text, maxLen);
+    const cutAt = ordinaryParts
+      ? ordinaryParts[partIndex++].length
+      : splitKoreanSpeakerText
+        ? findKoreanSpeakerCutAt(text, maxLen)
+        : findCutAt(text, maxLen);
     const frontText = text.slice(0, cutAt).trimEnd();
     const backText = text.slice(cutAt).trimStart();
     if (!frontText || !backText) break;
@@ -155,10 +163,56 @@ function normalizeCueTimeline(cues) {
   return sorted;
 }
 
+function prepareOrdinarySources(segments) {
+  // Source order is the only available ordering for unlabelled equal-start text.
+  const sorted = segments.map((segment) => ({ ...segment }))
+    .sort((a, b) => a.start - b.start);
+  const grouped = [];
+  for (let index = 0; index < sorted.length;) {
+    let groupEnd = index + 1;
+    while (groupEnd < sorted.length && sorted[groupEnd].start === sorted[index].start) groupEnd += 1;
+    const group = sorted.slice(index, groupEnd);
+    grouped.push({
+      ...group[0],
+      end: Math.max(...group.map((segment) => segment.end)),
+      text: group.map((segment) => String(segment.text).replace(/\s+/g, ' ').trim()).join(' '),
+      // Do not repair provider word-aligned text with a character-based estimate.
+      sourceWords: group.some((segment) => Array.isArray(segment.sourceWords)) ? [] : undefined,
+    });
+    index = groupEnd;
+  }
+
+  const continued = [];
+  for (const segment of grouped) {
+    const previous = continued.at(-1);
+    const gap = previous ? segment.start - previous.end : Infinity;
+    // Match the existing ordinary 0.3s merge allowance; diarization never enters here.
+    if (previous && gap >= 0 && gap <= 0.3 + 1e-9
+      && !Array.isArray(previous.sourceWords) && !Array.isArray(segment.sourceWords)
+      && isKoreanDependentPredicateTail(previous.text, segment.text)) {
+      previous.text = `${previous.text} ${segment.text}`;
+      previous.end = segment.end;
+    } else {
+      continued.push(segment);
+    }
+  }
+
+  // Clip source windows before splitting so later fragments cannot jump past
+  // the next source and interleave its text. Never extend a source into silence.
+  return continued.map((segment, index) => ({
+    ...segment,
+    end: index + 1 < continued.length
+      ? Math.min(segment.end, continued[index + 1].start) : segment.end,
+  }));
+}
+
 function buildCues(segments) {
-  // 빈 큐나 길이가 없는 큐가 실제 대사의 끝을 잘라내지 않도록 먼저 제외한다.
-  const cues = segments.flatMap((segment) => splitSegment(segment))
-    .filter((cue) => cue.text.trim() !== '' && cue.end > cue.start);
+  // Invalid sources must not clip valid speech, even before long-text splitting.
+  const usable = segments.filter((segment) => cleanText(segment.text) !== '' && segment.end > segment.start);
+  const ordinary = usable.every(({ speaker }) => speaker === undefined || speaker === null || speaker === '');
+  if (ordinary) return prepareOrdinarySources(usable).flatMap((segment) => splitSegment(segment));
+
+  const cues = usable.flatMap((segment) => splitSegment(segment));
   return normalizeCueTimeline(cues);
 }
 

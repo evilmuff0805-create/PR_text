@@ -104,6 +104,7 @@ export default function RedownloadPage() {
         <p className="workspace-description">
           완료된 변환 기록을 확인하고 자막 파일을 다시 다운로드합니다. SRT에는 첫 0~2초 시작 안내 자막이 포함됩니다.
         </p>
+        <p className="result-tool-note">SRT는 밀리초 타임코드로 저장됩니다. 프리미어 시퀀스의 프레임레이트를 원본 영상과 맞춰 주세요.</p>
       </header>
 
       {loading && <p className="usage-state" role="status">불러오는 중...</p>}
