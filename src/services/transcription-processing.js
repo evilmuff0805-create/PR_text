@@ -1,6 +1,8 @@
 import { performance } from 'perf_hooks';
 import { processSegmentsWithTiming } from './postprocess.js';
 import { normalizeLanguage } from './language.js';
+import { alignKoreanSegmentWithWordTimings } from './korean-word-timing.js';
+import { isKoreanDependentPredicateTail } from './korean-subtitle.js';
 
 // Provider hallucination loops are uniform, low-confidence repeats from one decode window.
 // These thresholds intentionally leave ordinary or weakly evidenced repetition untouched.
@@ -140,8 +142,13 @@ export function removeCommas(text) {
 export const MIN_SEGMENT_CHARS = 5;
 const MAX_MERGE_GAP_SECONDS = 0.3;
 
-function canMergeAdjacentSegments(left, right) {
+function canMergeAdjacentSegments(left, right, preserveWordTimings) {
   if (left.speaker !== right.speaker) return false;
+  // Keep timed ordinary responses separate. Merging here would discard words
+  // and make a brief response cover the silence before the following source.
+  if (preserveWordTimings && !hasSpeakerLabel(left) && [left, right].some((segment) => (
+    Array.isArray(segment.sourceWords) && segment.sourceWords.length > 0
+  ))) return false;
 
   const leftStart = numericValue(left.start);
   const leftEnd = numericValue(left.end);
@@ -156,7 +163,7 @@ function canMergeAdjacentSegments(left, right) {
     && gap !== null && gap >= 0 && gap <= maxGap + 1e-9;
 }
 
-export function mergeShortSegments(segments, minChars = MIN_SEGMENT_CHARS) {
+export function mergeShortSegments(segments, minChars = MIN_SEGMENT_CHARS, { preserveWordTimings = false } = {}) {
   if (!Array.isArray(segments) || segments.length === 0) return [];
 
   const merged = [];
@@ -168,7 +175,7 @@ export function mergeShortSegments(segments, minChars = MIN_SEGMENT_CHARS) {
     if (pending) {
       // 다화자는 무음 없이 이어지는 같은 화자의 발화만 합친다.
       // 일반 전사의 기존 짧은 간격 병합은 유지한다.
-      if (canMergeAdjacentSegments(pending, segment)) {
+      if (canMergeAdjacentSegments(pending, segment, preserveWordTimings)) {
         merged.push({
           ...segment,
           start: pending.start,
@@ -254,7 +261,76 @@ export function refineEnglishSegmentsWithWordTimings(segments) {
   return segments.flatMap(refineEnglishSegment);
 }
 
-export async function processTranscriptionSegments(segments, language) {
+export function refineKoreanSegmentsWithWordTimings(segments) {
+  // Download/edit payloads accept at most 5,000 source rows. Keep exact cue
+  // times in a compact source row when word/pause splitting exceeds that cap.
+  const maxFlatCues = 5_000;
+  const refined = [];
+  const compact = [];
+  let compactTextLength = segments.reduce((total, segment) => total + String(segment.text ?? '').length, 0);
+  let needsCompact = false;
+  const appendFlat = (cues, wordTimed = false) => {
+    if (needsCompact) return;
+    if (refined.length + cues.length > maxFlatCues) {
+      needsCompact = true;
+      refined.length = 0;
+      return;
+    }
+    refined.push(...(wordTimed ? cues.map((cue) => ({ ...cue, timingSource: 'word' })) : cues));
+  };
+  for (let index = 0; index < segments.length; index += 1) {
+    const source = segments[index];
+    if (hasSpeakerLabel(source)) {
+      appendFlat([source]);
+      compact.push(source);
+      continue;
+    }
+
+    const aligned = alignKoreanSegmentWithWordTimings(source);
+    let cues = aligned.segments;
+    let sourceText = source.text;
+    const next = segments[index + 1];
+    // Repair a provider-separated dependent predicate only when BOTH sources
+    // have complete, matching word timings and speech itself is adjacent.
+    // Each source participates in at most one such join; no timing is invented.
+    if (aligned.aligned && next && !hasSpeakerLabel(next)
+      && isKoreanDependentPredicateTail(source.text, next.text)) {
+      const following = alignKoreanSegmentWithWordTimings(next);
+      const gap = following.aligned
+        ? following.segments[0].start - cues.at(-1).end : Infinity;
+      const joinedText = `${String(source.text).trim()} ${String(next.text).trim()}`;
+      const addedChars = joinedText.length - String(source.text).length - String(next.text).length;
+      // A compact row must also fit the existing 10,000-character edit limit.
+      if (gap >= 0 && gap <= MAX_MERGE_GAP_SECONDS + 1e-9 && joinedText.length <= 10_000
+        && compactTextLength + addedChars <= 1_000_000) {
+        const joined = alignKoreanSegmentWithWordTimings({
+          ...source,
+          end: Math.max(Number(source.end), Number(next.end)),
+          text: joinedText,
+          sourceWords: [...source.sourceWords, ...next.sourceWords],
+        });
+        if (joined.aligned) {
+          cues = joined.segments;
+          sourceText = joinedText;
+          compactTextLength += addedChars;
+          index += 1;
+        }
+      }
+    }
+    appendFlat(cues, aligned.aligned);
+    compact.push(aligned.aligned ? {
+      start: cues[0].start,
+      end: cues.at(-1).end,
+      text: sourceText,
+      timingSource: 'word',
+      // Lossless tuples avoid repeating JSON keys for every cue in long jobs.
+      wordAlignedCues: cues.map(({ start, end, text }) => [start, end, text]),
+    } : source);
+  }
+  return needsCompact ? compact : refined;
+}
+
+export async function processTranscriptionSegments(segments, language, { correct } = {}) {
   // 교정 전에 합친다. GPT가 잘린 조각이 아니라 온전한 문장을 보게 된다.
   const repetitionFilteredSegments = filterWhisperRepetitionLoops(segments);
   if (repetitionFilteredSegments.length !== segments.length) {
@@ -267,13 +343,15 @@ export async function processTranscriptionSegments(segments, language) {
   // 합치면 무음까지 하나의 자막으로 늘어날 수 있으므로 이 단계에서는 병합하지 않는다.
   const filteredSegments = normalizeLanguage(language) === 'en'
     ? refineEnglishSegmentsWithWordTimings(nonSilentSegments)
-    : mergeShortSegments(nonSilentSegments);
+    : mergeShortSegments(nonSilentSegments, MIN_SEGMENT_CHARS, {
+      preserveWordTimings: ['ko', 'unknown'].includes(normalizeLanguage(language)),
+    });
   const correctionStartedAt = performance.now();
   let processedSegments;
   let correctionTimings;
 
   try {
-    const correctionResult = await processSegmentsWithTiming(filteredSegments, language);
+    const correctionResult = await processSegmentsWithTiming(filteredSegments, language, correct);
     processedSegments = correctionResult.segments;
     correctionTimings = correctionResult.timings;
   } catch (error) {
@@ -281,8 +359,14 @@ export async function processTranscriptionSegments(segments, language) {
     processedSegments = filteredSegments;
   }
 
+  // Korean spelling/spacing correction retains sourceWords. Validate against
+  // the final text before using them; changed speech falls back to source time.
+  const timedSegments = normalizeLanguage(language) === 'ko'
+    || correctionTimings?.languageDecision === 'inferred_from_hangul_segments'
+    ? refineKoreanSegmentsWithWordTimings(processedSegments) : processedSegments;
+
   return {
-    segments: processedSegments.map(({ sourceWords: ignoredSourceWords, ...segment }) => ({
+    segments: timedSegments.map(({ sourceWords: ignoredSourceWords, ...segment }) => ({
       ...segment,
       text: normalizeLanguage(language) === 'en' ? segment.text : removeCommas(segment.text),
     })),

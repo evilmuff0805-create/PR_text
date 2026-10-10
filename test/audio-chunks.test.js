@@ -70,3 +70,21 @@ test('malformed chunk words leave the retained source segment available for fall
     assert.equal(segment.text, 'Keep original text.');
   }
 });
+
+test('chunk offsets never turn malformed word times into valid zero timestamps', () => {
+  for (const value of [null, '', false, '0.1', NaN, Infinity]) {
+    for (const field of ['start', 'end']) {
+      const [segment] = mergeChunkSegments([{
+        chunk: { ownedStart: 175, ownedEnd: 185, inputStart: 175 },
+        response: {
+          segments: [{ start: 0, end: 2, text: '자료를 확인합니다' }],
+          words: [{ word: '자료를', start: 0.1, end: 0.3, [field]: value }],
+        },
+      }]);
+      assert.deepEqual(segment.sourceWords, [], `${field}=${String(value)}`);
+      assert.equal(segment.text, '자료를 확인합니다');
+      assert.equal(segment.start, 175);
+      assert.equal(segment.end, 177);
+    }
+  }
+});

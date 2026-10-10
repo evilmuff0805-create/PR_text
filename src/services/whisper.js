@@ -27,7 +27,7 @@ const PARALLEL_TRANSCRIBE_CONCURRENCY = 2;
 const PARALLEL_TRANSCRIBE_ENABLED = process.env.PARALLEL_TRANSCRIBE_ENABLED !== 'false';
 
 export function requestsWordTimings(language) {
-  return !language || normalizeLanguage(language) === 'en';
+  return !language || ['en', 'ko'].includes(normalizeLanguage(language));
 }
 
 export function attachSourceWords(segments, words) {
@@ -35,9 +35,10 @@ export function attachSourceWords(segments, words) {
     ...segment,
     sourceWords: (Array.isArray(words) ? words : []).filter((word) => {
       if (!word || typeof word !== 'object') return false;
-      const wordStart = Number(word.start);
-      const wordEnd = Number(word.end);
-      return Number.isFinite(wordStart) && Number.isFinite(wordEnd)
+      const wordStart = word.start;
+      const wordEnd = word.end;
+      return typeof wordStart === 'number' && typeof wordEnd === 'number'
+        && Number.isFinite(wordStart) && Number.isFinite(wordEnd)
         && wordEnd > wordStart
         && wordStart >= Number(segment.start)
         && wordEnd <= Number(segment.end);

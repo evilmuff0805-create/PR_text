@@ -1,4 +1,5 @@
 import { isKoreanDependentPredicateTail, splitKoreanSubtitleText } from './korean-subtitle.js';
+import { alignKoreanSegmentWithWordTimings } from './korean-word-timing.js';
 
 export const DEFAULT_SPEAKER_COLORS = [
   '#FFFFFF', // 0: 흰색
@@ -105,6 +106,23 @@ function splitSegment(segment, maxLen = SUBTITLE_MAX_CHARS) {
   const end = segment.end;
   const split = [];
   const hasSpeaker = spk !== undefined && spk !== null && spk !== '';
+  if (!hasSpeaker && segment.timingSource === 'word'
+    && Array.isArray(segment.wordAlignedCues)
+    && segment.wordAlignedCues.length <= text.length) {
+    // Long jobs keep bounded editor rows and their already validated cues.
+    // Revalidate against the current text/range: edited or stale metadata may
+    // never apply another phrase's timestamps to this text.
+    const aligned = alignKoreanSegmentWithWordTimings({
+      ...segment,
+      sourceWords: segment.wordAlignedCues.map((cue) => (
+        Array.isArray(cue) && cue.length === 3
+          ? { word: cue[2], start: cue[0], end: cue[1] } : null
+      )),
+    }, { maxChars: maxLen });
+    if (aligned.aligned) {
+      return aligned.segments.map((cue) => ({ ...cue, text: cleanText(cue.text), speaker: spk }));
+    }
+  }
   const splitKoreanSpeakerText = hasSpeaker && /[가-힣]/.test(text);
   // Plan once per source; recalculating the remaining text for every cue is quadratic.
   const ordinaryParts = !hasSpeaker && /[가-힣]/.test(text)
@@ -178,6 +196,7 @@ function prepareOrdinarySources(segments) {
       text: group.map((segment) => String(segment.text).replace(/\s+/g, ' ').trim()).join(' '),
       // Do not repair provider word-aligned text with a character-based estimate.
       sourceWords: group.some((segment) => Array.isArray(segment.sourceWords)) ? [] : undefined,
+      timingSource: group.some((segment) => segment.timingSource === 'word') ? 'word' : undefined,
     });
     index = groupEnd;
   }
@@ -189,6 +208,7 @@ function prepareOrdinarySources(segments) {
     // Match the existing ordinary 0.3s merge allowance; diarization never enters here.
     if (previous && gap >= 0 && gap <= 0.3 + 1e-9
       && !Array.isArray(previous.sourceWords) && !Array.isArray(segment.sourceWords)
+      && previous.timingSource !== 'word' && segment.timingSource !== 'word'
       && isKoreanDependentPredicateTail(previous.text, segment.text)) {
       previous.text = `${previous.text} ${segment.text}`;
       previous.end = segment.end;
