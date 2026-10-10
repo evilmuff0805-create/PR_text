@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { guideSteps as steps } from '../content/guide-steps.js';
 
 const manualPages = [
@@ -20,8 +21,33 @@ const manualPages = [
 }));
 
 export default function GuidePage() {
+  const { key: locationKey, hash } = useLocation();
+
+  // 같은 메뉴 재클릭도 처리하되 설명서 등 명시적인 앵커 이동은 유지한다.
+  useEffect(() => {
+    if (hash) return;
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [locationKey, hash]);
+
   return (
     <div className="info-page">
+      <section className="guide-tutorial" aria-label="사용법 영상">
+        <video
+          className="guide-tutorial__video"
+          controls
+          playsInline
+          preload="metadata"
+          poster="/images/pr-text-tutorial-poster.webp"
+          width="1920"
+          height="1080"
+          aria-label="PR-text 사용법 튜토리얼"
+        >
+          <source src="/videos/pr-text-tutorial.mp4" type="video/mp4" />
+          이 브라우저는 영상 재생을 지원하지 않습니다.{' '}
+          <a href="/videos/pr-text-tutorial.mp4">영상 파일 열기</a>
+        </video>
+      </section>
+
       <header className="info-heading" aria-labelledby="guide-title">
         <p className="workspace-kicker">USER GUIDE</p>
         <div className="info-heading__row">
