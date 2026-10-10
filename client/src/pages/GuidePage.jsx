@@ -1,4 +1,5 @@
-import { Link } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { guideSteps as steps } from '../content/guide-steps.js';
 
 const manualPages = [
@@ -20,6 +21,14 @@ const manualPages = [
 }));
 
 export default function GuidePage() {
+  const { key: locationKey, hash } = useLocation();
+
+  // 같은 메뉴 재클릭도 처리하되 설명서 등 명시적인 앵커 이동은 유지한다.
+  useEffect(() => {
+    if (hash) return;
+    window.scrollTo({ top: 0, left: 0, behavior: 'instant' });
+  }, [locationKey, hash]);
+
   return (
     <div className="info-page">
       <section className="guide-tutorial" aria-label="사용법 영상">
