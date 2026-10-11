@@ -7,7 +7,7 @@ import express from 'express';
 import { indexNowKey, indexNowKeyPath, publicPages } from '../client/src/public-pages.js';
 import { addStaticSiteRoutes } from '../src/static-site.js';
 
-const privatePaths = ['/transcribe', '/caption-ideas', '/result', '/payment/success', '/payment/fail', '/usage', '/redownload', '/settings', '/auth/callback', '/auth/reset', '/reset-password'];
+const privatePaths = ['/transcribe', '/caption-ideas', '/result', '/payment/success', '/payment/fail', '/usage', '/redownload', '/settings', '/admin/outreach', '/auth/callback', '/auth/reset', '/reset-password'];
 
 async function startStaticTestServer(t) {
   const distPath = await mkdtemp(join(tmpdir(), 'pr-text-static-'));

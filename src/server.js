@@ -11,6 +11,8 @@ import transcriptionOperationsRouter from './routes/transcription-operations.js'
 import downloadRouter from './routes/download.js';
 import translateRouter from './routes/translate.js';
 import captionIdeasRouter from './routes/caption-ideas.js';
+import outreachRouter, { outreachSecurityHeaders, outreachErrorHandler } from './routes/outreach.js';
+import { startOutreachWorker, stopOutreachWorker } from './services/outreach-worker.js';
 import { requestObservability, apiErrorHandler } from './middleware/observability.js';
 import { startDiarizationJobWorker, stopDiarizationJobWorker } from './services/diarization-jobs.js';
 import { startTranscriptionOperationWorker, stopTranscriptionOperationWorker } from './services/transcription-operations.js';
@@ -72,6 +74,7 @@ app.use(cors({
   },
   credentials: true,
 }));
+app.use('/api/outreach', outreachSecurityHeaders, express.json({ limit: '1mb' }));
 app.use(express.json({ limit: '50mb' }));
 
 // Rate limit 공통 응답
@@ -176,6 +179,8 @@ app.use('/api/download', downloadLimiter, downloadRouter);
 app.use('/api/translate', translateLimiter, translateRouter);
 app.post('/api/caption-ideas', captionIdeasLimiter);
 app.use('/api/caption-ideas', generalLimiter, captionIdeasRouter);
+app.use('/api/outreach', generalLimiter, outreachRouter);
+app.use('/api/outreach', outreachErrorHandler);
 app.use(apiErrorHandler);
 
 // Unknown API paths must not fall through to the SPA HTML fallback.
@@ -198,6 +203,7 @@ const server = app.listen(PORT, () => {
   startCaptionIdeaMaintenance();
   startPaymentOrderMaintenance();
   startCreditLedgerMaintenance();
+  startOutreachWorker();
   startIndexNowSubmission();
 });
 
@@ -213,8 +219,8 @@ async function shutdown(signal) {
   server.close();
 
   try {
-    const workerNames = ['diarization', 'ordinary', 'silence_observation'];
-    const releases = await Promise.allSettled([stopDiarizationJobWorker(), stopTranscriptionOperationWorker(), stopSilenceObservation()]);
+    const workerNames = ['diarization', 'ordinary', 'silence_observation', 'outreach'];
+    const releases = await Promise.allSettled([stopDiarizationJobWorker(), stopTranscriptionOperationWorker(), stopSilenceObservation(), stopOutreachWorker()]);
     releases.forEach((result, index) => { if (result.status === 'rejected') console.error('[shutdown.worker_release_failed]', JSON.stringify({ worker: workerNames[index], code: result.reason?.code || result.reason?.name })); });
   } catch (error) {
     console.error(`[shutdown] 다화자 worker 정리 실패: ${error.message}`);

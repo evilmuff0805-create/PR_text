@@ -11,10 +11,10 @@ const { default: authRouter, safeOAuthReturnPath } = await import('../src/routes
 const { supabase } = await import('../src/lib/supabase.js');
 
 test('server OAuth defaults to the subtitle workspace while rejecting arbitrary destinations', () => {
-  for (const value of [undefined, null, '', '/', '/auth/reset', 'https://attacker.example', '//attacker.example', ['/settings']]) {
+  for (const value of [undefined, null, '', '/', '/auth/reset', 'https://attacker.example', '//attacker.example', ['/settings'], '/admin/outreach/', '/admin/outreach/other', '/admin/outreach?next=https://attacker.example']) {
     assert.equal(safeOAuthReturnPath(value), '/transcribe');
   }
-  for (const value of ['/transcribe', '/settings', '/caption-ideas']) {
+  for (const value of ['/transcribe', '/settings', '/caption-ideas', '/admin/outreach']) {
     assert.equal(safeOAuthReturnPath(value), value);
   }
 });
@@ -36,6 +36,9 @@ test('Google OAuth callbacks use the workspace default and preserve explicit acc
       ['?next=%2Ftranscribe', '/transcribe'],
       ['?next=%2Fsettings', '/settings'],
       ['?next=%2Fcaption-ideas', '/caption-ideas'],
+      ['?next=%2Fadmin%2Foutreach', '/admin/outreach'],
+      ['?next=%2Fadmin%2Foutreach%2Fother', '/transcribe'],
+      ['?next=%2Fadmin%2Foutreach%3Fnext%3Dhttps%3A%2F%2Fattacker.example', '/transcribe'],
       ['?next=https%3A%2F%2Fattacker.example', '/transcribe'],
     ]) {
       const response = await fetch(`http://127.0.0.1:${server.address().port}/api/auth/google${search}`, { redirect: 'manual' });

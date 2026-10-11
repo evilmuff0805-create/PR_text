@@ -30,7 +30,7 @@ export default function PrivacyPage() {
           </div>
           <Link className="button button--secondary" to="/support">개인정보 문의</Link>
         </div>
-        <p className="info-heading__meta">시행일: 2026년 7월 22일</p>
+        <p className="info-heading__meta">시행일: 2026년 10월 11일</p>
       </header>
 
       <div className="document-layout">
@@ -55,6 +55,10 @@ export default function PrivacyPage() {
               <li>이용 정보: 사용 크레딧, 변환 횟수와 시간, 이용 시각</li>
               <li>자막 아이디어 정보: 선택한 유형, 생성 결과, 모델 사용량과 처리 시각</li>
               <li>결제 정보: 주문 번호, 상품명, 결제 금액, 결제 상태 및 결제 식별값</li>
+              <li>
+                홍보 연락처 정보: 관리자가 등록한 업무용 이메일과 공개 출처, 채널 정보, 광고 수신 동의의
+                근거와 일시, 발송 결과 및 수신거부 기록
+              </li>
               <li>
                 무료 혜택 중복 지급 방지 정보: 이메일 또는 OAuth 제공자 식별자의 원문을 저장하지 않는
                 서버 HMAC 식별값
@@ -90,6 +94,16 @@ export default function PrivacyPage() {
                 동일 로그인 계정에 신규 무료 혜택이 반복 지급되는 것을 방지하기 위한 HMAC 식별값은
                 무료 혜택 운영 기간 동안만 보관하며, 혜택 종료 후 지체 없이 삭제합니다.
               </li>
+              <li>
+                홍보 연락처는 채널 후보 관리와 수신 동의가 확인된 서비스 안내에 사용합니다. 공개된 이메일의
+                등록과 광고 수신 동의는 별도로 관리하며, 회원가입만으로 홍보 메일 수신에 동의한 것으로
+                처리하지 않습니다. 수신거부 이후에는 해당 주소로 홍보 메일을 발송하지 않습니다.
+              </li>
+              <li>
+                YouTube API로 조회해 저장한 채널 정보는 확인 후 30일을 기준으로 갱신·정리합니다.
+                만료된 정보는 발송에 사용하지 않으며 정기 작업으로 삭제합니다. 이메일, 동의 근거와
+                발송·수신거부 기록은 이와 별도로 관리합니다.
+              </li>
             </ul>
           </section>
 
@@ -97,17 +111,24 @@ export default function PrivacyPage() {
             <SectionHeading section={sections[2]} />
             <p>
               서비스 제공을 위해 아래 외부 서비스의 인증, 데이터베이스, 음성 변환 및 결제 기능을 이용합니다.
-              개인정보를 판매하거나 광고 목적으로 제공하지 않습니다.
+              개인정보를 판매하거나 외부 서비스의 독자적인 광고에 사용하도록 제공하지 않습니다.
             </p>
             <ul>
               <li>Supabase: 회원 인증, 계정 및 서비스 이용 기록 저장</li>
               <li>OpenAI: 업로드 음성의 텍스트 변환, 화자 구분 및 자막 아이디어 생성 처리</li>
               <li>Toss Payments: 결제 승인 및 결제 결과 확인</li>
+              <li>Naver 메일: 홍보 수신 동의가 확인된 업무용 이메일로 서비스 안내 발송</li>
+              <li>YouTube Data API: 관리자가 검색한 공개 채널의 이름, 국가와 구독자 수 확인</li>
             </ul>
             <p>
               외부 서비스는 각 서비스 제공에 필요한 범위에서만 정보를 처리합니다. 결제수단의 상세 정보는
               PR_text 서버에 저장하지 않습니다. 자막 아이디어 입력문은 생성 처리를 위해 OpenAI에 전송되며,
               외부 서비스에서의 처리는 해당 제공자의 데이터 처리 기준을 따릅니다.
+            </p>
+            <p>
+              채널 검색은 YouTube API 서비스를 이용합니다. 해당 서비스에는{' '}
+              <a href="https://www.youtube.com/t/terms" target="_blank" rel="noopener noreferrer">YouTube 이용약관</a>과{' '}
+              <a href="https://policies.google.com/privacy" target="_blank" rel="noopener noreferrer">Google 개인정보처리방침</a>이 적용됩니다.
             </p>
           </section>
 
@@ -120,6 +141,11 @@ export default function PrivacyPage() {
             </p>
             <p>
               이메일: codemeet@naver.com
+            </p>
+            <p>
+              홍보 메일은 메일 하단의 수신거부 링크에서 로그인 없이 수신을 거부할 수 있습니다.
+              홍보 연락처의 열람·정정·삭제도 위 이메일로 요청할 수 있습니다. YouTube 채널 정보의 삭제
+              요청은 이 서비스에 저장된 정보에만 적용되며 YouTube의 원본 채널을 변경하지 않습니다.
             </p>
           </section>
 

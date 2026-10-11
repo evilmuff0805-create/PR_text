@@ -1,6 +1,6 @@
 export const DEFAULT_AUTH_RETURN_PATH = '/transcribe';
 
-const AUTH_RETURN_PATHS = new Set([DEFAULT_AUTH_RETURN_PATH, '/settings', '/caption-ideas']);
+const AUTH_RETURN_PATHS = new Set([DEFAULT_AUTH_RETURN_PATH, '/settings', '/caption-ideas', '/admin/outreach']);
 
 export function safeAuthReturnPath(value) {
   return AUTH_RETURN_PATHS.has(value) ? value : DEFAULT_AUTH_RETURN_PATH;

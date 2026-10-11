@@ -10,7 +10,7 @@ import {
 import { getWelcomeIdentityHashes, welcomeCreditStore } from '../services/welcome-credits.js';
 
 const router = Router();
-const OAUTH_RETURN_PATHS = new Set(['/transcribe', '/settings', '/caption-ideas']);
+const OAUTH_RETURN_PATHS = new Set(['/transcribe', '/settings', '/caption-ideas', '/admin/outreach']);
 
 export function safeOAuthReturnPath(value) {
   return OAUTH_RETURN_PATHS.has(value) ? value : '/transcribe';

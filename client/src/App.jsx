@@ -15,6 +15,7 @@ import RedownloadPage from './pages/RedownloadPage.jsx';
 import SettingsPage from './pages/SettingsPage.jsx';
 import PasswordResetPage from './pages/PasswordResetPage.jsx';
 import CaptionIdeasPage from './pages/CaptionIdeasPage.jsx';
+import OutreachPage from './pages/OutreachPage.jsx';
 import PublicMetadata from './public-metadata.jsx';
 
 function App() {
@@ -36,6 +37,7 @@ function App() {
         <Route path="/support" element={<SupportPage />} />
         <Route path="/usage" element={<UsagePage />} />
         <Route path="/redownload" element={<RedownloadPage />} />
+        <Route path="/admin/outreach" element={<OutreachPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="/auth/reset" element={<PasswordResetPage />} />
         <Route path="/reset-password" element={<PasswordResetPage />} />

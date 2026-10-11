@@ -24,3 +24,8 @@
 - Semantic subtitle boundaries alone do not align speech. Request and preserve complete word times through correction, verify all spoken characters against the final text, and use first/last word edges without padding short responses. Reject stale or incomplete alignments rather than inventing times.
 - Moving export splitting into stored editor rows can exceed existing row and per-row text limits. Keep verified compact cue timing for large results, revalidate it against edited text, and test JSON roundtrips and download limits together.
 - Validate provider timestamp types before adding chunk offsets: coercing null, false, or empty strings can fabricate a valid zero. A chosen word boundary must also keep decimal and English internal periods inside their token so export cleanup cannot erase them.
+
+
+- A reviewed marketing preview must be bound to a server-side fingerprint of ordered recipients, eligibility and template content. Queueing must reject stale revisions; client confirmation alone cannot prove which addresses and wording were reviewed.
+- SMTP transport.close() may only emit an event or wait for an active delivery. A hard deadline must destroy the owned underlying socket, fence delayed connection callbacks and leave uncertain sends out of automatic retries; verify it with actual loopback sockets.
+- Date.parse normalizes invalid calendar dates. Consent and channel-check timestamps need strict calendar validation plus domain-specific future bounds, with database constraints as a second enforcement layer.

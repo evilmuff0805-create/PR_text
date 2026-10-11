@@ -86,7 +86,7 @@ function successfulLogin(url) {
 }
 
 test('missing, landing and unsafe auth destinations default to the subtitle workspace', () => {
-  for (const value of [undefined, null, '', '/', '/intro', '/auth/reset', 'https://attacker.example', '//attacker.example']) {
+  for (const value of [undefined, null, '', '/', '/intro', '/auth/reset', 'https://attacker.example', '//attacker.example', '/admin', '/admin/outreach/contacts', '/admin/outreach?next=https://attacker.example']) {
     assert.equal(authNavigation.safeAuthReturnPath(value), '/transcribe');
   }
   assert.equal(authNavigation.authReturnPathFromSearch(''), '/transcribe');
@@ -106,7 +106,7 @@ test('successful email login opens the subtitle workspace after loading the user
 });
 
 test('email login preserves approved explicit return destinations', async () => {
-  for (const returnPath of ['/settings', '/caption-ideas']) {
+  for (const returnPath of ['/settings', '/caption-ideas', '/admin/outreach']) {
     const harness = authHarness({ fetchImpl: successfulLogin });
     await harness.auth.login('user@example.com', 'test-password', returnPath);
     assert.equal(harness.navigations[0].path, returnPath);
@@ -131,6 +131,7 @@ test('Google login sends the workspace default and preserves approved explicit d
     [undefined, '/transcribe'],
     ['/settings', '/settings'],
     ['/caption-ideas', '/caption-ideas'],
+    ['/admin/outreach', '/admin/outreach'],
     ['https://attacker.example', '/transcribe'],
   ]) {
     const harness = authHarness();
@@ -140,7 +141,7 @@ test('Google login sends the workspace default and preserves approved explicit d
 });
 
 test('successful OAuth callbacks open the workspace or approved explicit page and clear URL tokens', async () => {
-  for (const [search, expected] of [['', '/transcribe'], ['?next=%2Fsettings', '/settings'], ['?next=%2Fcaption-ideas', '/caption-ideas']]) {
+  for (const [search, expected] of [['', '/transcribe'], ['?next=%2Fsettings', '/settings'], ['?next=%2Fcaption-ideas', '/caption-ideas'], ['?next=%2Fadmin%2Foutreach', '/admin/outreach']]) {
     const harness = authHarness({ path: '/auth/callback', search, hash: '#access_token=oauth-token', fetchImpl: () => response(profile) });
     harness.effects[0]();
     await new Promise(setImmediate);

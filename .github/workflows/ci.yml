@@ -77,3 +77,4 @@ jobs:
           export PG_CLIENT_PATH="$RUNNER_TEMP/db-client/node_modules/pg"
           node scripts/validation/db-operations.cjs
           node scripts/validation/db-concurrency.cjs
+          node scripts/validation/db-outreach.cjs
