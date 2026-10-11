@@ -572,6 +572,32 @@ textarea:focus-visible {
   line-height: 1.45;
 }
 
+.landing-section.landing-promo {
+  padding: clamp(40px, 4vw, 48px) 0 0;
+}
+
+.landing-promo__video {
+  display: block;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: contain;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: #000;
+}
+
+.landing-promo__video:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 4px;
+}
+
+.landing-promo__video:fullscreen {
+  height: 100%;
+  border: 0;
+  border-radius: 0;
+}
+
 .landing-product-proof {
   display: grid;
   padding-top: 88px;

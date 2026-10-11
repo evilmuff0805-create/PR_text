@@ -230,6 +230,23 @@ export default function IntroPage() {
         </div>
       </section>
 
+      <section className="landing-section landing-promo" aria-label="PR-text 소개 영상">
+        <video
+          className="landing-promo__video"
+          controls
+          playsInline
+          preload="metadata"
+          poster="/images/pr-text-30s-poster.webp"
+          width="1920"
+          height="1080"
+          aria-label="PR-text 30초 소개 영상"
+        >
+          <source src="/videos/pr-text-30s.mp4" type="video/mp4" />
+          이 브라우저는 영상 재생을 지원하지 않습니다.{' '}
+          <a href="/videos/pr-text-30s.mp4">영상 파일 열기</a>
+        </video>
+      </section>
+
       <section className="landing-section landing-product-proof" aria-labelledby="product-proof-title">
         <div className="section-heading landing-product-proof__copy landing-heading-fit">
           <p className="eyebrow">실제 편집 흐름</p>
