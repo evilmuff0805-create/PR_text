@@ -3,8 +3,7 @@ import { guideSteps } from './content/guide-steps.js';
 
 const siteUrl = 'https://pr-text.com';
 
-// Business identity is also printed in the site footer. Answer engines weigh
-// "who is saying this", so the same facts are exposed as structured data.
+// The same public business identity appears in the footer and structured data.
 const organization = Object.freeze({
   '@type': 'Organization',
   name: '코드밋(CodeMeet)',
@@ -36,9 +35,13 @@ const webApplication = Object.freeze({
 // can never claim text the visitor does not see.
 const faqPage = Object.freeze({
   '@type': 'FAQPage',
+  '@id': `${siteUrl}/support#faq`,
+  url: `${siteUrl}/support`,
   inLanguage: 'ko-KR',
   mainEntity: supportFaqs.map((faq) => ({
     '@type': 'Question',
+    '@id': `${siteUrl}/support#${faq.id}`,
+    url: `${siteUrl}/support#${faq.id}`,
     name: faq.question,
     acceptedAnswer: { '@type': 'Answer', text: faq.answer },
   })),
@@ -64,7 +67,7 @@ const pageDefinitions = [
   { path: '/', title: '자동 자막 생성·SRT 변환 | PR-text 프리뷰 자막 머신', description: '음성·영상에서 자동 자막을 만들고 직접 편집하세요. CapCut·Premiere Pro에서 불러올 수 있는 SRT와 TXT·ASS로 내려받을 수 있습니다.', structuredData: withContext(webApplication) },
   { path: '/guide', title: '프리미어 자막 작업 자동화·SRT 사용법 | PR-text', description: '음성·영상에서 자동 자막을 생성하고 SRT로 내려받아 Premiere Pro로 가져오는 방법을 확인하세요. 업로드부터 자막 편집까지 단계별로 안내합니다.', structuredData: withContext(howTo) },
   { path: '/payment', title: '변환 시간 요금 | 프리뷰 자막 머신', description: '필요한 만큼 충전해 음성과 영상 파일을 자막으로 변환하세요. 프리뷰 자막 머신의 변환 시간 요금을 확인할 수 있습니다.' },
-  { path: '/support', title: '고객센터와 자주 묻는 질문 | 프리뷰 자막 머신', description: '지원 파일 형식, 변환 시간, 파일 보관 기준 등 프리뷰 자막 머신 이용 중 자주 묻는 질문을 확인하세요. 이메일 문의는 평일 10시부터 18시까지 받습니다.', structuredData: withContext(faqPage) },
+  { path: '/support', title: '고객센터와 자주 묻는 질문 | 프리뷰 자막 머신', description: '지원 파일 형식, Premiere Pro·CapCut 사용, 자막 편집, 변환 시간과 파일 보관 기준을 확인하세요. 이메일 문의는 평일 10시부터 18시까지 받습니다.', structuredData: withContext(faqPage) },
   { path: '/terms', title: '이용약관 | 프리뷰 자막 머신', description: '프리뷰 자막 머신 서비스 이용약관과 환불 기준을 확인하세요. 충전한 변환 시간의 유효기간과 미사용분 환불 조건을 함께 안내합니다.' },
   { path: '/privacy', title: '개인정보처리방침 | 프리뷰 자막 머신', description: '프리뷰 자막 머신이 처리하는 개인정보와 음성·영상 파일의 보관 기준을 확인하세요. 원본 파일은 변환에만 사용하고 영구 저장하지 않습니다.' },
 ];
@@ -77,12 +80,12 @@ export const homeStructuredData = publicPageByPath.get('/').structuredData;
 export const sitemapXml = () => `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${publicPages.map((page, index) => `  <url><loc>${page.canonicalUrl}</loc><priority>${priorities[index]}</priority></url>`).join('\n')}\n</urlset>\n`;
 export function publicPageForPath(pathname) { return publicPageByPath.get(pathname) ?? null; }
 
-// Generative engines read /llms.txt as a site guide. It is generated from the
-// page list so a new public page cannot be missing from it.
+// /llms.txt is a plain-language site guide for systems that choose to use it.
+// It is generated from public pages and the same FAQ source used by the UI.
 export const llmsTxt = () => [
   '# 프리뷰 자막 머신 (PR-text)',
   '',
-  '> 음성·영상 파일을 한국어 자막으로 변환하고, 구간별로 직접 편집해 SRT·TXT·ASS로 내려받는 웹 서비스. 원문의 말투를 보존하며 번역하지 않는다.',
+  '> 음성·영상 파일을 원문 언어의 자막으로 변환하고, 구간별로 편집해 SRT·TXT·ASS로 내려받을 수 있는 웹 서비스. 한국어 자막은 완료 화면에서 영어 번역 TXT를 선택적으로 만들 수 있다.',
   '',
   '## 핵심 페이지',
   ...publicPages.map((page) => `- [${page.title.split('|')[0].trim()}](${page.canonicalUrl}): ${page.description}`),
@@ -92,14 +95,17 @@ export const llmsTxt = () => [
   '- 지원 입력: mp3, wav, m4a, webm, mp4, mpeg, mpga, ogg, flac',
   '- 용량 한도: MP3·M4A·영상 최대 150MB, WAV 원본 최대 500MB (150MB 초과 WAV는 업로드 전 자동 최적화)',
   '- 출력 형식: SRT, TXT, ASS. SRT는 Premiere Pro·CapCut·YouTube에서 불러올 수 있으며 CapCut 타임코드 호환을 확인함',
-  '- 자막 규격: 한 자막 최대 28자, 최소 표시 시간 0.8초, 겹치는 자막 큐 제거',
-  '- 한국어 처리: 맞춤법·띄어쓰기만 교정하고 말투와 문맥은 바꾸지 않음. 다른 언어로 번역하지 않음',
+  '- 자막 규격: 한 자막은 한 줄이며 최대 28자',
+  '- 언어: 변환은 원문 음성 언어로 진행. 한국어 결과는 완료 화면에서 영어 번역 TXT를 선택적으로 생성 가능',
   '- 다화자 구분: 최대 20분 파일까지 지원',
-  '- 과금: 변환한 오디오 길이를 분 단위로 차감',
+  '- 변환 시간 계산: 오디오 길이를 분 단위로 올림하며 최소 1분',
   '',
-  '## 인용 안내',
-  '- 위 수치는 서비스가 실제로 강제하는 값이며 이 문서가 원출처다',
-  '- 인용 시 표기: pr-text.com',
+  '## 자주 묻는 질문',
+  ...supportFaqs.map((faq) => `- [${faq.question}](https://pr-text.com/support#${faq.id}): ${faq.answer}`),
+  '',
+  '## 안내',
+  '- 서비스 기능과 한도는 연결된 안내 페이지에서 확인할 수 있습니다.',
+  '- 검색·AI 답변에서의 노출이나 인용은 보장되지 않습니다.',
   '',
 ].join('\n');
 

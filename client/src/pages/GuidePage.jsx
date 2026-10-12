@@ -1,6 +1,16 @@
 import { useEffect } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { guideSteps as steps } from '../content/guide-steps.js';
+import { supportFaqs } from '../content/support-faqs.js';
+
+const guideFaqIds = [
+  'create-subtitles',
+  'output-formats',
+  'premiere-pro',
+  'edit-subtitles',
+  'source-language-translation',
+];
+const guideFaqs = guideFaqIds.map((id) => supportFaqs.find((faq) => faq.id === id));
 
 const manualPages = [
   'SRT 자막 넣는 방법',
@@ -94,19 +104,14 @@ export default function GuidePage() {
         <div className="section-heading">
           <p className="eyebrow">자동 자막 질문과 답변</p>
           <h2 id="guide-answers-title">자동 자막을 편집에 쓰려면</h2>
-          <p>PR-text 운영팀 · 2026년 9월 9일 확인</p>
+          <p>PR-text 운영팀 · 2026년 10월 12일 확인</p>
         </div>
         <div className="support-faq__list">
-          {[
-            ['음성이나 영상으로 자동 자막을 어떻게 만드나요?', 'PR-text에서 음성·영상 파일을 선택하고 원본 언어와 화자 옵션을 설정한 뒤 변환합니다. 결과에서 문장을 직접 다듬고 SRT, TXT 또는 ASS로 내려받을 수 있습니다. 영상 파일은 오디오를 추출해 자막을 생성합니다.'],
-            ['SRT, TXT, ASS 중 어떤 파일을 받으면 되나요?', '편집툴에 시간 정보가 있는 자막을 넣으려면 SRT를 선택하세요. 문장만 필요한 대본 정리에는 TXT를, 자막 스타일 정보를 담으려면 ASS를 선택할 수 있습니다. 스타일 적용 방식은 가져오는 프로그램의 지원 범위에 따라 달라집니다.'],
-            ['프리미어 프로에 자동 자막을 어떻게 넣나요?', 'PR-text에서 SRT를 내려받은 뒤 Premiere Pro 프로젝트 패널로 가져오고, 타임라인의 원본 영상 시작 위치에 맞춰 배치합니다. 이후 프리미어에서 글꼴·크기·위치를 조절합니다. 아래 이미지 설명서에서 순서를 확인할 수 있습니다.'],
-            ['자동 자막을 만든 뒤 문장을 고칠 수 있나요?', '네. 완료 화면에서 전체 텍스트 또는 구간별 문장을 직접 수정할 수 있습니다. 편집한 내용은 이후 내려받는 자막 파일에 반영됩니다. 말자막을 정리한 뒤 필요한 형식으로 다운로드하세요.'],
-            ['한국어 외의 음성은 자동으로 번역되나요?', '자막 변환 단계에서는 원본 음성의 언어를 자동 감지하거나 한국어·영어·일본어·중국어를 직접 선택해 원문 자막을 만듭니다. 한국어 자막은 완료 화면에서 영어 번역 만들기를 별도로 사용해 번역 TXT로 받을 수 있습니다.'],
-          ].map(([question, answer], index) => (
-            <details key={question} open>
-              <summary><span>{String(index + 1).padStart(2, '0')}</span><strong>{question}</strong><span className="support-faq__indicator" aria-hidden="true">+</span></summary>
-              <p>{answer}</p>
+          {guideFaqs.map((faq, index) => (
+            <details key={faq.id} open>
+              <summary><span>{String(index + 1).padStart(2, '0')}</span><strong>{faq.question}</strong><span className="support-faq__indicator" aria-hidden="true">+</span></summary>
+              <p>{faq.answer}</p>
+              <p className="support-faq__related"><a href={`/support#${faq.id}`}>고객센터에서 관련 안내와 답변 보기</a></p>
             </details>
           ))}
         </div>

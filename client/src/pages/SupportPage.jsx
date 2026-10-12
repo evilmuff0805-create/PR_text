@@ -1,8 +1,21 @@
-import { Link } from 'react-router-dom';
+import { useEffect } from 'react';
+import { Link, useLocation } from 'react-router-dom';
 import { supportFaqs as faqs } from '../content/support-faqs.js';
 
 
 export default function SupportPage() {
+  const { hash, key: locationKey } = useLocation();
+
+  useEffect(() => {
+    if (!hash) return undefined;
+    const target = document.getElementById(hash.slice(1));
+    if (!(target instanceof HTMLDetailsElement)) return undefined;
+
+    target.open = true;
+    const frame = window.requestAnimationFrame(() => target.scrollIntoView({ block: 'start' }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [hash, locationKey]);
+
   return (
     <div className="info-page">
       <header className="info-heading" aria-labelledby="support-title">
@@ -42,13 +55,24 @@ export default function SupportPage() {
           </div>
           <div className="support-faq__list">
             {faqs.map((faq, index) => (
-              <details key={faq.question} open={index === 0}>
+              <details id={faq.id} key={faq.id} open={index === 0} style={{ scrollMarginTop: 90 }}>
                 <summary>
                   <span>{String(index + 1).padStart(2, '0')}</span>
                   <strong>{faq.question}</strong>
                   <span className="support-faq__indicator" aria-hidden="true">+</span>
                 </summary>
                 <p>{faq.answer}</p>
+                <p className="support-faq__related">
+                  관련 안내:{' '}
+                  {faq.relatedLinks.map((link, linkIndex) => (
+                    <span key={link.href}>
+                      {linkIndex > 0 ? ' · ' : ''}
+                      {link.href.startsWith('/support#')
+                        ? <Link to={link.href}>{link.label}</Link>
+                        : <a href={link.href}>{link.label}</a>}
+                    </span>
+                  ))}
+                </p>
               </details>
             ))}
           </div>

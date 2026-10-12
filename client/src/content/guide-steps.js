@@ -1,7 +1,7 @@
 import { DIARIZATION_MAX_MINUTES } from '../utils/upload-validation.js';
 
 // Shared by the rendered guide page and the HowTo structured data, so the two
-// cannot drift. Answer engines compare the schema against the visible text.
+// use the same descriptions and links.
 export const guideSteps = Object.freeze([
   {
     id: 'guide-upload',
