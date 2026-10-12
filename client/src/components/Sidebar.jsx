@@ -2,6 +2,7 @@ import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useRef, useState } from 'react';
 import AuthModal from './AuthModal.jsx';
+import WelcomeCreditCard from './WelcomeCreditCard.jsx';
 import { useDialogAccessibility } from '../utils/use-dialog-accessibility.js';
 
 export default function Sidebar({ isOpen, isMobile, onClose, triggerRef }) {
@@ -60,7 +61,11 @@ export default function Sidebar({ isOpen, isMobile, onClose, triggerRef }) {
         tabIndex={isMobile ? -1 : undefined}
         style={{
         width: '220px',
-        minHeight: '100vh',
+        height: '100dvh',
+        minHeight: 0,
+        maxHeight: '100dvh',
+        overflowY: 'auto',
+        overscrollBehaviorY: 'contain',
         background: 'var(--bg-secondary)',
         borderRight: '1px solid var(--border-color)',
         padding: '24px 0',
@@ -141,6 +146,8 @@ export default function Sidebar({ isOpen, isMobile, onClose, triggerRef }) {
             </p>
           )}
         </div>
+
+        {user && <WelcomeCreditCard />}
 
         <nav aria-label="작업 메뉴" style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '0 12px' }}>
           <NavLink to="/transcribe" style={navLinkStyle} onClick={isMobile ? onClose : undefined}>

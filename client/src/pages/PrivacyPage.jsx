@@ -30,7 +30,7 @@ export default function PrivacyPage() {
           </div>
           <Link className="button button--secondary" to="/support">개인정보 문의</Link>
         </div>
-        <p className="info-heading__meta">시행일: 2026년 7월 22일</p>
+        <p className="info-heading__meta">시행일: 2026년 10월 12일</p>
       </header>
 
       <div className="document-layout">
@@ -56,8 +56,10 @@ export default function PrivacyPage() {
               <li>자막 아이디어 정보: 선택한 유형, 생성 결과, 모델 사용량과 처리 시각</li>
               <li>결제 정보: 주문 번호, 상품명, 결제 금액, 결제 상태 및 결제 식별값</li>
               <li>
-                무료 혜택 중복 지급 방지 정보: 이메일 또는 OAuth 제공자 식별자의 원문을 저장하지 않는
-                서버 HMAC 식별값
+                무료 혜택 제한 기록: 요청 IP와 계정 식별값을 서버 전용 키로 HMAC 처리한 값입니다. 이 기능의
+                데이터베이스 기록에는 원본 IP를 저장하지 않습니다. 이는 호스팅 사업자 등의 별도 서버 접근 로그까지
+                설명하는 내용은 아닙니다. IPv4는 주소 단위, IPv6는 /64 네트워크 접두부 단위로 묶어 제한하며,
+                반복 가입 확인 기록과 네트워크별 지급 기록은 7일 경과 후 정기 삭제합니다.
               </li>
             </ul>
           </section>
@@ -87,8 +89,10 @@ export default function PrivacyPage() {
                 결제·환불 기록은 계정 이메일과 분리하여 필요한 기간 동안 보관합니다.
               </li>
               <li>
-                동일 로그인 계정에 신규 무료 혜택이 반복 지급되는 것을 방지하기 위한 HMAC 식별값은
-                무료 혜택 운영 기간 동안만 보관하며, 혜택 종료 후 지체 없이 삭제합니다.
+                신규 무료 혜택 중복 지급을 막기 위한 IP·계정 HMAC 식별값은 지급 한도 확인 및 반복 가입 확인에
+                사용합니다. 최근 7일 범위에서 확인하며, 기록은 7일 경과 후 정기 삭제합니다. 같은 계정의 무료
+                혜택 지급 방지용 이메일·OAuth HMAC 식별값은 원문을 저장하지 않고 무료 혜택 운영 기간 동안
+                보관하며, 혜택 종료 후 지체 없이 삭제합니다.
               </li>
             </ul>
           </section>

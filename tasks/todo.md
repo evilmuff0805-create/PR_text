@@ -567,3 +567,31 @@
 - 사용자 명시 승인: AEO 수정본 배포 진행. 검증된 변경만 PR로 제출하고 CI 통과 후 병합한다.
 - 운영 health의 commit 일치, FAQ 12개 공개 HTML 및 앵커, 랜딩 주요 3문항 확인 후 배포 완료를 기록한다.
 - 실패 시 직전 정상 배포로 되돌리고 원인을 조사한다.
+
+## 2026-10-12 무료 체험 IP 제한 + 반복 시도 인증 (진행 중)
+- 사용자 승인: 같은 IP 24시간에 1개 계정만 10분 지급, 반복 가입 추가 인증. 추가 인증은 지급 상한을 우회하지 않는다.
+- 기준: remote main 60ba9d7, 별도 prtext-welcome-guard checkout. 기존 dirty 폴더 보존.
+- 조사: 이메일 signup 및 OAuth/auth middleware ensureProfile가 지급 진입점. 최신 원장 migration 기준 사용. CAPTCHA 기존 없음.
+- 계획: 기존 프로필/잔액 보존, 신규 프로필은 0분으로 준비한 뒤 인증된 무료 체험 지급 endpoint에서 DB 원자 판정. 이메일 인증 확인, identity 재지급방지, HMAC IP rolling24h1회. 반복 신규 계정 시도는 Turnstile 서버 검증 필요. UI에 지급/추가확인/한도/장애 상태, 로그인·유료사용 유지. CAPTCHA 통과도 IP 상한 우회 불가.
+- 위험: NAT 오차단, VPN/IP변경은 완전방지 불가. req.ip 신뢰프록시 설정/IPv4mapped·IPv6정규화, 동시성, 오래된 지급RPC 우회, 원장 일치, 재시도 중복, 기존계정 소급차감 금지. IP 원문 저장금지, 제한기록기간명시, 실패시무료지급만보류.
+- 검증: Node 테스트/빌드 + 실제 Postgres migration/권한/동시지급/24h경계/계정중복/소셜경로/CAPTCHA오류·만료·재사용/기존잔액유지. 검수관 독립검수.
+- 운영: 코드·로컬 검증까지 우선. Turnstile 실제 키와 신뢰프록시 운영검증, DB migration 및 배포는 별도 준비완료 후 상태를 명확히 보고한다. 새 외부 계정 가입/유료서비스 결제하지 않는다.
+- 사전 검수 대기. 구현 시작 미승인.
+- 사전검수 필수조건 채택 및 본부장 실행 승인: 기존 ensure RPC는 0분 생성만, 새 authenticated claim만 지급. 미인증 이메일 지급 금지. IP/계정/identity 잠금 및 credit_lot 원자생성. 반복판정은 지급한도와 별도 영속 기록. Turnstile 키·IP확인 실패시 무료지급만 보류, 기존 로그인/결제 유지. IPv6 정규화 및 prefix 우회 위험 명시. 같은IP 24h 1회 고정.
+- 단독 개발자에게 소유권 위임. 신규프로필만 pending eligibility 표시, 기존프로필을 소급대상으로 만들지 않음. 반복시도 challenge 상태는 새 계정별 첫 시도를 기준으로 영속화하고 단순 새로고침은 반복가입으로 세지 않음. CAPTCHA 성공은 동일 user+IP 1회 제출에서만 사용하고 quota를 넘지 않음. 원문IP는 DB·로그에 넣지 않음.
+- 롤백은 신규 지급 중지 유지(구 RPC 자동지급 부활 금지). 실제 Turnstile 키 설정/운영프록시 검사 미완료면 운영검증완료로 선언하지 않는다.
+- [x] DB 최신 migration을 격리 PG17에서 적용하고 기존 계정 잔액, 신규 0분, repeat-account challenge, 이메일 인증, IP 24시간 상한, identity 중복, atomic lot/원장, browser 권한을 검증한다.
+- [x] 같은 IP에서 두 계정의 유효한 challenge claim을 서로 다른 DB 연결로 동시에 실행해 지급이 한 번만 성공함을 검증한다.
+- [x] 기존 profile preparation RPC도 신규 0분만 만들도록 교체하고, 수급 기록/기존 잔액을 유지한다.
+- [x] HMAC IP/account/attempt DB와 제한된 7일 정리 작업, 매시간 worker, 개인정보 고지 및 운영 설정 runbook을 추가한다.
+- [x] 로그인 사이드바의 신규 자격 계정 전용 카드에 추가확인·한도 재확인·오류 재시도를 연결하고 작은 화면의 challenge를 compact로 표시한다.
+- [x] 본부장 로컬 Vite/API synthetic fixture 브라우저 QA: 390x844, 220px 사이드바의 883px 콘텐츠 스크롤 후 하단 고객센터 도달, 가로 넘침 없음, 지급 전 0분→mock 지급 후 10분/성공 문구, 한도 재확인 키보드 Enter 동작.
+- [x] 전체 Node 테스트 465/465, production build 70 modules, Postgres 기존 operations 16/16 및 신규 PG17 기능/동시성 테스트 통과. 저장소 CRLF 규칙을 지정한 `git -c core.whitespace=cr-at-eol diff --check` 통과.
+- [x] 독립 검수관 최종 변경 확인: 중대한 미해결 보안·원자성 결함 없음. 본부장 로컬 구현 완성 승인(2026-10-12). 최신 Node 465/465, production build 70 modules, 기존 PG operations 16/16 및 신규 PG 검증 8개 그룹 통과. 실제 Turnstile 및 운영 IP 검증·배포는 별도 미완료 상태로 유지한다.
+- 검증 제약: browser UI는 synthetic API/mock으로 검증했으며 실제 Cloudflare Turnstile 운영 키/hostname 검증과 Railway `req.ip`/X-Forwarded-For spoof 검증은 하지 않았다. 두 항목은 runbook staging/운영 전 gate로 남긴다. 운영 DB·변수·배포는 하지 않았다.
+- 실행/검증 메모: 최초 전체 suite에서 읽기 쉬운 최소 글자 크기 미달 1건을 발견해 14px 이상으로 수정했다. Turnstile error-loop 회귀 테스트 포함 465/465 통과. 운영 Cloudflare challenge와 Railway proxy 헤더 검증은 배포 전 설정 gate다.
+- CI에 `scripts/validation/db-welcome-credit.cjs`를 추가해 PG17 workflow에서 실제 신규 기능 검증도 실행한다.
+- 운영 설정/검증 순서와 무료 지급 중지·안전한 코드 롤백 지침: `docs/welcome-credit-ip-protection.md`.
+
+### 2026-10-12 운영 배포 승인
+- 사용자 배포 명시 승인. 운영 인증 설정 미준비 상태를 고지했으며 신규 무료 지급은 보류한다. DB migration 선행 후 검증본 배포, 기존 로그인/결제/잔액 보존과 health 확인. 실제 Turnstile/IP 신뢰 검증 전 활성화 금지.
