@@ -2606,6 +2606,43 @@ textarea:focus-visible {
   word-break: keep-all;
 }
 
+.support-layout,
+.support-faq,
+.support-faq__list,
+.support-faq details,
+.support-faq summary {
+  min-width: 0;
+}
+
+.support-faq summary strong,
+.support-faq details > p {
+  overflow-wrap: anywhere;
+}
+
+.support-faq details > p.support-faq__related {
+  margin-top: -10px;
+  padding-bottom: 20px;
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.65;
+}
+
+.support-faq__related a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  overflow-wrap: anywhere;
+}
+
+.landing-faq .support-faq__list summary {
+  grid-template-columns: minmax(0, 1fr) 24px;
+}
+
+.landing-faq .support-faq__list details > p {
+  padding-left: 4px;
+  padding-right: 34px;
+}
+
 .support-links {
   padding-left: 22px;
   border-left: 1px solid var(--border-color);
@@ -5970,6 +6007,20 @@ textarea:focus-visible {
   .support-faq details > p {
     padding-right: 26px;
     padding-left: 40px;
+  }
+
+  .support-faq details > p.support-faq__related {
+    padding-right: 26px;
+    padding-left: 40px;
+  }
+
+  .landing-faq .support-faq__list summary {
+    grid-template-columns: minmax(0, 1fr) 20px;
+  }
+
+  .landing-faq .support-faq__list details > p {
+    padding-left: 4px;
+    padding-right: 26px;
   }
 
   .document-section__heading {

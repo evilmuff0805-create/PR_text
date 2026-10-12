@@ -1,11 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { supportFaqs } from '../content/support-faqs.js';
+
+const landingFaqIds = ['create-subtitles', 'premiere-pro', 'edit-subtitles'];
+const landingFaqs = landingFaqIds.map((id) => supportFaqs.find((faq) => faq.id === id));
 
 const featureRows = [
   {
     index: '01',
     title: '원문을 먼저 지킵니다',
-    description: '한국어 맞춤법과 띄어쓰기를 다듬되, 말투와 문맥을 임의로 바꾸거나 다른 언어로 번역하지 않습니다.',
+    description: '한국어 맞춤법과 띄어쓰기를 다듬되 말투와 문맥은 임의로 바꾸지 않습니다. 한국어 결과는 영어 번역 TXT를 선택해 만들 수 있습니다.',
   },
   {
     index: '02',
@@ -320,6 +324,27 @@ export default function IntroPage() {
             <span role="cell">폰트, 위치, 화자 색상까지 지정하는 스타일 자막</span>
             <span role="cell">스타일 포함</span>
           </div>
+        </div>
+      </section>
+
+      <section className="landing-section support-faq landing-faq" aria-labelledby="landing-faq-title">
+        <div className="section-heading section-heading--compact">
+          <p className="eyebrow">자주 묻는 질문</p>
+          <h2 id="landing-faq-title">자막 만들기와 편집</h2>
+        </div>
+        <div className="support-faq__list">
+          {landingFaqs.map((faq) => (
+            <details key={faq.id}>
+              <summary>
+                <strong>{faq.question}</strong>
+                <span className="support-faq__indicator" aria-hidden="true">+</span>
+              </summary>
+              <p>{faq.answer}</p>
+              <p className="support-faq__related">
+                <Link to={`/support#${faq.id}`}>고객센터에서 관련 안내와 답변 보기</Link>
+              </p>
+            </details>
+          ))}
         </div>
       </section>
 
