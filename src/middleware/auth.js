@@ -93,6 +93,7 @@ export async function authMiddleware(req, res, next) {
     plan: profile?.plan ?? 'free',
     canChangePassword: userHasPasswordIdentity(user),
     lastSignInAt: user.last_sign_in_at,
+    emailConfirmed: Boolean(user.email_confirmed_at),
     welcomeIdentityHashes,
     token,
   };

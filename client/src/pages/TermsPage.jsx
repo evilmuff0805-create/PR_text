@@ -12,7 +12,7 @@ export default function TermsPage() {
           </div>
           <Link className="button button--secondary" to="/support">고객센터</Link>
         </div>
-        <p className="info-heading__meta">시행일: 2026년 8월 20일</p>
+        <p className="info-heading__meta">시행일: 2026년 10월 12일</p>
       </header>
 
       <div className="document-layout">
@@ -102,8 +102,12 @@ export default function TermsPage() {
               계정 식별정보와 분리하여 필요한 기간 동안 보관할 수 있습니다.
             </p>
             <p>
-              신규 가입 무료 10분은 동일 로그인 계정에 최초 1회만 지급됩니다. 회원 탈퇴 후 같은 로그인
-              계정으로 다시 가입할 수 있지만 신규 무료 10분은 다시 지급되지 않습니다.
+              신규 가입 무료 10분은 이메일 인증을 마친 계정이 직접 신청할 수 있으며 동일 로그인 계정에 최초
+              1회만 지급됩니다. 같은 네트워크(IP)에서는 24시간마다 한 계정에만 지급됩니다. 반복해서 신규
+              계정을 만드는 경우 추가 계정 확인이 필요하며, 이 확인을 마쳐도 네트워크별 지급 한도는 바뀌지
+              않습니다. 회사·학교·가족 등 같은 네트워크를 함께 사용하는 경우에도 같은 한도가 적용됩니다.
+              회원 탈퇴 시 아직 신청하지 않은 무료 시간의 신청 자격도 종료됩니다. 탈퇴 후 같은 로그인 계정으로
+              다시 가입해도 무료 시간은 다시 지급되지 않습니다.
             </p>
           </section>
 

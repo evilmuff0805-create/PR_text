@@ -3,6 +3,7 @@ import express from 'express';
 import cors from 'cors';
 import { rateLimit } from 'express-rate-limit';
 import authRouter from './routes/auth.js';
+import welcomeCreditRouter from './routes/welcome-credit.js';
 import accountRouter from './routes/account.js';
 import paymentRouter, { paymentWebhookRouter } from './routes/payment.js';
 import transcribeRouter from './routes/transcribe.js';
@@ -18,6 +19,7 @@ import { startIndexNowSubmission } from './services/indexnow.js';
 import { startCaptionIdeaMaintenance } from './services/caption-idea-store.js';
 import { startPaymentOrderMaintenance } from './services/payment-orders.js';
 import { startCreditLedgerMaintenance } from './services/credit-ledger.js';
+import { startWelcomeCreditMaintenance } from './services/welcome-credits.js';
 import { validateTossKeyPair } from './services/toss-payments.js';
 import { stopSilenceObservation } from './services/silence-observation.js';
 import { fileURLToPath } from 'url';
@@ -164,6 +166,7 @@ app.get('/api/health', (req, res) => {
 app.use('/api/auth/reset-password', resetPasswordLimiter);
 app.use('/api/auth/recovery-password', passwordChangeLimiter);
 app.use('/api/auth/password', passwordChangeLimiter);
+app.use('/api/auth/welcome-credit', generalLimiter, welcomeCreditRouter);
 app.use('/api/auth', generalLimiter, authRouter);
 app.use('/api/account', accountDeletionLimiter, generalLimiter, accountRouter);
 app.use('/api/payment/webhook', paymentWebhookLimiter, paymentWebhookRouter);
@@ -198,6 +201,7 @@ const server = app.listen(PORT, () => {
   startCaptionIdeaMaintenance();
   startPaymentOrderMaintenance();
   startCreditLedgerMaintenance();
+  startWelcomeCreditMaintenance();
   startIndexNowSubmission();
 });
 

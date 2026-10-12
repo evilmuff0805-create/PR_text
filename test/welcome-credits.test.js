@@ -48,7 +48,7 @@ test('calls only service-role RPCs to create profiles and retain claims', async 
       calls.push([name, params]);
       if (name === 'ensure_welcome_credit_profile') {
         return {
-          data: [{ credits: 10, plan: 'free', welcome_credit_granted: true }],
+          data: [{ credits: 0, plan: 'free', welcome_credit_granted: false }],
           error: null,
         };
       }
@@ -61,8 +61,8 @@ test('calls only service-role RPCs to create profiles and retain claims', async 
   const profile = await store.ensureProfile(USER, identityHashes);
   const recorded = await store.recordClaims(identityHashes);
 
-  assert.equal(profile.credits, 10);
-  assert.equal(profile.welcome_credit_granted, true);
+  assert.equal(profile.credits, 0);
+  assert.equal(profile.welcome_credit_granted, false);
   assert.equal(recorded, 2);
   assert.deepEqual(calls, [
     ['ensure_welcome_credit_profile', {
@@ -88,8 +88,8 @@ test('removes both direct 10-credit profile creation paths', async () => {
   assert.doesNotMatch(authRoutes, /credits:\s*10/);
   assert.match(middleware, /welcomeCreditStore\.ensureProfile/);
   assert.match(authRoutes, /welcomeCreditStore\.ensureProfile/);
-  assert.match(settings, /신규 가입 무료 10분은 다시 지급되지 않습니다/);
-  assert.match(terms, /동일 로그인 계정에 최초 1회만 지급/);
-  assert.match(privacy, /서버 HMAC 식별값/);
-  assert.match(authModal, /신규 무료 10분은 동일 로그인 계정에 최초 1회만 지급/);
+  assert.match(settings, /아직 신청하지 않은 무료 10분의 신청 자격도 종료됩니다/);
+  assert.match(terms, /동일 로그인 계정에 최초\s+1회만 지급/);
+  assert.match(privacy, /IP·계정 HMAC 식별값/);
+  assert.match(authModal, /이메일 인증 후 신청할 수 있습니다/);
 });
