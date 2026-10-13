@@ -12,12 +12,25 @@ const { supabase, supabaseAdmin } = await import('../src/lib/supabase.js');
 const { welcomeCreditStore } = await import('../src/services/welcome-credits.js');
 const { creditLedgerStore } = await import('../src/services/credit-ledger.js');
 
-async function withAuthRoute(t, { mode = 'identity', claimError = null, emailConfirmed = true } = {}) {
+async function withAuthRoute(t, { mode = 'identity', claimError = null, ipClaimError = null, emailConfirmed = true, trustedIp = true } = {}) {
   const previousMode = process.env.WELCOME_CREDIT_MODE;
+  const previousTrusted = process.env.WELCOME_CREDIT_TRUSTED_PROXY_IP;
+  const previousHmac = process.env.WELCOME_CREDIT_SECURITY_HMAC_KEY;
   process.env.WELCOME_CREDIT_MODE = mode;
+  if (trustedIp) {
+    process.env.WELCOME_CREDIT_TRUSTED_PROXY_IP = 'true';
+    process.env.WELCOME_CREDIT_SECURITY_HMAC_KEY = 'test-dedicated-hmac-key-at-least-32-bytes';
+  } else {
+    delete process.env.WELCOME_CREDIT_TRUSTED_PROXY_IP;
+    delete process.env.WELCOME_CREDIT_SECURITY_HMAC_KEY;
+  }
   t.after(() => {
     if (previousMode === undefined) delete process.env.WELCOME_CREDIT_MODE;
     else process.env.WELCOME_CREDIT_MODE = previousMode;
+    if (previousTrusted === undefined) delete process.env.WELCOME_CREDIT_TRUSTED_PROXY_IP;
+    else process.env.WELCOME_CREDIT_TRUSTED_PROXY_IP = previousTrusted;
+    if (previousHmac === undefined) delete process.env.WELCOME_CREDIT_SECURITY_HMAC_KEY;
+    else process.env.WELCOME_CREDIT_SECURITY_HMAC_KEY = previousHmac;
   });
 
   const claims = [];
@@ -50,6 +63,12 @@ async function withAuthRoute(t, { mode = 'identity', claimError = null, emailCon
     if (claimError) throw claimError;
     return { status: 'granted', credits: 13 };
   });
+  const ipClaims = [];
+  t.mock.method(welcomeCreditStore, 'claimIp', async (user, ipHash) => {
+    ipClaims.push({ userId: user.id, ipHash });
+    if (ipClaimError) throw ipClaimError;
+    return { status: 'granted', credits: 13 };
+  });
 
   const app = express();
   app.use('/api/auth', authRouter);
@@ -58,9 +77,9 @@ async function withAuthRoute(t, { mode = 'identity', claimError = null, emailCon
   t.after(async () => { server.close(); await once(server, 'close'); });
   const request = (path, options = {}) => fetch(`http://127.0.0.1:${server.address().port}/api/auth${path}`, {
     ...options,
-    headers: { Authorization: 'Bearer fixture-token', ...options.headers },
+    headers: { Authorization: 'Bearer fixture-token', 'X-Real-IP': '198.51.100.10', ...options.headers },
   });
-  return { claims, request };
+  return { claims, ipClaims, request };
 }
 
 test('/me auto-claims once and returns the updated balance in identity mode', async (t) => {
@@ -106,4 +125,35 @@ test('an invalid mode keeps authentication available and does not auto-claim', a
   assert.equal(response.status, 200);
   assert.equal((await response.json()).credits, 3);
   assert.deepEqual(route.claims, []);
+});
+
+test('/me auto-claims in IP mode using only the verified X-Real-IP header', async (t) => {
+  const route = await withAuthRoute(t, { mode: 'ip' });
+  const response = await route.request('/me', { headers: { 'X-Forwarded-For': '203.0.113.44' } });
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).credits, 13);
+  assert.equal(route.ipClaims.length, 1);
+  assert.equal(route.ipClaims[0].ipHash.length, 64);
+  assert.deepEqual(route.claims, []);
+});
+
+test('/me does not claim in IP mode when the trust flag or X-Real-IP is unavailable', async (t) => {
+  const untrusted = await withAuthRoute(t, { mode: 'ip', trustedIp: false });
+  const response = await untrusted.request('/me');
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).credits, 3);
+  assert.deepEqual(untrusted.ipClaims, []);
+
+  const missingHeader = await withAuthRoute(t, { mode: 'ip' });
+  const noHeaderResponse = await missingHeader.request('/me', { headers: { 'X-Real-IP': '' } });
+  assert.equal(noHeaderResponse.status, 200);
+  assert.equal((await noHeaderResponse.json()).credits, 3);
+  assert.deepEqual(missingHeader.ipClaims, []);
+});
+
+test('/me keeps authentication successful when IP-mode grant fails', async (t) => {
+  const route = await withAuthRoute(t, { mode: 'ip', ipClaimError: Object.assign(new Error('offline'), { code: 'ECONNRESET' }) });
+  const response = await route.request('/me');
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).credits, 3);
 });

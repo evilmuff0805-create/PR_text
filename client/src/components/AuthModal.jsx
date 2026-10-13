@@ -226,7 +226,7 @@ export default function AuthModal({ isOpen, onClose, restoreFocusRef, returnPath
               color: 'var(--text-muted)', fontSize: '0.875rem', lineHeight: 1.6,
               marginTop: '10px', textAlign: 'center', wordBreak: 'keep-all',
             }}>
-              이메일 인증 후 로그인하면 동일 로그인 계정에 무료 10분이 1회 자동 지급됩니다.
+              이메일 인증 후 로그인하면 동일 로그인 계정에 무료 10분을 1회 받을 수 있습니다. 중복 가입 방지를 위해 같은 네트워크의 추가 무료 지급은 24시간 제한될 수 있으며, 공유 와이파이에서는 다른 사람의 이용이 영향을 줄 수 있습니다.
             </p>
           )}
 

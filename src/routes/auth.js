@@ -8,6 +8,7 @@ import {
   validateNewPassword,
 } from '../services/password-security.js';
 import { getWelcomeCreditMode, getWelcomeIdentityHashes, welcomeCreditStore } from '../services/welcome-credits.js';
+import { hashWelcomeIpRequest } from '../services/welcome-ip.js';
 
 const router = Router();
 const OAUTH_RETURN_PATHS = new Set(['/transcribe', '/settings', '/caption-ideas']);
@@ -209,7 +210,8 @@ router.get('/me', authMiddleware, async (req, res) => {
   const { id, email, plan, canChangePassword } = req.user;
   let credits = req.user.credits;
 
-  if (req.user.emailConfirmed && getWelcomeCreditMode() === 'identity') {
+  const welcomeMode = getWelcomeCreditMode();
+  if (req.user.emailConfirmed && welcomeMode === 'identity') {
     try {
       const claim = await welcomeCreditStore.claimIdentity(req.user);
       if (claim.status === 'granted' || claim.status === 'already_granted') {
@@ -218,6 +220,21 @@ router.get('/me', authMiddleware, async (req, res) => {
     } catch (claimError) {
       console.warn('[/me] 무료 체험 지급 보류:', JSON.stringify({
         userId: id,
+        code: claimError.code || 'WELCOME_CREDIT_UNAVAILABLE',
+      }));
+    }
+  }
+
+  if (req.user.emailConfirmed && welcomeMode === 'ip') {
+    try {
+      const { ipHash } = hashWelcomeIpRequest(req);
+      const claim = await welcomeCreditStore.claimIp(req.user, ipHash);
+      if (claim.status === 'granted' || claim.status === 'already_granted') {
+        credits = claim.credits;
+      }
+    } catch (claimError) {
+      console.warn('[/me] 무료 체험 지급 보류:', JSON.stringify({
+        requestId: req.requestId,
         code: claimError.code || 'WELCOME_CREDIT_UNAVAILABLE',
       }));
     }

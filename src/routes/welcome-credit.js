@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth.js';
-import { getWelcomeAbuseHashes } from '../services/welcome-ip.js';
+import { getWelcomeAbuseHashes, hashWelcomeIpRequest } from '../services/welcome-ip.js';
 import { verifyWelcomeTurnstile, getWelcomeCreditConfig } from '../services/turnstile.js';
 import { getWelcomeCreditMode, welcomeCreditStore } from '../services/welcome-credits.js';
 
@@ -33,6 +33,7 @@ export function createWelcomeCreditRouter({
   configProvider = getWelcomeCreditConfig,
   verifyChallenge = verifyWelcomeTurnstile,
   abuseHashes = getWelcomeAbuseHashes,
+  ipHashProvider = hashWelcomeIpRequest,
   modeProvider = getWelcomeCreditMode,
 } = {}) {
   const router = Router();
@@ -72,6 +73,20 @@ export function createWelcomeCreditRouter({
     }
 
     if (mode === 'identity') return res.json({ status: 'eligible' });
+
+    if (mode === 'ip') {
+      try {
+        const { ipHash } = ipHashProvider(req);
+        const limit = await store.getIpLimit(ipHash);
+        if (limit.status === 'ip_limit') {
+          return res.json({ status: 'ip_limit', retryAt: retryAtValue(limit.retry_at) });
+        }
+        if (limit.status !== 'ready') return res.status(503).json(unavailable(req));
+        return res.json({ status: 'eligible' });
+      } catch (error) {
+        return res.status(503).json(unavailable(req, error));
+      }
+    }
 
     const config = configProvider();
     if (!config.ready) return res.status(503).json(unavailable(req));
@@ -117,6 +132,28 @@ export function createWelcomeCreditRouter({
         }
         if (claimed.status === 'already_granted') {
           return res.json({ status: 'granted', credits: claimed.credits, alreadyGranted: true });
+        }
+        if (['not_eligible', 'identity_claimed'].includes(claimed.status)) {
+          return res.status(409).json({ status: 'not_eligible' });
+        }
+        return res.status(503).json(unavailable(req));
+      } catch (error) {
+        return res.status(503).json(unavailable(req, error));
+      }
+    }
+
+    if (mode === 'ip') {
+      try {
+        const { ipHash } = ipHashProvider(req);
+        const claimed = await store.claimIp(req.user, ipHash);
+        if (claimed.status === 'granted') {
+          return res.json({ status: 'granted', credits: claimed.credits });
+        }
+        if (claimed.status === 'already_granted') {
+          return res.json({ status: 'granted', credits: claimed.credits, alreadyGranted: true });
+        }
+        if (claimed.status === 'ip_limit') {
+          return res.status(429).json({ status: 'ip_limit', retryAt: retryAtValue(claimed.retry_at) });
         }
         if (['not_eligible', 'identity_claimed'].includes(claimed.status)) {
           return res.status(409).json({ status: 'not_eligible' });
