@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { authMiddleware } from '../middleware/auth.js';
 import { getWelcomeAbuseHashes } from '../services/welcome-ip.js';
 import { verifyWelcomeTurnstile, getWelcomeCreditConfig } from '../services/turnstile.js';
-import { welcomeCreditStore } from '../services/welcome-credits.js';
+import { getWelcomeCreditMode, welcomeCreditStore } from '../services/welcome-credits.js';
 
 const ERROR_UNAVAILABLE = '무료 체험 지급을 지금 확인할 수 없습니다. 잠시 후 다시 시도해주세요.';
 
@@ -33,6 +33,7 @@ export function createWelcomeCreditRouter({
   configProvider = getWelcomeCreditConfig,
   verifyChallenge = verifyWelcomeTurnstile,
   abuseHashes = getWelcomeAbuseHashes,
+  modeProvider = getWelcomeCreditMode,
 } = {}) {
   const router = Router();
 
@@ -56,6 +57,9 @@ export function createWelcomeCreditRouter({
   }
 
   router.get('/', auth, async (req, res) => {
+    const mode = modeProvider();
+    if (mode === 'disabled') return res.status(503).json(unavailable(req));
+
     if (!req.user.emailConfirmed) {
       return res.status(403).json({ status: 'email_unconfirmed', error: '이메일 인증을 완료한 뒤 무료 시간을 받을 수 있습니다.' });
     }
@@ -66,6 +70,8 @@ export function createWelcomeCreditRouter({
     } catch (error) {
       return res.status(503).json(unavailable(req, error));
     }
+
+    if (mode === 'identity') return res.json({ status: 'eligible' });
 
     const config = configProvider();
     if (!config.ready) return res.status(503).json(unavailable(req));
@@ -86,6 +92,9 @@ export function createWelcomeCreditRouter({
   });
 
   router.post('/', auth, async (req, res) => {
+    const mode = modeProvider();
+    if (mode === 'disabled') return res.status(503).json(unavailable(req));
+
     if (!req.user.emailConfirmed) {
       return res.status(403).json({ status: 'email_unconfirmed', error: '이메일 인증을 완료한 뒤 무료 시간을 받을 수 있습니다.' });
     }
@@ -98,6 +107,24 @@ export function createWelcomeCreditRouter({
       }
     } catch (error) {
       return res.status(503).json(unavailable(req, error));
+    }
+
+    if (mode === 'identity') {
+      try {
+        const claimed = await store.claimIdentity(req.user);
+        if (claimed.status === 'granted') {
+          return res.json({ status: 'granted', credits: claimed.credits });
+        }
+        if (claimed.status === 'already_granted') {
+          return res.json({ status: 'granted', credits: claimed.credits, alreadyGranted: true });
+        }
+        if (['not_eligible', 'identity_claimed'].includes(claimed.status)) {
+          return res.status(409).json({ status: 'not_eligible' });
+        }
+        return res.status(503).json(unavailable(req));
+      } catch (error) {
+        return res.status(503).json(unavailable(req, error));
+      }
     }
 
     const config = configProvider();

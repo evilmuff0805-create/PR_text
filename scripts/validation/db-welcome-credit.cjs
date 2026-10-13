@@ -24,6 +24,61 @@ const { randomUUID } = require('node:crypto');
       options.nonce ?? null, options.turnstileValid ?? false,
     ],
   ))[0];
+  const claimIdentity = async (user, options = {}) => (await q(
+    'select * from claim_welcome_credit_identity($1,$2,$3)', [
+      user.userId, [user.identity], options.emailConfirmed ?? true,
+    ],
+  ))[0];
+
+  // Automatic identity-mode claims pay exactly once, preserve a prior manual
+  // welcome grant, and never modify an existing paid or support balance.
+  const identityMode = await createUser(freshIdentity());
+  assert.equal((await claimIdentity(identityMode)).status, 'granted');
+  assert.equal((await claimIdentity(identityMode)).status, 'already_granted');
+  assert.equal((await q('select credits from profiles where id=$1', [identityMode.userId]))[0].credits, 10);
+  assert.equal((await q("select count(*)::int as n from credit_lots where user_id=$1 and source='welcome'", [identityMode.userId]))[0].n, 1);
+
+  const manualWelcome = await createUser(freshIdentity());
+  await q("insert into credit_lots(user_id,source,granted,available) values($1,'welcome',10,10)", [manualWelcome.userId]);
+  await q('update profiles set credits=10 where id=$1', [manualWelcome.userId]);
+  const manualResult = await claimIdentity(manualWelcome);
+  assert.equal(manualResult.status, 'already_granted');
+  assert.equal(manualResult.credits, 10);
+  assert.ok((await q('select granted_at from welcome_credit_eligibility where user_id=$1', [manualWelcome.userId]))[0].granted_at);
+  assert.equal((await q("select count(*)::int as n from credit_lots where user_id=$1 and source='welcome'", [manualWelcome.userId]))[0].n, 1);
+
+  const paidPending = await createUser(freshIdentity());
+  await q("insert into credit_lots(user_id,source,granted,available) values($1,'legacy',17,17)", [paidPending.userId]);
+  await q('update profiles set credits=17 where id=$1', [paidPending.userId]);
+  assert.deepEqual(await claimIdentity(paidPending), { status: 'granted', credits: 27 });
+
+  const adjustmentPending = await createUser(freshIdentity());
+  await q("insert into credit_lots(user_id,source,granted,available) values($1,'adjustment',5,5)", [adjustmentPending.userId]);
+  await q('update profiles set credits=5 where id=$1', [adjustmentPending.userId]);
+  assert.deepEqual(await claimIdentity(adjustmentPending), { status: 'granted', credits: 15 });
+  assert.equal((await q('select sum(available)::int as n from credit_lots where user_id=$1', [adjustmentPending.userId]))[0].n, 15);
+
+  const unconfirmedIdentity = await createUser(freshIdentity());
+  await assert.rejects(() => claimIdentity(unconfirmedIdentity, { emailConfirmed: false }), (error) => error.code === 'WC004');
+
+  const reusedIdentity = freshIdentity();
+  const identityOwner = await createUser(reusedIdentity);
+  const identityDuplicate = await createUser(reusedIdentity);
+  assert.equal((await claimIdentity(identityOwner)).status, 'granted');
+  assert.equal((await claimIdentity(identityDuplicate)).status, 'identity_claimed');
+  assert.equal((await q('select count(*)::int as n from welcome_credit_eligibility where user_id=$1', [identityDuplicate.userId]))[0].n, 0);
+  assert.equal((await q('select credits from profiles where id=$1', [identityDuplicate.userId]))[0].credits, 0);
+  assert.equal((await q("select count(*)::int as n from credit_lots where user_id=$1 and source='welcome'", [identityDuplicate.userId]))[0].n, 0);
+
+  const sameUserRetry = await createUser(freshIdentity());
+  const retryPeer = await db.peer();
+  const [retryA, retryB] = await Promise.all([
+    q('select * from claim_welcome_credit_identity($1,$2,true)', [sameUserRetry.userId, [sameUserRetry.identity]]),
+    retryPeer.query('select * from claim_welcome_credit_identity($1,$2,true)', [sameUserRetry.userId, [sameUserRetry.identity]]),
+  ]);
+  assert.deepEqual([retryA[0].status, retryB.rows[0].status].sort(), ['already_granted', 'granted']);
+  assert.equal((await q("select count(*)::int as n from credit_lots where user_id=$1 and source='welcome'", [sameUserRetry.userId]))[0].n, 1);
+  await retryPeer.end();
 
   // Existing profiles retain their balance and do not acquire retroactive eligibility.
   const existingId = randomUUID();
@@ -153,10 +208,13 @@ const { randomUUID } = require('node:crypto');
   await db.exec('set role authenticated');
   await assert.rejects(() => q('select * from welcome_credit_ip_attempts'), (error) => error.code === '42501');
   await assert.rejects(() => q('select * from claim_welcome_credit($1,$2,$3,$4,true)', [a.userId, [a.identity], hash('1'), hash('2')]), (error) => error.code === '42501');
+  await assert.rejects(() => q('select * from claim_welcome_credit_identity($1,$2,true)', [identityMode.userId, [identityMode.identity]]), (error) => error.code === '42501');
   await db.exec('reset role');
   await peer.end();
   await db.close();
   console.log('PASS existing profile balance and eligibility preserved');
+  console.log('PASS default identity claim, duplicate prevention, manual grant and paid-balance preservation');
+  console.log('PASS email confirmation and same-user concurrent retries');
   console.log('PASS 0-minute setup, repeated-account challenge, identity and email protections');
   console.log('PASS rolling 24-hour limit survives successful challenge');
   console.log('PASS exact rolling 24-hour and seven-day boundaries');

@@ -161,6 +161,10 @@ export default function WelcomeCreditCard() {
         await loadStatus();
         return;
       }
+      if (response.status === 409 && data.status === 'not_eligible') {
+        setStatus('hidden');
+        return;
+      }
       if (!response.ok) {
         if (status === 'challenge_required') {
           setTurnstileToken('');
@@ -217,7 +221,7 @@ export default function WelcomeCreditCard() {
         <>
           <p style={{ margin: '0 0 6px', color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.875rem' }}>신규 가입 무료 10분</p>
           <p style={{ margin: '0 0 10px', color: 'var(--text-muted)', fontSize: '0.875rem', lineHeight: 1.5 }}>
-            이메일 인증 계정에 1회 제공됩니다. 반복 가입은 추가 확인이 필요하며, 같은 네트워크에서는 24시간마다 한 계정만 받을 수 있습니다.
+          이메일 인증을 마친 계정에 동일 로그인 계정 기준으로 1회 자동 지급됩니다. 지급이 확인되지 않으면 다시 확인할 수 있습니다.
           </p>
           {status === 'challenge_required' && challenge && (
             <div style={{ marginBottom: '10px' }}>

@@ -6,6 +6,28 @@ const migrationUrl = new URL(
   '../supabase/migrations/20261012080104_welcome_ip_verification.sql',
   import.meta.url,
 );
+const restoreMigrationUrl = new URL(
+  '../supabase/migrations/20261013015526_restore_welcome_credit_identity_mode.sql',
+  import.meta.url,
+);
+
+test('identity-mode restoration is service-only, serialized, and cannot repeat a welcome lot', async () => {
+  const sql = await readFile(restoreMigrationUrl, 'utf8');
+  const claim = sql.match(/create or replace function public\.claim_welcome_credit_identity\([\s\S]*?\n\$\$;/i)?.[0] || '';
+
+  assert.match(claim, /coalesce\(p_email_confirmed, false\) is false/i);
+  assert.match(claim, /credit-user:/i);
+  assert.match(claim, /welcome-user:/i);
+  assert.match(claim, /welcome-identity:/i);
+  assert.match(claim, /v_profile_balance <> v_lot_balance/i);
+  assert.match(claim, /where l\.user_id = p_user_id and l\.source = 'welcome'/i);
+  assert.match(claim, /delete from public\.welcome_credit_eligibility/i);
+  assert.match(claim, /insert into public\.credit_lots \(user_id, source, granted, available\)\s+values \(p_user_id, 'welcome', 10, 10\)/i);
+  assert.doesNotMatch(claim, /ip_hash|turnstile|source in \('welcome', 'adjustment'\)/i);
+  assert.match(sql, /revoke all on function public\.claim_welcome_credit_identity\(uuid, text\[\], boolean\)\s+from public, anon, authenticated/i);
+  assert.match(sql, /grant execute on function public\.claim_welcome_credit_identity\(uuid, text\[\], boolean\)\s+to service_role/i);
+  assert.match(sql, /notify pgrst, 'reload schema'/i);
+});
 
 test('new profiles wait at zero minutes and existing profiles are preserved', async () => {
   const sql = await readFile(migrationUrl, 'utf8');

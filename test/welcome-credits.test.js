@@ -8,6 +8,7 @@ process.env.SUPABASE_SERVICE_ROLE_KEY ??= 'test-service-key';
 
 const {
   createWelcomeCreditStore,
+  getWelcomeCreditMode,
   getWelcomeIdentityHashes,
   hashWelcomeIdentity,
 } = await import('../src/services/welcome-credits.js');
@@ -52,6 +53,9 @@ test('calls only service-role RPCs to create profiles and retain claims', async 
           error: null,
         };
       }
+      if (name === 'claim_welcome_credit_identity') {
+        return { data: [{ status: 'granted', credits: 10 }], error: null };
+      }
       return { data: 2, error: null };
     },
   };
@@ -60,10 +64,12 @@ test('calls only service-role RPCs to create profiles and retain claims', async 
 
   const profile = await store.ensureProfile(USER, identityHashes);
   const recorded = await store.recordClaims(identityHashes);
+  const claimed = await store.claimIdentity({ ...USER, emailConfirmed: true }, identityHashes);
 
   assert.equal(profile.credits, 0);
   assert.equal(profile.welcome_credit_granted, false);
   assert.equal(recorded, 2);
+  assert.deepEqual(claimed, { status: 'granted', credits: 10 });
   assert.deepEqual(calls, [
     ['ensure_welcome_credit_profile', {
       p_user_id: USER.id,
@@ -71,7 +77,19 @@ test('calls only service-role RPCs to create profiles and retain claims', async 
       p_identity_hashes: identityHashes,
     }],
     ['register_welcome_credit_claims', { p_identity_hashes: identityHashes }],
+    ['claim_welcome_credit_identity', {
+      p_user_id: USER.id,
+      p_identity_hashes: identityHashes,
+      p_email_confirmed: true,
+    }],
   ]);
+});
+
+test('identity is the safe default and guarded mode requires an explicit setting', () => {
+  assert.equal(getWelcomeCreditMode({}), 'identity');
+  assert.equal(getWelcomeCreditMode({ WELCOME_CREDIT_MODE: 'identity' }), 'identity');
+  assert.equal(getWelcomeCreditMode({ WELCOME_CREDIT_MODE: 'guarded' }), 'guarded');
+  assert.equal(getWelcomeCreditMode({ WELCOME_CREDIT_MODE: 'typo' }), 'disabled');
 });
 
 test('removes both direct 10-credit profile creation paths', async () => {
@@ -88,8 +106,11 @@ test('removes both direct 10-credit profile creation paths', async () => {
   assert.doesNotMatch(authRoutes, /credits:\s*10/);
   assert.match(middleware, /welcomeCreditStore\.ensureProfile/);
   assert.match(authRoutes, /welcomeCreditStore\.ensureProfile/);
-  assert.match(settings, /아직 신청하지 않은 무료 10분의 신청 자격도 종료됩니다/);
-  assert.match(terms, /동일 로그인 계정에 최초\s+1회만 지급/);
+  assert.match(settings, /아직 지급되지 않은 무료 10분 자격도 종료됩니다/);
+  assert.match(terms, /동일 로그인 계정 기준으로 최초 1회 자동/);
   assert.match(privacy, /IP·계정 HMAC 식별값/);
-  assert.match(authModal, /이메일 인증 후 신청할 수 있습니다/);
+  assert.match(authModal, /이메일 인증 후 로그인하면 동일 로그인 계정에 무료 10분이 1회 자동 지급됩니다/);
+  assert.match(authRoutes, /welcomeCreditStore\.claimIdentity\(req\.user\)/);
+  assert.match(authRoutes, /getWelcomeCreditMode\(\) === 'identity'/);
+  assert.doesNotMatch(middleware, /claimIdentity\(/);
 });

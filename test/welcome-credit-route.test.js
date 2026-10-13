@@ -25,6 +25,7 @@ async function withRoute(t, {
   verified = true,
   emailConfirmed = true,
   trustProxy = false,
+  mode = 'guarded',
 } = {}) {
   const calls = [];
   const store = {
@@ -55,6 +56,7 @@ async function withRoute(t, {
       calls.push(['verify', input]);
       return verified;
     },
+    modeProvider: () => mode,
   }));
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -80,6 +82,39 @@ test('hides existing and already-paid accounts before checking feature configura
     config: { ready: false },
   });
   assert.deepEqual(await (await granted.request()).json(), { status: 'not_eligible' });
+});
+
+test('identity mode remains available without IP or Turnstile configuration and retries atomically', async (t) => {
+  const calls = [];
+  const app = express();
+  app.use(express.json());
+  app.use('/api/auth/welcome-credit', createWelcomeCreditRouter({
+    auth(req, res, next) { req.user = { id: 'user-1', emailConfirmed: true, welcomeIdentityHashes: ['c'.repeat(64)] }; next(); },
+    store: {
+      async getEligibility() { return { user_id: 'user-1', granted_at: null }; },
+      async claimIdentity(user) { calls.push(user.id); return { status: 'granted', credits: 18 }; },
+    },
+    configProvider: () => ({ ready: false }),
+    modeProvider: () => 'identity',
+  }));
+  const server = app.listen(0, '127.0.0.1');
+  await once(server, 'listening');
+  t.after(async () => { server.close(); await once(server, 'close'); });
+
+  const base = `http://127.0.0.1:${server.address().port}/api/auth/welcome-credit`;
+  const status = await fetch(base);
+  assert.deepEqual(await status.json(), { status: 'eligible' });
+  const claim = await fetch(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}' });
+  assert.deepEqual(await claim.json(), { status: 'granted', credits: 18 });
+  assert.deepEqual(calls, ['user-1']);
+});
+
+test('an invalid mode disables only the welcome-credit endpoint', async (t) => {
+  const route = await withRoute(t, { mode: 'disabled', config: { ready: false } });
+  const response = await route.request();
+  assert.equal(response.status, 503);
+  assert.equal((await response.json()).code, 'WELCOME_CREDIT_UNAVAILABLE');
+  assert.equal(route.calls.some(([name]) => ['prepare', 'claim'].includes(name)), false);
 });
 
 test('returns the current balance when a successful claim is retried after a lost response', async (t) => {
@@ -214,6 +249,7 @@ test('requests a challenge if a second account appears between page load and cla
     configProvider: () => READY_CONFIG,
     abuseHashes: () => HASHES,
     verifyChallenge: async () => true,
+    modeProvider: () => 'guarded',
   }));
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');

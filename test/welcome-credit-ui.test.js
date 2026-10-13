@@ -13,3 +13,8 @@ test('Turnstile widget errors wait for explicit user retry instead of remounting
   assert.match(retryHandler, /setChallengeReset/);
   assert.match(retryHandler, /await loadStatus\(\)/);
 });
+
+test('a resolved duplicate identity hides the no-longer-eligible welcome card', async () => {
+  const source = await readFile(new URL('../client/src/components/WelcomeCreditCard.jsx', import.meta.url), 'utf8');
+  assert.match(source, /response\.status === 409 && data\.status === 'not_eligible'[\s\S]*?setStatus\('hidden'\)/);
+});
