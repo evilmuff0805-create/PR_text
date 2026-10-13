@@ -268,7 +268,7 @@ export default function PaymentPage() {
       </section>
 
       <section className="payment-brief" aria-label="충전 안내">
-        <div><span>무료 체험</span><strong>이메일 인증 후 신청 · 같은 IP 24시간 1계정</strong></div>
+        <div><span>무료 체험</span><strong>이메일 인증 후 로그인하면 동일 로그인 계정에 10분 자동 지급</strong></div>
         <div><span>사용 방식</span><strong>음성 길이 1분당 1분 차감</strong></div>
         <div><span>자막 아이디어</span><strong>성공 5회당 1분 차감 · 실패 무차감</strong></div>
         <div><span>가성비</span><strong>{bestPlan.name} {Math.round(bestPlan.salePrice / bestPlan.credits).toLocaleString()}원/분</strong></div>

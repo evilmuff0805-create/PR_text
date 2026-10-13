@@ -4,6 +4,12 @@ import { supabaseAdmin } from '../lib/supabase.js';
 export const WELCOME_CREDITS = 10;
 const HASH_CONTEXT = 'pr-text:welcome-credit:v1';
 
+export function getWelcomeCreditMode(env = process.env) {
+  if (env.WELCOME_CREDIT_MODE === undefined || env.WELCOME_CREDIT_MODE === 'identity') return 'identity';
+  if (env.WELCOME_CREDIT_MODE === 'guarded') return 'guarded';
+  return 'disabled';
+}
+
 function welcomeCreditSecret() {
   const secret = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!secret) throw new Error('무료 체험 식별값을 보호할 서버 키가 없습니다.');
@@ -76,6 +82,16 @@ export function createWelcomeCreditStore(database = supabaseAdmin) {
       });
       if (error) throw error;
       return firstResult(data, '계정 정보를 준비하지 못했습니다.');
+    },
+
+    async claimIdentity(user, identityHashes = user.welcomeIdentityHashes || getWelcomeIdentityHashes(user)) {
+      const { data, error } = await database.rpc('claim_welcome_credit_identity', {
+        p_user_id: user.id,
+        p_identity_hashes: identityHashes,
+        p_email_confirmed: Boolean(user.emailConfirmed),
+      });
+      if (error) throw error;
+      return firstResult(data, '무료 체험 지급 결과를 받지 못했습니다.');
     },
 
     async recordClaims(identityHashes) {

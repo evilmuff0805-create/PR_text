@@ -595,3 +595,24 @@
 
 ### 2026-10-12 운영 배포 승인
 - 사용자 배포 명시 승인. 운영 인증 설정 미준비 상태를 고지했으며 신규 무료 지급은 보류한다. DB migration 선행 후 검증본 배포, 기존 로그인/결제/잔액 보존과 health 확인. 실제 Turnstile/IP 신뢰 검증 전 활성화 금지.
+
+### 배포 확인 — 2026-10-12 17:35 KST
+- PR #125 squash merge d74996b1c6ccaec475ed476d8b91c61f41d92664. GitHub Test/build 및 PG17 CI 성공.
+- Supabase welcome_ip_verification migration 성공. authenticated claim 실행 불가, service_role만 가능.
+- Railway f2be22b2-dfde-4540-8141-3f233b6bb17a SUCCESS, 운영 health ok/commit d74996b 일치.
+- 랜딩/개인정보 페이지 HTTP200, HMAC/IPv6/7일 고지 확인. 비로그인 무료지급 API401. 시작로그 Toss live checkout enabled=true, 변환worker 정상. 실제 결제 거래는 실행하지 않음.
+- 신규 무료 지급 전면 보류: Turnstile site/secret, HMAC, trusted proxy 검증 미준비. 인증 설정 및 운영 IP spoof 검증은 미완료. 배포 완료와 기능 활성화를 구분한다.
+
+## 2026-10-13 신규 무료 지급 복구 (진행 중)
+- 사용자 명시 요청: 신규 무료10분 지급 재개. 운영 복구·배포 포함. 본부장 판단: 신뢰 IP/Turnstile 준비를 기다리며 정상가입을 막지 않고 임시 identity-only 모드로 복구, IP/추가인증은 미적용 고지.
+- 계획: pending 자격+확인된 이메일에 한해 서비스 전용 새 원자 지급 RPC, 기존 identity 잠금·잔액원장 일치·수동수급 보존. /auth/me에서만 자동 지급하고 기존 claim endpoint는 재시도 지원. 기존 인증/변환 요청마다 추가 RPC 호출 금지. 기존 ensure는 0분 준비 유지.
+- 완료조건: 신규/기존pending에 10분, 수동수급 및 기존회원중복없음, 미인증거부, 동시재시도1회, 결제잔액보존. UI·약관과 임시모드 일치. Node/build/PG 검증·독립검수 후 DB선행배포 및 실제응답검증.
+- 위험: 다른메일 별도계정 남용은 임시모드에서 완전방지불가. 자동 config fallback 대신 명시 guarded 모드에서만 IP/CAPTCHA 적용. 복구기본 identity, guarded 설정누락은failclosed.
+- 사전검수 /auth/me 한정 권고 채택. 본부장 실행 승인.
+- [x] Supabase CLI로 identity 지급 RPC migration 생성. 신규/기존 pending은 이메일 인증, identity/user/credit 잠금, 원장 일치 확인 후 원자 지급한다. 이미 welcome lot이 있으면 재지급하지 않고, 다른 계정이 identity를 먼저 claim했으면 pending 자격만 종료한다.
+- [x] `WELCOME_CREDIT_MODE`를 기본 identity, 명시 guarded, 오타/기타 값 disabled로 분리. identity 자동지급은 `/api/auth/me`에서만 시도하며 지급 실패가 로그인 응답을 막지 않는다. 기존 claim endpoint는 모드에 따라 일관되게 재시도하고 guarded 설정 누락은 무료 지급만 보류한다.
+- [x] 가입/결제 화면, 이용약관, 개인정보처리방침 및 운영 메모를 임시 identity 방식에 맞춰 변경. 외부 인증 키가 준비되지 않았다는 이유로 정상 신규 혜택을 보류하는 배포를 금지하는 예방 원칙을 `tasks/lessons.md`에 추가.
+- [x] Node 테스트 476/476, PG17 기존 operations 16/16, concurrency 9/9, welcome-credit 기능/권한/동시성 그룹 통과. identity 중복 pending 자격종료, 수동 welcome lot, adjustment·유료 잔액 보존 및 동일 계정 동시재시도 확인. production build 70 modules 성공. `git -c core.whitespace=cr-at-eol diff --check` 통과.
+- 독립 검수 및 운영 DB migration/PR/배포/health 확인은 본부장 진행 예정. 이 개발자 작업에서는 운영 시스템을 변경하지 않았다.
+
+- 본부장 배포 승인: 독립 관련 테스트 29/29 및 전체 검증 증거 확인. 운영 DB 선행 적용 후 앱 배포·health·권한·기존 수동 지급 불변 확인 진행.

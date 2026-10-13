@@ -401,7 +401,7 @@ export default function SettingsPage() {
                 )}
 
                 <p className="settings-alert">
-                  탈퇴 시 아직 신청하지 않은 무료 10분의 신청 자격도 종료됩니다. 같은 로그인 계정으로 다시 가입해도 무료 시간은 다시 지급되지 않습니다.
+                  탈퇴 시 아직 지급되지 않은 무료 10분 자격도 종료됩니다. 같은 로그인 계정으로 다시 가입해도 무료 시간은 다시 지급되지 않습니다.
                 </p>
 
                 <label className="settings-field">

@@ -226,7 +226,7 @@ export default function AuthModal({ isOpen, onClose, restoreFocusRef, returnPath
               color: 'var(--text-muted)', fontSize: '0.875rem', lineHeight: 1.6,
               marginTop: '10px', textAlign: 'center', wordBreak: 'keep-all',
             }}>
-              이메일 인증 후 신청할 수 있습니다. 동일 로그인 계정에 1회 지급되며, 같은 네트워크에서는 24시간에 한 계정만 받을 수 있습니다.
+              이메일 인증 후 로그인하면 동일 로그인 계정에 무료 10분이 1회 자동 지급됩니다.
             </p>
           )}
 
