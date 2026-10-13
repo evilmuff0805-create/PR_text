@@ -29,6 +29,14 @@ const { randomUUID } = require('node:crypto');
       user.userId, [user.identity], options.emailConfirmed ?? true,
     ],
   ))[0];
+  const claimIp = async (user, ip, account = hash('f'), options = {}) => (await q(
+    'select * from claim_welcome_credit_ip($1,$2,$3,$4,$5)', [
+      user.userId, [user.identity], options.emailConfirmed ?? true, ip, account,
+    ],
+  ))[0];
+  const ipStatus = async (ip) => (await q(
+    'select * from get_welcome_credit_ip_status($1)', [ip],
+  ))[0];
 
   // Automatic identity-mode claims pay exactly once, preserve a prior manual
   // welcome grant, and never modify an existing paid or support balance.
@@ -60,6 +68,69 @@ const { randomUUID } = require('node:crypto');
 
   const unconfirmedIdentity = await createUser(freshIdentity());
   await assert.rejects(() => claimIdentity(unconfirmedIdentity, { emailConfirmed: false }), (error) => error.code === 'WC004');
+
+  // IP mode applies the rolling window without CAPTCHA while preserving existing balances.
+  const ipModeIp = hash('d');
+  const ipModeFirst = await createUser(freshIdentity());
+  assert.deepEqual(await claimIp(ipModeFirst, ipModeIp, hash('3')), { status: 'granted', credits: 10, retry_at: null });
+  const ipModeBlocked = await createUser(freshIdentity());
+  assert.equal(ipModeBlocked.userId === ipModeFirst.userId, false);
+  assert.equal(ipModeBlocked.profile.credits, 0);
+  assert.equal((await q('select credits from profiles where id=$1', [ipModeBlocked.userId]))[0].credits, 0);
+  const ipModeLimit = await claimIp(ipModeBlocked, ipModeIp, hash('4'));
+  assert.equal(ipModeLimit.status, 'ip_limit');
+  assert.ok(ipModeLimit.retry_at);
+  assert.equal((await ipStatus(ipModeIp)).status, 'ip_limit');
+  assert.equal((await q('select credits from profiles where id=$1', [ipModeBlocked.userId]))[0].credits, 0);
+  assert.equal((await q('select count(*)::int as n from credit_lots where user_id=$1', [ipModeBlocked.userId]))[0].n, 0);
+
+  const differentIp = await createUser(freshIdentity());
+  assert.equal((await claimIp(differentIp, hash('3'), hash('5'))).status, 'granted');
+
+  await q("update welcome_credit_ip_grants set granted_at=now()-interval '24 hours' where ip_hash=$1", [ipModeIp]);
+  assert.equal((await ipStatus(ipModeIp)).status, 'ready');
+  assert.equal((await claimIp(ipModeBlocked, ipModeIp, hash('4'))).status, 'granted');
+
+  const ipUnconfirmed = await createUser(freshIdentity());
+  await assert.rejects(() => claimIp(ipUnconfirmed, hash('4'), hash('5'), { emailConfirmed: false }), (error) => error.code === 'WC004');
+
+  const ipManualWelcome = await createUser(freshIdentity());
+  await q("insert into credit_lots(user_id,source,granted,available) values($1,'welcome',10,10)", [ipManualWelcome.userId]);
+  await q('update profiles set credits=10 where id=$1', [ipManualWelcome.userId]);
+  assert.deepEqual(await claimIp(ipManualWelcome, hash('5'), hash('6')), { status: 'already_granted', credits: 10, retry_at: null });
+  assert.equal((await q('select count(*)::int as n from welcome_credit_ip_grants where account_hash=$1', [hash('6')]))[0].n, 0);
+
+  const ipPaid = await createUser(freshIdentity());
+  await q("insert into credit_lots(user_id,source,granted,available) values($1,'legacy',17,17)", [ipPaid.userId]);
+  await q('update profiles set credits=17 where id=$1', [ipPaid.userId]);
+  assert.deepEqual(await claimIp(ipPaid, hash('6'), hash('7')), { status: 'granted', credits: 27, retry_at: null });
+
+  const ipAdjustment = await createUser(freshIdentity());
+  await q("insert into credit_lots(user_id,source,granted,available) values($1,'adjustment',5,5)", [ipAdjustment.userId]);
+  await q('update profiles set credits=5 where id=$1', [ipAdjustment.userId]);
+  assert.deepEqual(await claimIp(ipAdjustment, hash('7'), hash('8')), { status: 'granted', credits: 15, retry_at: null });
+  assert.equal((await q('select sum(available)::int as n from credit_lots where user_id=$1', [ipAdjustment.userId]))[0].n, 15);
+
+  // Duplicate identities terminate pending eligibility rather than creating an endless retry.
+  const duplicateIpIdentity = freshIdentity();
+  const ipIdentityOwner = await createUser(duplicateIpIdentity);
+  const ipIdentityDuplicate = await createUser(duplicateIpIdentity);
+  assert.equal((await claimIp(ipIdentityOwner, hash('b'), hash('9'))).status, 'granted');
+  assert.equal((await claimIp(ipIdentityDuplicate, hash('5'), hash('a'))).status, 'identity_claimed');
+  assert.equal((await q('select count(*)::int as n from welcome_credit_eligibility where user_id=$1', [ipIdentityDuplicate.userId]))[0].n, 0);
+  assert.equal((await q('select credits from profiles where id=$1', [ipIdentityDuplicate.userId]))[0].credits, 0);
+  assert.equal((await q("select count(*)::int as n from credit_lots where user_id=$1 and source='welcome'", [ipIdentityDuplicate.userId]))[0].n, 0);
+
+  // Distinct accounts racing from one network serialize to one grant.
+  const ipRace = hash('0');
+  const ipRaceA = await createUser(freshIdentity());
+  const ipRaceB = await createUser(freshIdentity());
+  const [ipRaceResultA, ipRaceResultB] = await Promise.all([
+    q('select * from claim_welcome_credit_ip($1,$2,true,$3,$4)', [ipRaceA.userId, [ipRaceA.identity], ipRace, hash('b')]),
+    peer.query('select * from claim_welcome_credit_ip($1,$2,true,$3,$4)', [ipRaceB.userId, [ipRaceB.identity], ipRace, hash('c')]),
+  ]);
+  assert.deepEqual([ipRaceResultA[0].status, ipRaceResultB.rows[0].status].sort(), ['granted', 'ip_limit']);
+  assert.equal((await q('select sum(credits)::int as n from profiles where id=any($1::uuid[])', [[ipRaceA.userId, ipRaceB.userId]]))[0].n, 10);
 
   const reusedIdentity = freshIdentity();
   const identityOwner = await createUser(reusedIdentity);
@@ -209,6 +280,7 @@ const { randomUUID } = require('node:crypto');
   await assert.rejects(() => q('select * from welcome_credit_ip_attempts'), (error) => error.code === '42501');
   await assert.rejects(() => q('select * from claim_welcome_credit($1,$2,$3,$4,true)', [a.userId, [a.identity], hash('1'), hash('2')]), (error) => error.code === '42501');
   await assert.rejects(() => q('select * from claim_welcome_credit_identity($1,$2,true)', [identityMode.userId, [identityMode.identity]]), (error) => error.code === '42501');
+  await assert.rejects(() => q('select * from claim_welcome_credit_ip($1,$2,true,$3,$4)', [identityMode.userId, [identityMode.identity], hash('1'), hash('2')]), (error) => error.code === '42501');
   await db.exec('reset role');
   await peer.end();
   await db.close();

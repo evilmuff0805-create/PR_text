@@ -89,7 +89,42 @@ test('identity is the safe default and guarded mode requires an explicit setting
   assert.equal(getWelcomeCreditMode({}), 'identity');
   assert.equal(getWelcomeCreditMode({ WELCOME_CREDIT_MODE: 'identity' }), 'identity');
   assert.equal(getWelcomeCreditMode({ WELCOME_CREDIT_MODE: 'guarded' }), 'guarded');
+  assert.equal(getWelcomeCreditMode({ WELCOME_CREDIT_MODE: 'ip' }), 'ip');
   assert.equal(getWelcomeCreditMode({ WELCOME_CREDIT_MODE: 'typo' }), 'disabled');
+});
+
+test('IP mode and status call only the service-role RPCs with HMAC values', async (t) => {
+  const previousKey = process.env.WELCOME_CREDIT_SECURITY_HMAC_KEY;
+  process.env.WELCOME_CREDIT_SECURITY_HMAC_KEY = 'dedicated-hmac-key-at-least-32-bytes-long';
+  t.after(() => {
+    if (previousKey === undefined) delete process.env.WELCOME_CREDIT_SECURITY_HMAC_KEY;
+    else process.env.WELCOME_CREDIT_SECURITY_HMAC_KEY = previousKey;
+  });
+  const calls = [];
+  const database = {
+    async rpc(name, params) {
+      calls.push([name, params]);
+      if (name === 'get_welcome_credit_ip_status') {
+        return { data: [{ status: 'ready', retry_at: null }], error: null };
+      }
+      return { data: [{ status: 'granted', credits: 10, retry_at: null }], error: null };
+    },
+  };
+  const store = createWelcomeCreditStore(database);
+  const ipHash = 'a'.repeat(64);
+  assert.deepEqual(await store.getIpLimit(ipHash), { status: 'ready', retry_at: null });
+  assert.deepEqual(await store.claimIp({ ...USER, emailConfirmed: true }, ipHash, ['b'.repeat(64)]), {
+    status: 'granted', credits: 10, retry_at: null,
+  });
+  assert.deepEqual(calls[0], ['get_welcome_credit_ip_status', { p_ip_hash: ipHash }]);
+  assert.deepEqual({ ...calls[1][1], p_account_hash: 'hash' }, {
+    p_user_id: USER.id,
+    p_identity_hashes: ['b'.repeat(64)],
+    p_email_confirmed: true,
+    p_ip_hash: ipHash,
+    p_account_hash: 'hash',
+  });
+  assert.match(calls[1][1].p_account_hash, /^[0-9a-f]{64}$/);
 });
 
 test('removes both direct 10-credit profile creation paths', async () => {
@@ -107,10 +142,11 @@ test('removes both direct 10-credit profile creation paths', async () => {
   assert.match(middleware, /welcomeCreditStore\.ensureProfile/);
   assert.match(authRoutes, /welcomeCreditStore\.ensureProfile/);
   assert.match(settings, /아직 지급되지 않은 무료 10분 자격도 종료됩니다/);
-  assert.match(terms, /동일 로그인 계정 기준으로 최초 1회 자동/);
+  assert.match(terms, /같은 네트워크의 추가 무료 지급은 24시간 제한될 수/);
   assert.match(privacy, /IP·계정 HMAC 식별값/);
-  assert.match(authModal, /이메일 인증 후 로그인하면 동일 로그인 계정에 무료 10분이 1회 자동 지급됩니다/);
+  assert.match(authModal, /같은 네트워크의 추가 무료 지급은 24시간 제한될 수 있으며/);
   assert.match(authRoutes, /welcomeCreditStore\.claimIdentity\(req\.user\)/);
-  assert.match(authRoutes, /getWelcomeCreditMode\(\) === 'identity'/);
+  assert.match(authRoutes, /welcomeMode === 'identity'/);
+  assert.match(authRoutes, /welcomeMode === 'ip'/);
   assert.doesNotMatch(middleware, /claimIdentity\(/);
 });

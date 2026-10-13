@@ -21,6 +21,8 @@ async function withRoute(t, {
   eligibility = { user_id: 'user-1', granted_at: null },
   prepared = { eligible: true, challenge_required: false, challenge_nonce: null, retry_at: null, reason: 'ready' },
   claimed = { status: 'granted', credits: 10, retry_at: null },
+  ipLimit = { status: 'ready', retry_at: null },
+  ipClaimed = { status: 'granted', credits: 10, retry_at: null },
   config = READY_CONFIG,
   verified = true,
   emailConfirmed = true,
@@ -33,6 +35,8 @@ async function withRoute(t, {
     async getCredits(userId) { calls.push(['credits', userId]); return 42; },
     async prepareClaim(userId, hashes) { calls.push(['prepare', userId, hashes]); return prepared; },
     async claim(user, args) { calls.push(['claim', user, args]); return claimed; },
+    async getIpLimit(ipHash) { calls.push(['ip-limit', ipHash]); return ipLimit; },
+    async claimIp(user, ipHash) { calls.push(['claim-ip', user, ipHash]); return ipClaimed; },
   };
   const app = express();
   app.set('trust proxy', trustProxy);
@@ -52,6 +56,7 @@ async function withRoute(t, {
       calls.push(['hashes', ip, userId]);
       return HASHES;
     },
+    ipHashProvider: () => ({ ipHash: HASHES.ipHash, source: 'x-real-ip' }),
     verifyChallenge: async (input) => {
       calls.push(['verify', input]);
       return verified;
@@ -146,6 +151,43 @@ test('uses Express req.ip and ignores forwarded-IP when no proxy is trusted', as
   assert.equal(response.status, 200);
   const hashesCall = route.calls.find(([name]) => name === 'hashes');
   assert.equal(hashesCall[1], '127.0.0.1');
+});
+
+test('IP mode reads the 24-hour quota without requiring Turnstile', async (t) => {
+  const retryAt = '2026-10-14T12:00:00.000Z';
+  const route = await withRoute(t, {
+    mode: 'ip',
+    config: { ready: false },
+    ipLimit: { status: 'ip_limit', retry_at: retryAt },
+  });
+  const response = await route.request();
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { status: 'ip_limit', retryAt });
+  assert.deepEqual(route.calls.find(([name]) => name === 'ip-limit'), ['ip-limit', HASHES.ipHash]);
+  assert.equal(route.calls.some(([name]) => ['prepare', 'verify'].includes(name)), false);
+});
+
+test('IP mode claim uses the shared IP hash path and does not invoke CAPTCHA', async (t) => {
+  const route = await withRoute(t, { mode: 'ip', config: { ready: false } });
+  const response = await route.request('', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+  });
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), { status: 'granted', credits: 10 });
+  assert.equal(route.calls.some(([name]) => name === 'claim-ip'), true);
+  assert.equal(route.calls.some(([name]) => ['prepare', 'claim', 'verify'].includes(name)), false);
+});
+
+test('IP mode POST returns the rolling retry time when quota has been consumed', async (t) => {
+  const retryAt = '2026-10-14T12:00:00.000Z';
+  const route = await withRoute(t, {
+    mode: 'ip', ipClaimed: { status: 'ip_limit', retry_at: retryAt },
+  });
+  const response = await route.request('', {
+    method: 'POST', headers: { 'content-type': 'application/json' }, body: '{}',
+  });
+  assert.equal(response.status, 429);
+  assert.deepEqual(await response.json(), { status: 'ip_limit', retryAt });
 });
 
 test('fails closed when proxy trust has not been confirmed, even if X-Forwarded-For is supplied', async (t) => {

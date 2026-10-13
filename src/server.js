@@ -4,6 +4,7 @@ import cors from 'cors';
 import { rateLimit } from 'express-rate-limit';
 import authRouter from './routes/auth.js';
 import welcomeCreditRouter from './routes/welcome-credit.js';
+import welcomeIpCheckRouter from './routes/welcome-ip-check.js';
 import accountRouter from './routes/account.js';
 import paymentRouter, { paymentWebhookRouter } from './routes/payment.js';
 import transcribeRouter from './routes/transcribe.js';
@@ -19,7 +20,8 @@ import { startIndexNowSubmission } from './services/indexnow.js';
 import { startCaptionIdeaMaintenance } from './services/caption-idea-store.js';
 import { startPaymentOrderMaintenance } from './services/payment-orders.js';
 import { startCreditLedgerMaintenance } from './services/credit-ledger.js';
-import { startWelcomeCreditMaintenance } from './services/welcome-credits.js';
+import { getWelcomeCreditMode, startWelcomeCreditMaintenance } from './services/welcome-credits.js';
+import { getWelcomeIpModeConfig } from './services/welcome-ip.js';
 import { validateTossKeyPair } from './services/toss-payments.js';
 import { stopSilenceObservation } from './services/silence-observation.js';
 import { fileURLToPath } from 'url';
@@ -167,6 +169,7 @@ app.use('/api/auth/reset-password', resetPasswordLimiter);
 app.use('/api/auth/recovery-password', passwordChangeLimiter);
 app.use('/api/auth/password', passwordChangeLimiter);
 app.use('/api/auth/welcome-credit', generalLimiter, welcomeCreditRouter);
+app.use('/api/internal', welcomeIpCheckRouter);
 app.use('/api/auth', generalLimiter, authRouter);
 app.use('/api/account', accountDeletionLimiter, generalLimiter, accountRouter);
 app.use('/api/payment/webhook', paymentWebhookLimiter, paymentWebhookRouter);
@@ -194,6 +197,12 @@ addStaticSiteRoutes(app, distPath);
 
 const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  const welcomeMode = getWelcomeCreditMode();
+  const welcomeIpConfig = getWelcomeIpModeConfig();
+  console.log('[welcome_credit.config]', JSON.stringify({
+    mode: welcomeMode,
+    ipReady: welcomeMode === 'ip' && welcomeIpConfig.trusted && welcomeIpConfig.hmacReady,
+  }));
   startDiarizationJobWorker();
   console.log('[transcription.operations]', JSON.stringify({ admissionsEnabled: process.env.TRANSCRIPTION_OPERATIONS_ENABLED === 'true', workerConcurrency: 1 }));
   console.log('[transcription.silence_observation]', JSON.stringify({ mode: process.env.SILENCE_OBSERVATION_MODE === 'shadow' ? 'shadow' : 'off' }));

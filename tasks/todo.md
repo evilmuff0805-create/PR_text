@@ -603,7 +603,7 @@
 - 랜딩/개인정보 페이지 HTTP200, HMAC/IPv6/7일 고지 확인. 비로그인 무료지급 API401. 시작로그 Toss live checkout enabled=true, 변환worker 정상. 실제 결제 거래는 실행하지 않음.
 - 신규 무료 지급 전면 보류: Turnstile site/secret, HMAC, trusted proxy 검증 미준비. 인증 설정 및 운영 IP spoof 검증은 미완료. 배포 완료와 기능 활성화를 구분한다.
 
-## 2026-10-13 신규 무료 지급 복구 (진행 중)
+## 2026-10-13 신규 무료 지급 복구 (완료)
 - 사용자 명시 요청: 신규 무료10분 지급 재개. 운영 복구·배포 포함. 본부장 판단: 신뢰 IP/Turnstile 준비를 기다리며 정상가입을 막지 않고 임시 identity-only 모드로 복구, IP/추가인증은 미적용 고지.
 - 계획: pending 자격+확인된 이메일에 한해 서비스 전용 새 원자 지급 RPC, 기존 identity 잠금·잔액원장 일치·수동수급 보존. /auth/me에서만 자동 지급하고 기존 claim endpoint는 재시도 지원. 기존 인증/변환 요청마다 추가 RPC 호출 금지. 기존 ensure는 0분 준비 유지.
 - 완료조건: 신규/기존pending에 10분, 수동수급 및 기존회원중복없음, 미인증거부, 동시재시도1회, 결제잔액보존. UI·약관과 임시모드 일치. Node/build/PG 검증·독립검수 후 DB선행배포 및 실제응답검증.
@@ -616,3 +616,25 @@
 - 독립 검수 및 운영 DB migration/PR/배포/health 확인은 본부장 진행 예정. 이 개발자 작업에서는 운영 시스템을 변경하지 않았다.
 
 - 본부장 배포 승인: 독립 관련 테스트 29/29 및 전체 검증 증거 확인. 운영 DB 선행 적용 후 앱 배포·health·권한·기존 수동 지급 불변 확인 진행.
+
+### 운영 복구 확인 — 2026-10-13
+- PR #126, squash f283a463dd2347198049573069aa609e605d285c. GitHub Node/build 및 PostgreSQL17 CI 성공.
+- 운영 identity RPC migration 적용, API schema 반영 및 anon/authenticated 실행 금지·service_role 실행 권한 확인.
+- Railway 84212d47-23a9-424c-87d5-7a6de680b381 SUCCESS. 운영 health ok/f283a46, 랜딩200, 비로그인 auth/me 및 auth/welcome-credit401. Toss live checkout 및 변환 worker 시작 정상.
+- 기존 수동 지급 계정 잔액10·welcome lot1 유지. 조회 시 최근24시간 생성 profile7건 모두 welcome lot 존재, pending0. 실제 신규 사용자 가입부터 로그인까지 운영 E2E는 계정 세션 부재로 미실행이며 로컬 실제 HTTP/DB 및 CI로 검증함.
+- 본부장 운영 배포 완성 승인. 임시 identity 모드이므로 다른 이메일 반복가입/IP 남용 제한은 미적용. 로컬 PG 검증 서버 종료.
+
+## 2026-10-13 자동 무료 지급과 IP24시간 제한 병행 (진행 중)
+- 목표: 신규 이메일 인증 자동10분, 동일IP24h1계정. CAPTCHA 설정과 독립. 기존 수동/유료잔액보존.
+- 조사: 기존 guarded IP원장/락 재사용, prepare의 CAPTCHA 의존성은 새 ip RPC에서 제외. Railway X-Real-IP 공식헤더를 실제위조요청과 대조 후 신뢰.
+- 계획: 명시 ip 모드·service-only 원자 RPC·자동 /me 및 POST 공통IP추출. 단계배포는 identity유지→IP검증→ip활성화. 한도초과 안내/24h재시도와 개인정보고지. 원문IP 저장금지.
+- 검증: 같은IP 다른계정 동시1회, 24h경계, 다른IP, 신원중복/수동지급/유료보존/미인증/ACL. 실제 proxy위조 및 서로다른출발IP 구분, CI/build/독립검수.
+- 위험: 공유네트워크 정상2번째제한, VPN/IP변경 우회 가능, 과거IP기록 소급불가. IP설정오류에 identity로 fallback금지.
+- 검수관 조건부권고 반영. 본부장 구현 승인. 프록시검증용 임시토큰 보호 진단은 IP HMAC만 반환하며 검증뒤 토큰제거로 비활성화. 무료지급을 실제로 만들지 않는 진단.
+- [x] explicit `ip` mode와 CAPTCHA 독립 RPC/status를 구현. identity mode는 기본 유지하고 잘못된 설정은 무료 지급만 비활성화한다.
+- [x] `/api/auth/me` 자동지급과 claim GET/POST에 `X-Real-IP` 전용 검증을 적용. 신뢰 플래그·키·헤더가 누락되면 로그인은 유지하고 지급만 보류한다.
+- [x] probe endpoint는 32바이트 이상 비밀 토큰을 header에서만 받고, no-store 응답에 HMAC/source/mode/ready/requestId만 반환한다. 쿼리 토큰은 인증에 사용하지 않고 DB 지급 호출을 하지 않는다.
+- [x] 화면·약관·개인정보 고지에 24시간/공유 네트워크/7일 HMAC 보관 내용을 반영. 운영 적용 단계와 공식 Railway X-Real-IP 문서를 runbook에 기록한다.
+- [ ] Node/PG17/build/CI 테스트와 독립 검수 완료 후 파일 소유권 반환. 운영 DB/변수/배포는 본부장 작업으로 분리한다.
+- [x] 본부장 최종 재검증: Node487/487, build70모듈, PG17 welcome10그룹·operations16/16·concurrency9/9 통과. 한도초과 분기 종료 누락을 실제PG에서 검출·수정하고 두번째계정 profile0/lot0 회귀 통과.
+- 독립검수관 최신SQL 재검수 및 배포권고. 본부장 코드·DB배포 승인, 실제proxy검증후 ip활성화 게이트유지. 기존 전역 분당제한(req.ip)의 헤더위조 가능성은 별도 후속보안검토로 기록.

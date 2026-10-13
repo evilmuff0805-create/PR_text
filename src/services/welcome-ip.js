@@ -82,3 +82,38 @@ export function getWelcomeAbuseHashes(requestIp, userId, secret = process.env.WE
     accountHash: hashWelcomeAbuseKey('account', userId, secret),
   };
 }
+
+export function getWelcomeIpRequestValue(req) {
+  const rawHeaders = Array.isArray(req?.rawHeaders) ? req.rawHeaders : [];
+  const matches = [];
+  for (let index = 0; index < rawHeaders.length; index += 2) {
+    if (String(rawHeaders[index]).toLowerCase() === 'x-real-ip') matches.push(rawHeaders[index + 1]);
+  }
+  if (matches.length > 1) return { ip: null, source: 'invalid' };
+
+  const headerValue = matches.length === 1 ? matches[0] : req?.headers?.['x-real-ip'];
+  if (typeof headerValue !== 'string' || !headerValue || headerValue.includes(',')) {
+    return { ip: null, source: 'invalid' };
+  }
+  const ip = normalizeWelcomeIp(headerValue);
+  return { ip, source: ip ? 'x-real-ip' : 'invalid' };
+}
+
+export function getWelcomeIpModeConfig(env = process.env) {
+  return {
+    trusted: env.WELCOME_CREDIT_TRUSTED_PROXY_IP === 'true',
+    hmacReady: typeof env.WELCOME_CREDIT_SECURITY_HMAC_KEY === 'string'
+      && Buffer.byteLength(env.WELCOME_CREDIT_SECURITY_HMAC_KEY, 'utf8') >= 32,
+  };
+}
+
+export function hashWelcomeIpRequest(req, env = process.env) {
+  const extracted = getWelcomeIpRequestValue(req);
+  if (!extracted.ip) throw new Error('WELCOME_CREDIT_IP_INVALID');
+  const config = getWelcomeIpModeConfig(env);
+  if (!config.trusted || !config.hmacReady) throw new Error('WELCOME_CREDIT_IP_NOT_READY');
+  return {
+    ipHash: hashWelcomeAbuseKey('ip', extracted.ip, env.WELCOME_CREDIT_SECURITY_HMAC_KEY),
+    source: extracted.source,
+  };
+}

@@ -1,5 +1,6 @@
 import { createHmac } from 'node:crypto';
 import { supabaseAdmin } from '../lib/supabase.js';
+import { hashWelcomeAbuseKey } from './welcome-ip.js';
 
 export const WELCOME_CREDITS = 10;
 const HASH_CONTEXT = 'pr-text:welcome-credit:v1';
@@ -7,6 +8,7 @@ const HASH_CONTEXT = 'pr-text:welcome-credit:v1';
 export function getWelcomeCreditMode(env = process.env) {
   if (env.WELCOME_CREDIT_MODE === undefined || env.WELCOME_CREDIT_MODE === 'identity') return 'identity';
   if (env.WELCOME_CREDIT_MODE === 'guarded') return 'guarded';
+  if (env.WELCOME_CREDIT_MODE === 'ip') return 'ip';
   return 'disabled';
 }
 
@@ -89,6 +91,26 @@ export function createWelcomeCreditStore(database = supabaseAdmin) {
         p_user_id: user.id,
         p_identity_hashes: identityHashes,
         p_email_confirmed: Boolean(user.emailConfirmed),
+      });
+      if (error) throw error;
+      return firstResult(data, '무료 체험 지급 결과를 받지 못했습니다.');
+    },
+
+    async getIpLimit(ipHash) {
+      const { data, error } = await database.rpc('get_welcome_credit_ip_status', {
+        p_ip_hash: ipHash,
+      });
+      if (error) throw error;
+      return firstResult(data, '무료 체험 IP 제한 상태를 확인하지 못했습니다.');
+    },
+
+    async claimIp(user, ipHash, identityHashes = user.welcomeIdentityHashes || getWelcomeIdentityHashes(user)) {
+      const { data, error } = await database.rpc('claim_welcome_credit_ip', {
+        p_user_id: user.id,
+        p_identity_hashes: identityHashes,
+        p_email_confirmed: Boolean(user.emailConfirmed),
+        p_ip_hash: ipHash,
+        p_account_hash: hashWelcomeAbuseKey('account', user.id),
       });
       if (error) throw error;
       return firstResult(data, '무료 체험 지급 결과를 받지 못했습니다.');

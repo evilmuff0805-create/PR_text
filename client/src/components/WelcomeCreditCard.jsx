@@ -221,7 +221,7 @@ export default function WelcomeCreditCard() {
         <>
           <p style={{ margin: '0 0 6px', color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.875rem' }}>신규 가입 무료 10분</p>
           <p style={{ margin: '0 0 10px', color: 'var(--text-muted)', fontSize: '0.875rem', lineHeight: 1.5 }}>
-          이메일 인증을 마친 계정에 동일 로그인 계정 기준으로 1회 자동 지급됩니다. 지급이 확인되지 않으면 다시 확인할 수 있습니다.
+          이메일 인증을 마친 계정에 무료 10분을 1회 지급합니다. 중복 가입 방지를 위해 같은 네트워크의 추가 무료 지급은 24시간 제한될 수 있으며, 공유 와이파이에서는 다른 사람의 이용이 영향을 줄 수 있습니다.
           </p>
           {status === 'challenge_required' && challenge && (
             <div style={{ marginBottom: '10px' }}>
