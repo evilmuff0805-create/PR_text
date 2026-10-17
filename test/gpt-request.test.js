@@ -1,24 +1,50 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import OpenAI from 'openai';
 
 process.env.OPENAI_API_KEY ||= 'test-key';
 
-const { buildCorrectionRequest, shouldFallbackToGpt4o } = await import('../src/services/gpt.js');
+const { buildCorrectionRequest, shouldFallbackToGpt4o, getCorrectionModel,
+  correctTextWithUsage, translateToEnglish, translateToKorean } = await import('../src/services/gpt.js');
 
-test('Luna correction request uses model-default sampling', () => {
-  const request = buildCorrectionRequest('테스트 자막', 'gpt-5.6-luna');
+test('both Luna correction requests use explicit medium reasoning without sampling overrides', () => {
+  for (const model of ['gpt-6-luna', 'gpt-5.6-luna']) {
+    const request = buildCorrectionRequest('테스트 자막', model);
+    assert.equal(request.model, model);
+    assert.equal(request.reasoning_effort, 'medium');
+    assert.equal('temperature' in request, false);
+    assert.equal('top_p' in request, false);
+    assert.equal(request.messages[1].content, '테스트 자막');
+    assert.deepEqual(Object.keys(request).sort(), ['messages', 'model', 'reasoning_effort']);
+    assert.equal(request.messages.length, 2);
+  }
+  assert.equal(buildCorrectionRequest('', 'gpt-6-luna').messages[0].content,
+    buildCorrectionRequest('', 'gpt-5.6-luna').messages[0].content);
+});
 
-  assert.equal(request.model, 'gpt-5.6-luna');
-  assert.equal('temperature' in request, false);
-  assert.equal(request.messages[1].content, '테스트 자막');
-  assert.deepEqual(Object.keys(request).sort(), ['messages', 'model']);
-  assert.equal(request.messages.length, 2);
+test('correction defaults to GPT-6 Luna while retaining explicit model configuration', () => {
+  const saved = process.env.GPT_CORRECTION_MODEL;
+  try {
+    delete process.env.GPT_CORRECTION_MODEL;
+    assert.equal(getCorrectionModel(), 'gpt-6-luna');
+    process.env.GPT_CORRECTION_MODEL = '   ';
+    assert.equal(getCorrectionModel(), 'gpt-6-luna');
+    process.env.GPT_CORRECTION_MODEL = '  gpt-5.6-luna  ';
+    assert.equal(getCorrectionModel(), 'gpt-5.6-luna');
+    process.env.GPT_CORRECTION_MODEL = 'custom-model';
+    assert.equal(getCorrectionModel(), 'custom-model');
+  } finally {
+    if (saved === undefined) delete process.env.GPT_CORRECTION_MODEL;
+    else process.env.GPT_CORRECTION_MODEL = saved;
+  }
 });
 
 test('gpt-4o correction request preserves the existing temperature', () => {
   const request = buildCorrectionRequest('테스트 자막', 'gpt-4o');
 
   assert.equal(request.temperature, 0.3);
+  assert.equal('reasoning_effort' in request, false);
+  assert.equal(buildCorrectionRequest('테스트 자막', 'custom-model').temperature, 0.3);
 });
 
 test('correction prompt permits clear dictation and spelling errors while retaining each line', () => {
@@ -53,9 +79,108 @@ test('correction prompt permits clear dictation and spelling errors while retain
 });
 
 test('only Luna client errors use the gpt-4o fallback', () => {
-  assert.equal(shouldFallbackToGpt4o({ status: 400 }, 'gpt-5.6-luna'), true);
-  assert.equal(shouldFallbackToGpt4o({ status: 500 }, 'gpt-5.6-luna'), false);
-  assert.equal(shouldFallbackToGpt4o({ status: 400 }, 'gpt-4o'), false);
+  for (const model of ['gpt-6-luna', 'gpt-5.6-luna']) {
+    for (const status of [400, 403, 404]) assert.equal(shouldFallbackToGpt4o({ status }, model), true);
+    for (const status of [401, 429, 500, 503, undefined]) assert.equal(shouldFallbackToGpt4o({ status }, model), false);
+  }
+  for (const model of ['gpt-4o', 'custom-model', undefined]) {
+    assert.equal(shouldFallbackToGpt4o({ status: 400 }, model), false);
+  }
+});
+
+function sdkResponse(text = '테스트 자막') {
+  return { choices: [{ message: { content: text } }], usage: {
+    prompt_tokens: 1_000, completion_tokens: 500, total_tokens: 1_500,
+    prompt_tokens_details: { cached_tokens: 200, cache_write_tokens: 300 },
+    completion_tokens_details: { reasoning_tokens: 400 },
+  } };
+}
+
+function skipRetryDelays(t) {
+  const timeout = globalThis.setTimeout;
+  t.mock.method(globalThis, 'setTimeout', (fn, delay, ...args) =>
+    timeout(fn, delay === 1000 || delay === 2000 ? 0 : delay, ...args));
+}
+
+test('the actual correction path sends the default and legacy model payloads and reports cache-write cost', async t => {
+  const requests = [];
+  t.mock.method(OpenAI.prototype, 'post', async (path, options) => {
+    assert.equal(path, '/chat/completions');
+    requests.push(options.body);
+    return sdkResponse('  테스트 자막  ');
+  });
+  const saved = process.env.GPT_CORRECTION_MODEL;
+  try {
+    delete process.env.GPT_CORRECTION_MODEL;
+    const result = await correctTextWithUsage('테스트 자막', 'ko');
+    assert.equal(result.model, 'gpt-6-luna');
+    assert.equal(result.requestedModel, 'gpt-6-luna');
+    assert.equal(result.fallbackUsed, false);
+    assert.equal(result.text, '테스트 자막');
+    assert.deepEqual(result.usage, { promptTokens: 1_000, cachedTokens: 200, cacheWriteTokens: 300,
+      completionTokens: 500, totalTokens: 1_500 });
+    assert.equal(result.estimatedCostUsd, 0.0003395);
+    const legacy = await correctTextWithUsage('테스트 자막', 'ko', { model: 'gpt-5.6-luna' });
+    assert.equal(legacy.model, 'gpt-5.6-luna');
+    assert.equal(legacy.estimatedCostUsd, 0.000779);
+    assert.deepEqual(requests.map(r => r.reasoning_effort), ['medium', 'medium']);
+    assert.ok(requests.every(r => !('temperature' in r)));
+  } finally {
+    if (saved === undefined) delete process.env.GPT_CORRECTION_MODEL;
+    else process.env.GPT_CORRECTION_MODEL = saved;
+  }
+});
+
+test('both Luna aliases retain retries and use only the pinned GPT-4o support-error fallback', async t => {
+  skipRetryDelays(t);
+  t.mock.method(console, 'warn', () => {});
+  const requests = [];
+  t.mock.method(OpenAI.prototype, 'post', async (path, { body }) => {
+    requests.push(body);
+    if (body.model !== 'gpt-4o') throw Object.assign(new Error('synthetic unavailable model'), { status: 404 });
+    return sdkResponse();
+  });
+  for (const model of ['gpt-6-luna', 'gpt-5.6-luna']) {
+    requests.length = 0;
+    const result = await correctTextWithUsage('테스트 자막', 'ko', { model });
+    assert.equal(result.requestedModel, model);
+    assert.equal(result.model, 'gpt-4o');
+    assert.equal(result.fallbackUsed, true);
+    assert.deepEqual(requests.map(r => r.model), [model, model, model, 'gpt-4o']);
+    assert.equal(requests[3].temperature, 0.3);
+    assert.equal('reasoning_effort' in requests[3], false);
+    assert.equal(result.estimatedCostUsd, 0.00725);
+  }
+});
+
+test('rate-limit and empty responses never change the selected correction model', async t => {
+  skipRetryDelays(t);
+  const requests = [];
+  t.mock.method(OpenAI.prototype, 'post', async (path, { body }) => {
+    requests.push(body.model);
+    throw Object.assign(new Error('synthetic rate limit'), { status: 429 });
+  });
+  await assert.rejects(correctTextWithUsage('테스트 자막', 'ko', { model: 'gpt-6-luna' }));
+  assert.deepEqual(requests, ['gpt-6-luna', 'gpt-6-luna', 'gpt-6-luna']);
+  requests.length = 0;
+  t.mock.method(OpenAI.prototype, 'post', async (path, { body }) => {
+    requests.push(body.model);
+    return sdkResponse(' ');
+  });
+  await assert.rejects(correctTextWithUsage('테스트 자막', 'ko', { model: 'gpt-6-luna' }));
+  assert.deepEqual(requests, ['gpt-6-luna']);
+});
+
+test('both translation request paths remain on GPT-4o with their existing sampling', async t => {
+  const requests = [];
+  t.mock.method(OpenAI.prototype, 'post', async (path, { body }) => {
+    requests.push(body);
+    return sdkResponse('translation');
+  });
+  await translateToEnglish('1: 테스트 자막');
+  await translateToKorean('synthetic input', 'English');
+  assert.equal(requests.length, 2);
+  assert.ok(requests.every(r => r.model === 'gpt-4o' && r.temperature === 0.3 && !('reasoning_effort' in r)));
 });
 
 test('context examples preserve each line and distinguish explicit mailing from attachment', () => {

@@ -2,8 +2,9 @@ import OpenAI from 'openai';
 import { estimateCorrectionCostUsd, normalizeTokenUsage } from './correction-pricing.js';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const DEFAULT_CORRECTION_MODEL = 'gpt-5.6-luna';
+const DEFAULT_CORRECTION_MODEL = 'gpt-6-luna';
 const CORRECTION_FALLBACK_MODEL = 'gpt-4o';
+const LUNA_CORRECTION_MODELS = new Set([DEFAULT_CORRECTION_MODEL, 'gpt-5.6-luna']);
 
 export function getCorrectionModel() {
   const configured = process.env.GPT_CORRECTION_MODEL?.trim();
@@ -11,7 +12,7 @@ export function getCorrectionModel() {
 }
 
 export function shouldFallbackToGpt4o(error, model) {
-  return model === DEFAULT_CORRECTION_MODEL && [400, 403, 404].includes(error?.status);
+  return LUNA_CORRECTION_MODELS.has(model) && [400, 403, 404].includes(error?.status);
 }
 
 export function buildCorrectionRequest(text, model) {
@@ -26,8 +27,10 @@ export function buildCorrectionRequest(text, model) {
     ],
   };
 
-  // Luna uses its model-default sampling configuration.
-  if (model !== DEFAULT_CORRECTION_MODEL) {
+  // Both Luna models were evaluated at medium reasoning without sampling overrides.
+  if (LUNA_CORRECTION_MODELS.has(model)) {
+    request.reasoning_effort = 'medium';
+  } else {
     request.temperature = 0.3;
   }
 

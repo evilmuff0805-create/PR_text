@@ -1,5 +1,6 @@
 import { performance } from 'perf_hooks';
 import { isKoreanLanguage, normalizeLanguage, UNKNOWN_LANGUAGE } from './language.js';
+import { normalizeTokenUsage } from './correction-pricing.js';
 
 const CHUNK_SIZE = 30;
 const DEFAULT_CONCURRENCY = 4;
@@ -228,15 +229,16 @@ async function correctChunk(chunk, correct) {
 }
 
 function summarizeUsage(chunks) {
-  const usage = chunks.map(chunk => chunk.usage).filter(Boolean);
+  const usage = chunks.map(chunk => chunk.usage).filter(Boolean).map(normalizeTokenUsage);
   if (usage.length === 0) return undefined;
 
   return usage.reduce((total, value) => ({
     promptTokens: total.promptTokens + (value.promptTokens || 0),
     cachedTokens: total.cachedTokens + (value.cachedTokens || 0),
+    cacheWriteTokens: total.cacheWriteTokens + (value.cacheWriteTokens || 0),
     completionTokens: total.completionTokens + (value.completionTokens || 0),
     totalTokens: total.totalTokens + (value.totalTokens || 0),
-  }), { promptTokens: 0, cachedTokens: 0, completionTokens: 0, totalTokens: 0 });
+  }), { promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, totalTokens: 0 });
 }
 
 function summarizeEstimatedCost(chunks) {
