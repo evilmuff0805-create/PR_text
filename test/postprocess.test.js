@@ -41,8 +41,61 @@ test('records actual model, fallback, usage, and cost from a correction response
 
   assert.equal(result.timings.model, 'gpt-5.6-luna');
   assert.equal(result.timings.fallbackCount, 0);
-  assert.deepEqual(result.timings.usage, usage);
+  assert.deepEqual(result.timings.usage, { ...usage, cacheWriteTokens: 0 });
+  assert.deepEqual(result.timings.chunks[0].usage, usage);
   assert.equal(result.timings.estimatedCostUsd, 0.0004);
+});
+
+test('aggregates cache writes across correction chunks, legacy fallback and a failed chunk without changing speech', async () => {
+  const source = Array.from({ length: 91 }, (_, index) => ({
+    start: index * 2 + 0.125, end: index * 2 + 1.875, text: '안내 내용을 확인합니다',
+  }));
+  const original = structuredClone(source);
+  let calls = 0;
+  const result = await processSegmentsWithTiming(source, 'ko', async (text) => {
+    const index = calls++;
+    if (index === 3) throw new Error('synthetic correction chunk failure');
+    const usages = [
+      { prompt_tokens: 100, prompt_tokens_details: { cached_tokens: 20, cache_write_tokens: 30 },
+        completion_tokens: 50, completion_tokens_details: { reasoning_tokens: 30 }, total_tokens: 150 },
+      { promptTokens: 200, cachedTokens: 40, cacheWriteTokens: 60, completionTokens: 80, totalTokens: 280,
+        unknownField: 'ignored' },
+      { promptTokens: 80, cachedTokens: 10, completionTokens: 20, totalTokens: 100 },
+    ];
+    return { text, model: index === 2 ? 'gpt-4o' : 'gpt-6-luna', fallbackUsed: index === 2, usage: usages[index] };
+  });
+
+  assert.equal(calls, 4);
+  assert.deepEqual(result.timings.usage, {
+    promptTokens: 380, cachedTokens: 70, cacheWriteTokens: 90, completionTokens: 150, totalTokens: 530,
+  });
+  assert.deepEqual(result.timings.chunks.map(({ outcome }) => outcome), ['success', 'success', 'success', 'fallback']);
+  assert.equal(result.timings.fallbackCount, 1);
+  assert.deepEqual(result.timings.model, ['gpt-6-luna', 'gpt-4o']);
+  assert.deepEqual(JSON.parse(JSON.stringify(result)).timings.usage, result.timings.usage);
+  assert.deepEqual(result.segments, original);
+  assert.deepEqual(source, original);
+});
+
+test('absent or malformed cache-write usage cannot poison the numeric aggregate', async () => {
+  const source = Array.from({ length: 61 }, (_, index) => ({ start: index, end: index + 0.5, text: '네 그대로 확인합니다' }));
+  let calls = 0;
+  const result = await processSegmentsWithTiming(source, 'ko', async (text) => {
+    const index = calls++;
+    if (index === 2) return text;
+    return { text, usage: index === 0
+      ? { promptTokens: 64, cachedTokens: 16, completionTokens: 32, totalTokens: 96 }
+      : { promptTokens: '100', cachedTokens: Infinity, cacheWriteTokens: -5,
+        completionTokens: null, totalTokens: NaN, unknownField: 'ignored' } };
+  });
+
+  assert.equal(calls, 3);
+  assert.deepEqual(result.timings.usage, {
+    promptTokens: 64, cachedTokens: 16, cacheWriteTokens: 0, completionTokens: 32, totalTokens: 96,
+  });
+  assert.ok(Object.values(result.timings.usage).every(Number.isFinite));
+  assert.deepEqual(JSON.parse(JSON.stringify(result)).timings.usage, result.timings.usage);
+  assert.deepEqual(result.segments, source);
 });
 
 test('accepts minimal Korean dictation and conjugation candidates without changing source timings', async () => {
