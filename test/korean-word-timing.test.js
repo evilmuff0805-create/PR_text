@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { performance } from 'node:perf_hooks';
 import test from 'node:test';
-import { alignKoreanSegmentWithWordTimings } from '../src/services/korean-word-timing.js';
+import { alignCorrectedKoreanSegmentWithWordTimings, alignKoreanSegmentWithWordTimings } from '../src/services/korean-word-timing.js';
 import { splitKoreanSubtitleText } from '../src/services/korean-subtitle.js';
 import { generateSRT } from '../src/services/subtitle.js';
 
@@ -307,4 +307,162 @@ test('aligns a 10,000-character input without repeatedly planning every suffix',
   const elapsedMs = performance.now() - startedAt;
   assertPreserved(source, result);
   assert.ok(elapsedMs < 5_000, `10,000-character alignment took ${elapsedMs.toFixed(1)}ms`);
+});
+
+test('maps minimal spelling changes onto unique original word edges without mutating provider words', () => {
+  for (const [before, after] of [
+    ['나물을 묻혀서', '나물을 무쳐서'],
+    ['몇일 걸려요', '며칠 걸려요'],
+    ['설겆이할게요', '설거지할게요'],
+    ['안됬어', '안됐어'],
+    ['내일 뵈어요', '내일 봬요'],
+    ['내일 봬요', '내일 뵈어요'],
+    ['3.5kg이면 되요', '3.5 kg이면 돼요'],
+    ['네 네네 되요', '네 네네 돼요'],
+    ['무 무 묻혀서', '무 무 무쳐서'],
+  ]) {
+    const source = sourceWithWords(before);
+    for (const word of source.sourceWords) Object.freeze(word);
+    Object.freeze(source.sourceWords);
+    Object.freeze(source);
+    const snapshot = structuredClone(source);
+    const corrected = Object.freeze({ ...source, text: after });
+    const result = alignCorrectedKoreanSegmentWithWordTimings(source, corrected);
+    assert.equal(result.correctionRetained, true, before);
+    assert.equal(result.text, after);
+    assertPreserved({ ...source, text: after }, result);
+    assert.deepEqual(source, snapshot);
+    assert.equal(corrected.sourceWords, source.sourceWords);
+  }
+});
+
+test('retains original timed cues for repeated-word insertions or deletions with ambiguous minimal paths', () => {
+  for (const [before, after] of [
+    ['가 가고 되요 확인했습니다', '가고 돼요 확인했습니다'],
+    ['가고 되요 확인합니다', '가 가고 돼요 확인합니다'],
+    ['편안하게 생각하면 됩니다', '차분하게 생각하면 됩니다'],
+    ['학교에서 확인합니다', '학무에서 확인합니다'],
+    ['학교에서 확인합니다', '학무무에서 확인합니다'],
+    ['학교에서 확인합니다', '학무 확인합니다'],
+    ['학교에서 내용을 확인합니다', '학무무에서 내용을 확인합니다'],
+  ]) {
+    const source = sourceWithWords(before);
+    const expected = alignKoreanSegmentWithWordTimings(source);
+    const result = alignCorrectedKoreanSegmentWithWordTimings(source, { ...source, text: after });
+    assert.equal(result.aligned, true);
+    assert.equal(result.correctionRetained, false);
+    assert.equal(result.reason, 'ambiguous-correction-boundary');
+    assert.deepEqual(result.segments, expected.segments);
+    assert.equal(result.text, before);
+    assert.ok(result.segments[0].start > source.start);
+  }
+});
+
+test('normalizes NFD only for mapping while preserving corrected Unicode and timed edges', () => {
+  const before = '나물을 묻혀서'.normalize('NFD');
+  const after = '나물을 무쳐서'.normalize('NFD');
+  const source = sourceWithWords(before);
+  const result = alignCorrectedKoreanSegmentWithWordTimings(source, { ...source, text: after });
+  assert.equal(result.correctionRetained, true);
+  assert.equal(result.text, after);
+  assertPreserved({ ...source, text: after }, result);
+  assert.equal(source.text, before);
+  assert.equal(source.sourceWords[1].word, '묻혀서'.normalize('NFD'));
+});
+
+test('corrected decimal and English-dot subwords stay together at real timed boundaries', () => {
+  for (const [value, fragments] of [
+    ['3.5kg', ['3.', '5kg']],
+    ['U.S.A', ['U.', 'S.', 'A']],
+    ['example.com', ['example.', 'com']],
+  ]) {
+    const prefix = '가나다라마바사아자차카타파하가나다라마바';
+    const before = `${prefix} ${value} 되요`;
+    const source = sourceWithWords(before, [prefix, ...fragments, '되요']);
+    const result = alignCorrectedKoreanSegmentWithWordTimings(source, { ...source, text: before.replace('되요', '돼요') });
+    assert.equal(result.correctionRetained, true, value);
+    assert.ok(result.segments.some((cue) => cue.text.includes(value)));
+    assertPreserved({ ...source, text: before.replace('되요', '돼요') }, result);
+    assert.ok(generateSRT(result.segments).includes(value));
+  }
+});
+
+test('a longer corrected atomic word restores original timed text instead of proportional splitting', () => {
+  const before = `${'가'.repeat(26)}봬요`;
+  const source = sourceWithWords(before, [before]);
+  const result = alignCorrectedKoreanSegmentWithWordTimings(source, { ...source, text: `${'가'.repeat(26)}뵈어요` });
+  assert.equal(result.correctionRetained, false);
+  assert.equal(result.reason, 'no-safe-boundary');
+  assertPreserved(source, result);
+  assert.equal(result.segments.length, 1);
+  assert.equal(result.segments[0].start, source.sourceWords[0].start);
+});
+
+test('missing or invalid original words never become claimed correction-aligned times', () => {
+  for (const patch of [
+    { sourceWords: [] },
+    { sourceWords: [{ word: '되요', start: 0.1, end: 0.1 }] },
+    { sourceWords: [{ word: '다른말', start: 0.1, end: 0.9 }] },
+  ]) {
+    const source = { ...sourceWithWords('되요'), ...patch };
+    const corrected = { ...source, text: '돼요' };
+    const result = alignCorrectedKoreanSegmentWithWordTimings(source, corrected);
+    assert.equal(result.aligned, false);
+    assert.equal(result.segments[0], corrected);
+    assert.equal(result.segments[0].start, source.start);
+  }
+});
+
+test('a verified digital-silence prefix limits starts without modifying source or word timestamps', () => {
+  const source = { start: 0, end: 4, text: '드릴께요', audioStartFloor: 2, sourceWords: [{ word: '드릴께요', start: 1.62, end: 2.4 }] };
+  const snapshot = structuredClone(source);
+  const result = alignCorrectedKoreanSegmentWithWordTimings(source, { ...source, text: '드릴게요' });
+  assert.equal(result.aligned, true);
+  assert.equal(result.correctionRetained, true);
+  assert.deepEqual(result.segments, [{ start: 2, end: 2.4, text: '드릴게요' }]);
+  assert.deepEqual(source, snapshot);
+});
+
+test('word cues wholly before the verified prefix floor retain every word in a source-range fallback', () => {
+  const source = {
+    start: 0, end: 4, text: '네 설명합니다', audioStartFloor: 2,
+    sourceWords: [{ word: '네', start: 1, end: 1.2 }, { word: '설명합니다', start: 2.2, end: 3 }],
+  };
+  const result = alignKoreanSegmentWithWordTimings(source);
+  assert.equal(result.aligned, false);
+  assert.equal(result.reason, 'audio-floor-outside-word-range');
+  assert.equal(result.segments.length, 1);
+  assert.deepEqual(result.segments[0], { ...source, start: 2, timingSource: 'audio-range' });
+  assert.equal(source.start, 0);
+  assert.equal(source.sourceWords[0].start, 1);
+});
+
+test('invalid audio floors do not fabricate new timings', () => {
+  for (const floor of [null, '', '2', false, NaN, Infinity, -1, 4, 5]) {
+    const source = { start: 0, end: 4, text: '자료를 확인합니다', audioStartFloor: floor, sourceWords: [] };
+    const result = alignKoreanSegmentWithWordTimings(source);
+    assert.equal(result.aligned, false);
+    assert.equal(result.segments[0], source);
+    assert.equal(result.segments[0].start, 0);
+  }
+});
+
+test('bounded edit alignment handles 10,000 characters and 10,000 words without quadratic storage', () => {
+  const text = '가나다라마바사아자차'.repeat(1000);
+  assert.equal(text.length, 10_000);
+  const source = {
+    start: 0, end: 30, text,
+    sourceWords: Array.from(text, (word, index) => ({ word, start: 2 + index * 0.002, end: 2.001 + index * 0.002 })),
+  };
+  const corrected = { ...source, text: `${text.slice(0, 5000)}까${text.slice(5001)}` };
+  const result = alignCorrectedKoreanSegmentWithWordTimings(source, corrected);
+  assert.equal(result.correctionRetained, true);
+  assertPreserved(corrected, result);
+  assert.equal(result.segments[0].start, 2);
+  const atomicText = text.slice(0, 9_936);
+  const expandedText = `${atomicText.slice(0, 5000)}${'하'.repeat(64)}${atomicText.slice(5000)}`;
+  const atomic = { start: 0, end: 30, text: atomicText, sourceWords: [{ word: atomicText, start: 2, end: 22 }] };
+  const expanded = alignCorrectedKoreanSegmentWithWordTimings(atomic, { ...atomic, text: expandedText }, { maxChars: 10_000 });
+  assert.equal(expanded.correctionRetained, true);
+  assert.deepEqual(expanded.segments, [{ start: 2, end: 22, text: expandedText }]);
 });

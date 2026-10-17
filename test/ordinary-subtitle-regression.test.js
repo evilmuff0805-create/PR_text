@@ -186,7 +186,7 @@ test('fractional-frame seconds remain absolute milliseconds without frame-rate r
   ];
   const srt = generateSRT(input);
   assert.match(srt, /00:02:00,000 --> 00:02:01,421/);
-  assert.match(srt, /00:02:01,421 --> 00:02:54,374/);
+  assert.match(srt, /00:02:01,422 --> 00:02:54,374/);
   assertOrdinaryTimeline(readCues('srt', input));
 });
 
@@ -202,8 +202,10 @@ test('ordinary exports hold only positive gaps through the inclusive one-second 
         const scale = format === 'srt' ? 1000 : 100;
         const round = value => Math.round(value * scale) / scale;
         const cues = readCues(format, input);
-        assert.ok(Math.abs(cues[0].end - round(gap > 0 && gap <= 1 ? input[1].start : input[0].end)) < 1e-9, `${format} offset=${offset} gap=${gap}`);
-        assert.ok(Math.abs(cues[1].start - round(input[1].start)) < 1e-9);
+        if (gap > 0 && gap <= 1) assert.equal(cues[0].end, cues[1].start, `${format} offset=${offset} gap=${gap}`);
+        else assert.ok(Math.abs(cues[0].end - round(input[0].end)) < 1e-9);
+        assert.ok(cues[1].start >= input[1].start - 1e-9);
+        assert.ok(cues[1].start < input[1].start + 1 / scale + 1e-9);
         assert.ok(Math.abs(cues[1].end - round(input[1].end)) < 1e-9, 'last cue retains its end');
         assertOrdinaryTimeline(cues);
       }

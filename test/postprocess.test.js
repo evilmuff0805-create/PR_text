@@ -139,3 +139,81 @@ test('reverts only the unsafe numeric line and keeps neighbouring corrections an
   assert.deepEqual(result.segments, [source[0], { ...source[1], text: '나물을 무쳐서' }, { ...source[2], text: '내일 할 거예요' }]);
   assert.deepEqual(source, original);
 });
+
+test('a corrected word prefix cannot replace an independently repeated utterance', async () => {
+  const pairs = [
+    ['무 무 묻혀서 반찬을 만들었어', '무 무쳐서 반찬을 만들었어'],
+    ['나 나 나왓어', '나 나왔어'],
+    ['말 말 말햇어', '말 말했어'],
+  ];
+  const source = pairs.map(([text], index) => ({ start: index, end: index + 0.8, text }));
+  const result = await processSegmentsWithTiming(source, 'ko', async () => pairs.map(([, after]) => after).join('\n'));
+  assert.deepEqual(result.segments, source);
+});
+
+test('preserved repeats allow spelling corrections that introduce the same character inside another word', async () => {
+  const pairs = [
+    ['무 무 묻혀서 반찬을 만들었어', '무 무 무쳐서 반찬을 만들었어'],
+    ['무무 묻혀서 반찬을 만들었어', '무 무 무쳐서 반찬을 만들었어'],
+    ['네 네 내일 할 거에요', '네네 내일 할 거예요'],
+    ['네 그거요 네 그거요 조아요', '네그거요 네그거요 좋아요'],
+    ['하하하라고 말햇어', '하하하라고 말했어'],
+  ];
+  const source = pairs.map(([text], index) => ({ start: index, end: index + 0.8, text }));
+  const result = await processSegmentsWithTiming(source, 'ko', async () => pairs.map(([, after]) => after).join('\n'));
+  assert.deepEqual(result.segments, source.map((segment, index) => ({ ...segment, text: pairs[index][1] })));
+});
+
+test('repetition changes cannot hide behind spelling corrections or move across unchanged words', async () => {
+  const pairs = [
+    ['네 네 그래서 나갓어', '네 네 네 그래서 나갔어'],
+    ['네 네 그래서 나갓어', '네 네 그래서 나갔어 네'],
+    ['네 네 먼저 나갓어', '먼저 네 네 나갔어'],
+    ['오늘 네 네 먼저 나갓어', '오늘 먼저 네 네 나갔어'],
+    ['네 네 먼저 어 어 나갓어', '어 어 먼저 네 네 나갔어'],
+    ['네 네 먼저 네 네 나갓어', '네 먼저 네 네 네 나갔어'],
+    ['네 그거요 네 그거요 조아요', '네 그거요 좋아요'],
+    ['하하하라고 말햇어', '하하라고 말했어'],
+  ];
+  const source = pairs.map(([text], index) => ({ start: index, end: index + 0.8, text }));
+  const result = await processSegmentsWithTiming(source, 'ko', async () => pairs.map(([, after]) => after).join('\n'));
+  assert.deepEqual(result.segments, source);
+});
+
+test('joined, spaced, and punctuated repetitions preserve their count alongside other corrections', async () => {
+  for (const unit of ['네', '음', '좋아', '네그거요']) {
+    for (const count of [2, 3, 4]) {
+      const repeated = Array(count).fill(unit);
+      const original = `${repeated.join('')} 그래서 나갓어`;
+      const candidate = `${repeated.join(', ')} 그래서 나갔어`;
+      const source = [{ start: 0.125, end: 2.875, text: original }];
+      const result = await processSegmentsWithTiming(source, 'ko', async () => candidate);
+      assert.equal(result.segments[0].text, candidate, `${unit}/${count}`);
+      for (const wrongCount of [count - 1, count + 1]) {
+        const wrong = `${Array(wrongCount).fill(unit).join(' ')} 그래서 나갔어`;
+        const rejected = await processSegmentsWithTiming(source, 'ko', async () => wrong);
+        assert.deepEqual(rejected.segments, source, `${unit}/${count} -> ${wrongCount}`);
+      }
+    }
+  }
+});
+
+test('only a changed repetition line is restored and all source timing metadata stays immutable', async () => {
+  const source = [
+    { start: 2.125, end: 2.875, text: '말 말 말햇어', speaker: 0, sourceWords: [{ word: '말', start: 2.2, end: 2.3 }] },
+    { start: 3.125, end: 3.875, text: '내일 할 거에요', timingSource: 'word' },
+  ];
+  const before = structuredClone(source);
+  const result = await processSegmentsWithTiming(source, 'ko', async () => '말 말했어\n내일 할 거예요');
+  assert.deepEqual(result.segments, [source[0], { ...source[1], text: '내일 할 거예요' }]);
+  assert.deepEqual(source, before);
+});
+
+test('long repeated phrases retain their full speech while a neighbouring spelling correction applies', async () => {
+  const repeated = '네 그거요 '.repeat(1_000);
+  const original = `${repeated}그래서 나갓어`;
+  const candidate = `${repeated}그래서 나갔어`;
+  const source = [{ start: 1.125, end: 101.875, text: original }];
+  const result = await processSegmentsWithTiming(source, 'ko', async () => candidate);
+  assert.deepEqual(result.segments, [{ ...source[0], text: candidate }]);
+});

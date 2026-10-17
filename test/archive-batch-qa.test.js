@@ -80,7 +80,7 @@ test('QA ZIP native CRC and UTF-8 directory roundtrip includes a surrogate cutof
   assert.ok(!contents.get('사용안내.txt').includes('\ufffd'));
 });
 
-test('QA independent SRT clocks preserve cross-file overlap, pauses and long 29.97 frame-derived time', () => {
+test('QA independent SRT clocks ceil starts and preserve cross-file overlap, pauses and raw 29.97 time', () => {
   const frame = 1_234_567;
   const lateStart = frame * 1001 / 30000;
   const first = [
@@ -98,9 +98,20 @@ test('QA independent SRT clocks preserve cross-file overlap, pauses and long 29.
     assert.equal(cues[0].end, 2000);
     assert.equal(cues.filter(cue => cue.text.includes('0~2초 자막 시작 구간입니다!')).length, 1);
     assert.deepEqual(cues.slice(1), segments.map(segment => ({
-      start: Math.round(segment.start * 1000), end: Math.round(segment.end * 1000), text: segment.text,
+      start: Math.ceil(segment.start * 1000), end: Math.round(segment.end * 1000), text: segment.text,
     })));
+    for (const [cueIndex, segment] of segments.entries()) {
+      const cue = cues[cueIndex + 1];
+      const rawStartMs = segment.start * 1000;
+      assert.ok(cue.start >= rawStartMs, 'serialized start must never precede its raw start');
+      assert.ok(cue.start - rawStartMs < 1, 'start ceiling may delay less than one millisecond');
+      assert.equal(cue.end, Math.round(segment.end * 1000), 'end keeps nearest-millisecond precision');
+    }
   }
+  const firstDialogue = readSrt(contents.get(archive.entries[0]))[2];
+  const secondDialogue = readSrt(contents.get(archive.entries[1]))[1];
+  assert.ok(Math.max(firstDialogue.start, secondDialogue.start) < Math.min(firstDialogue.end, secondDialogue.end),
+    'simultaneous speech must remain overlapping across separate files');
   assert.deepEqual([first, second], before);
 });
 

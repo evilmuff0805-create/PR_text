@@ -240,7 +240,7 @@ function buildCues(segments, options = {}) {
       const next = cues[index + 1];
       const gap = next ? next.start - cue.end : Infinity;
       return gap > 0 && gap <= 1 + 1e-9
-        ? { ...cue, end: next.start } : cue;
+        ? { ...cue, end: next.start, holdEndAtNextStart: true } : cue;
     });
   }
 
@@ -248,8 +248,21 @@ function buildCues(segments, options = {}) {
   return normalizeCueTimeline(cues);
 }
 
-function formatSRT(seconds) {
-  const totalMs = Math.max(0, Math.round(seconds * 1000));
+function subtitleStartTick(seconds, ticksPerSecond) {
+  const scaled = seconds * ticksPerSecond;
+  const nearest = Math.round(scaled);
+  // Exact decimal ticks can acquire one floating-point multiplication error.
+  // Every meaningful fraction still rounds upward so exports never start early.
+  const tolerance = Number.EPSILON * Math.max(1, Math.abs(scaled));
+  return Math.max(0, Math.abs(scaled - nearest) <= tolerance ? nearest : Math.ceil(scaled));
+}
+
+function formatSRT(seconds, isStart = false, minimumStart = null) {
+  // Subprecision cues collapse to zero; never reverse or invent a positive hold.
+  const totalMs = Math.max(
+    isStart ? subtitleStartTick(seconds, 1000) : Math.max(0, Math.round(seconds * 1000)),
+    minimumStart === null ? 0 : subtitleStartTick(minimumStart, 1000),
+  );
   const h = Math.floor(totalMs / 3_600_000);
   const m = Math.floor((totalMs % 3_600_000) / 60_000);
   const s = Math.floor((totalMs % 60_000) / 1000);
@@ -257,8 +270,11 @@ function formatSRT(seconds) {
   return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0') + ',' + String(ms).padStart(3, '0');
 }
 
-function formatASS(seconds) {
-  const totalCs = Math.max(0, Math.round(seconds * 100));
+function formatASS(seconds, isStart = false, minimumStart = null) {
+  const totalCs = Math.max(
+    isStart ? subtitleStartTick(seconds, 100) : Math.max(0, Math.round(seconds * 100)),
+    minimumStart === null ? 0 : subtitleStartTick(minimumStart, 100),
+  );
   const h = Math.floor(totalCs / 360_000);
   const m = Math.floor((totalCs % 360_000) / 6000);
   const s = Math.floor((totalCs % 6000) / 100);
@@ -277,7 +293,7 @@ export function generateSRT(segments, speakerColors = null, options = {}) {
       const color = speakerColors[String(seg.speaker)] ?? '#FFFFFF';
       line = `<font color="${color}">${line}</font>`;
     }
-    return `${i + 2}\n${formatSRT(seg.start)} --> ${formatSRT(seg.end)}\n${line}`;
+    return `${i + 2}\n${formatSRT(seg.start, true)} --> ${formatSRT(seg.end, seg.holdEndAtNextStart === true, seg.start)}\n${line}`;
   });
   return [marker, ...dialogue].join('\n\n');
 }
@@ -362,7 +378,7 @@ export function generateASS(segments, options = {}, speakerColors = null) {
       const styleName = speakerColors && seg.speaker !== undefined
         ? `Speaker${seg.speaker}`
         : 'Default';
-      return `Dialogue: 0,${formatASS(seg.start)},${formatASS(seg.end)},${styleName},,0,0,0,,${escapeASSText(seg.text)}`;
+      return `Dialogue: 0,${formatASS(seg.start, true)},${formatASS(seg.end, seg.holdEndAtNextStart === true, seg.start)},${styleName},,0,0,0,,${escapeASSText(seg.text)}`;
     }),
   ].join('\n');
 
