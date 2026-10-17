@@ -226,11 +226,23 @@ function prepareOrdinarySources(segments) {
   }));
 }
 
-function buildCues(segments) {
+function buildCues(segments, options = {}) {
   // Invalid sources must not clip valid speech, even before long-text splitting.
   const usable = segments.filter((segment) => cleanText(segment.text) !== '' && segment.end > segment.start);
   const ordinary = usable.every(({ speaker }) => speaker === undefined || speaker === null || speaker === '');
-  if (ordinary) return prepareOrdinarySources(usable).flatMap((segment) => splitSegment(segment));
+  if (ordinary) {
+    const cues = prepareOrdinarySources(usable).flatMap((segment) => splitSegment(segment));
+    if (options?.holdShortGaps === false) return cues;
+    // Export-only display continuity: preserve source/word times and splitting,
+    // then hold the preceding dialogue through at most one second of silence.
+    // The SRT start marker is added separately and never enters this policy.
+    return cues.map((cue, index) => {
+      const next = cues[index + 1];
+      const gap = next ? next.start - cue.end : Infinity;
+      return gap > 0 && gap <= 1 + 1e-9
+        ? { ...cue, end: next.start } : cue;
+    });
+  }
 
   const cues = usable.flatMap((segment) => splitSegment(segment));
   return normalizeCueTimeline(cues);
@@ -254,11 +266,11 @@ function formatASS(seconds) {
   return String(h) + ':' + String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0') + '.' + String(cs).padStart(2, '0');
 }
 
-export function generateSRT(segments, speakerColors = null) {
+export function generateSRT(segments, speakerColors = null, options = {}) {
   // Keep the marker outside dialogue normalization: trimming overlaps would erase
   // either the two-second marker or speech at the start of the original audio.
   const marker = `1\n${formatSRT(0)} --> ${formatSRT(2)}\n<font size="48"><b>${SRT_START_MARKER_TEXT}</b></font>`;
-  const split = buildCues(segments ?? []);
+  const split = buildCues(segments ?? [], options);
   const dialogue = split.map((seg, i) => {
     let line = seg.text;
     if (speakerColors && seg.speaker !== undefined) {
@@ -283,6 +295,7 @@ export function generateTXT(segments) {
  * @param {string} options.fontFamily - 폰트명 (기본: 'Pretendard')
  * @param {string} options.fontColor - HEX 색상 '#RRGGBB' (기본: '#FFFFFF')
  * @param {number} options.fontSize - 폰트 크기 (기본: 20)
+ * @param {boolean} options.holdShortGaps - 일반 표시 공백 유지 (기본: true)
  */
 export function generateASS(segments, options = {}, speakerColors = null) {
   if (!segments || segments.length === 0) return '';
@@ -340,7 +353,7 @@ export function generateASS(segments, options = {}, speakerColors = null) {
     '',
   ].join('\n');
 
-  const split = buildCues(segments);
+  const split = buildCues(segments, options);
 
   const events = [
     '[Events]',

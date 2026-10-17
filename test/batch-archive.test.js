@@ -120,6 +120,17 @@ test('batch ZIP does not apply stale compact word alignment after text edits', (
   assert.match(files.get('02_편집.srt'), /네 정확합니다/);
 });
 
+test('batch ZIP explicitly preserves subsecond gaps that a single ordinary export holds', () => {
+  const segments = [{ start: 10, end: 10.2, text: '응답' }, { start: 11, end: 11.4, text: '다음 안내' }];
+  const original = structuredClone(segments);
+  const files = unzipStored(createBatchSrtArchive({ items: [item('인물', segments)] }).buffer);
+  const bundled = files.get('01_인물.srt');
+  assert.match(generateSRT(segments), /00:00:10,000 --> 00:00:11,000/);
+  assert.match(bundled, /00:00:10,000 --> 00:00:10,200/);
+  assert.equal(bundled, generateSRT(segments, null, { holdShortGaps: false }));
+  assert.deepEqual(segments, original);
+});
+
 test('archive rejects invalid counts, unrecognized states and malformed saved subtitles', () => {
   for (const items of [[], Array.from({ length: 6 }, () => item('인물'))]) {
     assert.throws(() => createBatchSrtArchive({ items }), /1~5개/);

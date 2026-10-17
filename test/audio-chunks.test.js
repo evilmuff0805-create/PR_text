@@ -57,7 +57,7 @@ test('a retained chunk segment carries its offset words through English SRT timi
     { start: 180.2, end: 180.5, text: 'Hello' },
     { start: 181.4, end: 181.7, text: 'there' },
   ]);
-  assert.match(generateSRT(result.segments), /00:03:00,200 --> 00:03:00,500/);
+  assert.match(generateSRT(result.segments), /00:03:00,200 --> 00:03:01,400/);
   assert.match(generateSRT(result.segments), /00:03:01,400 --> 00:03:01,700/);
 });
 test('malformed chunk words leave the retained source segment available for fallback', () => {

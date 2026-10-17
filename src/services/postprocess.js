@@ -32,6 +32,36 @@ function changesRepeatedSpeech(sourceCharacters, candidateCharacters) {
   return [...units].some((unit) => source.split(unit).length !== candidate.split(unit).length);
 }
 
+// 수치의 구분 기호와 통상 단위를 함께 보존한다. 숫자와 단위 사이의
+// 띄어쓰기는 허용하되, 이 규칙으로 한글 수사나 모든 의미를 판별하지 않는다.
+const NUMERIC_UNIT = '(?:[A-Za-zµμ°]+[²³]?|[%％‰℃℉㎏㎎㎜㎝㎞㎡㎥]'
+  + '|마이크로그램|킬로그램|밀리그램|킬로미터|센티미터|밀리미터|밀리리터|퍼센트'
+  + '|킬로|그램|리터|미터|시간|개월|달러|위안|유로|파운드|마리'
+  + '|초|분|시|일|주|월|달|년|원|엔|명|개|번|회|건|대|장|권|잔|병|포|세|살|도|배|점|톤|평)';
+const NUMERIC_UNIT_SUFFIX = new RegExp(
+  `^\\s*((?:[십백천만억조]\\s*)*${NUMERIC_UNIT}(?:\\s*[/·]\\s*${NUMERIC_UNIT})*|(?:[십백천만억조]\\s*)+)`,
+  'u',
+);
+
+function numericExpressions(text) {
+  const normalized = String(text ?? '').normalize('NFC');
+  const expressions = [];
+  const numbers = /(?:[+\-−±∓＋－]\s*)?(?:\p{N}+(?:\s*[.,:/~–—-]\s*\p{N}+)*|[.,]\s*\p{N}+)/gu;
+  for (const match of normalized.matchAll(numbers)) {
+    const number = match[0].replace(/\s+/g, '');
+    const suffix = normalized.slice(match.index + match[0].length);
+    const unit = suffix.match(NUMERIC_UNIT_SUFFIX)?.[1].replace(/\s+/g, '') ?? '';
+    expressions.push(`${number}\0${unit}`);
+  }
+  return expressions;
+}
+
+function changesNumericExpressions(original, corrected) {
+  const source = numericExpressions(original);
+  const candidate = numericExpressions(corrected);
+  return source.length !== candidate.length || source.some((value, index) => value !== candidate[index]);
+}
+
 function preserveSpokenText(original, corrected) {
   const candidate = corrected.trim();
   const sourceCharacters = speechCharacters(original);
@@ -39,6 +69,7 @@ function preserveSpokenText(original, corrected) {
   // 공백 결과 및 원문에서 글자만 빼거나 더한 교정은 대사 삭제/추가의 명확한
   // 근거다. 해당 줄만 원문으로 되돌리고 다른 줄의 맞춤법 교정은 유지한다.
   if (!candidate || (sourceCharacters.length > 0 && candidateCharacters.length === 0)) return original;
+  if (changesNumericExpressions(original, candidate)) return original;
   if (candidateCharacters.length < sourceCharacters.length
     && isSubsequence(candidateCharacters, sourceCharacters)) return original;
   if (sourceCharacters.length > 0 && candidateCharacters.length > sourceCharacters.length

@@ -7,15 +7,15 @@ function seconds(value) {
   return hours * 3600 + minutes * 60 + rest;
 }
 
-function readCues(format, segments) {
+function readCues(format, segments, options = {}) {
   if (format === 'srt') {
-    return generateSRT(segments).split('\n\n').slice(1).filter(Boolean).map((block) => {
+    return generateSRT(segments, null, options).split('\n\n').slice(1).filter(Boolean).map((block) => {
       const [, range, text] = block.split('\n');
       const [start, end] = range.split(' --> ').map(seconds);
       return { start, end, text };
     });
   }
-  return generateASS(segments).split('\n').filter((line) => line.startsWith('Dialogue:'))
+  return generateASS(segments, options).split('\n').filter((line) => line.startsWith('Dialogue:'))
     .map((line) => {
       const fields = line.split(',');
       return { start: seconds(fields[1]), end: seconds(fields[2]), text: fields.slice(9).join(',') };
@@ -72,7 +72,7 @@ test('dependent-tail repair uses the existing ordinary 0.3-second gap boundary',
     if (gap === 0.3) assert.deepEqual(cues.map((cue) => cue.text), [front, back]);
     else {
       assert.equal(cues.at(-1).text, '됩니다');
-      assert.equal(cues.at(-2).end, 8);
+      assert.equal(cues.at(-2).end, 8.301);
       assert.equal(cues.at(-1).start, 8.301);
     }
   }
@@ -85,7 +85,7 @@ test('an independent sentence or a longer pause never becomes a dependent tail',
       { start: 4.2, end: 5, text: '됩니다' },
     ]);
     assert.equal(cues.length, 2);
-    assert.equal(cues[0].end, 4);
+    assert.equal(cues[0].end, 4.2);
     assert.equal(cues[1].start, 4.2);
     assert.equal(cues[1].text, '됩니다');
   }
@@ -188,4 +188,115 @@ test('fractional-frame seconds remain absolute milliseconds without frame-rate r
   assert.match(srt, /00:02:00,000 --> 00:02:01,421/);
   assert.match(srt, /00:02:01,421 --> 00:02:54,374/);
   assertOrdinaryTimeline(readCues('srt', input));
+});
+
+test('ordinary exports hold only positive gaps through the inclusive one-second boundary', () => {
+  for (const offset of [0, 180, 1_234_567 * 1001 / 30000]) {
+    for (const gap of [0, 0.999, 1, 1.001, 2]) {
+      const input = [
+        { start: offset + 2.5, end: offset + 3, text: 'First reply' },
+        { start: offset + 3 + gap, end: offset + 5 + gap, text: 'Next reply' },
+      ];
+      const before = structuredClone(input);
+      for (const format of ['srt', 'ass']) {
+        const scale = format === 'srt' ? 1000 : 100;
+        const round = value => Math.round(value * scale) / scale;
+        const cues = readCues(format, input);
+        assert.ok(Math.abs(cues[0].end - round(gap > 0 && gap <= 1 ? input[1].start : input[0].end)) < 1e-9, `${format} offset=${offset} gap=${gap}`);
+        assert.ok(Math.abs(cues[1].start - round(input[1].start)) < 1e-9);
+        assert.ok(Math.abs(cues[1].end - round(input[1].end)) < 1e-9, 'last cue retains its end');
+        assertOrdinaryTimeline(cues);
+      }
+      assert.deepEqual(input, before);
+    }
+  }
+});
+
+test('continuity adjusts only the last fragment before silence and has an explicit export opt-out', () => {
+  const input = [
+    { start: 3, end: 8, text: '먼저 작성한 안내 문장을 차근차근 읽으며 마지막 항목까지 빠짐없이 모두 확인해 봅니다' },
+    { start: 8.75, end: 10, text: '다음 안내' },
+  ];
+  const before = structuredClone(input);
+  for (const format of ['srt', 'ass']) {
+    const original = readCues(format, input, { holdShortGaps: false });
+    const held = readCues(format, input);
+    assert.deepEqual(readCues(format, input, { holdShortGaps: 0 }), held);
+    assert.deepEqual(readCues(format, input, { holdShortGaps: 'false' }), held);
+    assert.ok(original.length > 2);
+    assert.deepEqual(held.slice(0, -2), original.slice(0, -2));
+    assert.deepEqual(held.map(cue => [cue.start, cue.text]), original.map(cue => [cue.start, cue.text]));
+    assert.equal(original.at(-2).end, 8);
+    assert.equal(held.at(-2).end, 8.75);
+    assert.deepEqual(held.at(-1), original.at(-1));
+    assertOrdinaryTimeline(held);
+  }
+  assert.deepEqual(input, before);
+});
+
+test('compact Korean word cues keep source times while exported ends hold between phrases', () => {
+  const input = [{
+    start: 10, end: 12, text: '네 다음', timingSource: 'word',
+    wordAlignedCues: [[10.1, 10.2, '네'], [11.1, 11.4, '다음']],
+    sourceWords: [{ word: '네', start: 10.1, end: 10.2 }, { word: '다음', start: 11.1, end: 11.4 }],
+  }, { start: 12, end: 12.2, text: '확인', timingSource: 'word' }];
+  const before = structuredClone(input);
+  for (const format of ['srt', 'ass']) {
+    assert.deepEqual(readCues(format, input), [
+      { start: 10.1, end: 11.1, text: '네' },
+      { start: 11.1, end: 12, text: '다음' },
+      { start: 12, end: 12.2, text: '확인' },
+    ]);
+    assert.deepEqual(readCues(format, input, { holdShortGaps: false }).map(cue => cue.end), [10.2, 11.4, 12.2]);
+  }
+  assert.deepEqual(input, before);
+});
+
+test('speaker zero and mixed labelled inputs disable continuity for the complete export', () => {
+  const cases = [
+    [{ start: 3, end: 3.2, text: '응답', speaker: 0 }, { start: 4, end: 5, text: '안내', speaker: 0 }],
+    [{ start: 3, end: 3.2, text: '응답' }, { start: 4, end: 4.2, text: '안내', speaker: 0 }, { start: 5, end: 6, text: '마지막' }],
+    [{ start: 3, end: 3.2, text: '응답', speaker: 'provider-a' }, { start: 4, end: 5, text: '안내', speaker: 'provider-b' }],
+  ];
+  for (const input of cases) {
+    const before = structuredClone(input);
+    for (const format of ['srt', 'ass']) {
+      assert.deepEqual(readCues(format, input), readCues(format, input, { holdShortGaps: false }));
+      assert.equal(readCues(format, input)[0].end, 3.2);
+    }
+    assert.deepEqual(input, before);
+  }
+  for (const speaker of [undefined, null, '']) {
+    assert.equal(readCues('srt', [{ start: 3, end: 3.2, text: '응답', speaker }, { start: 4, end: 5, text: '안내', speaker }])[0].end, 4);
+  }
+});
+
+test('unsorted and equal-start sources use existing normalization before display continuity', () => {
+  const input = [
+    { start: 5, end: 6, text: '다음 안내' },
+    { start: 3, end: 3.8, text: '첫 응답' },
+    { start: 3, end: 4, text: '함께 응답' },
+    { start: 4.2, end: 4.8, text: '  ' },
+    { start: 4.4, end: 4.4, text: '길이 없음' },
+  ];
+  const before = structuredClone(input);
+  for (const format of ['srt', 'ass']) {
+    assert.deepEqual(readCues(format, input), [
+      { start: 3, end: 5, text: '첫 응답 함께 응답' },
+      { start: 5, end: 6, text: '다음 안내' },
+    ]);
+    const overlapping = [{ start: 3, end: 7, text: '앞 안내' }, { start: 5, end: 6, text: '뒤 안내' }];
+    assert.deepEqual(readCues(format, overlapping), readCues(format, overlapping, { holdShortGaps: false }));
+  }
+  assert.deepEqual(input, before);
+});
+
+test('the two-second start marker stays separate from ordinary dialogue continuity', () => {
+  const input = [{ start: 0, end: 0.2, text: '첫 응답' }, { start: 1, end: 1.5, text: '다음 응답' }];
+  const srt = generateSRT(input);
+  assert.match(srt, /^1\n00:00:00,000 --> 00:00:02,000\n/);
+  assert.equal(srt.split('0~2초 자막 시작 구간입니다!').length - 1, 1);
+  assert.deepEqual(readCues('srt', input), [{ start: 0, end: 1, text: '첫 응답' }, { start: 1, end: 1.5, text: '다음 응답' }]);
+  assert.deepEqual(readCues('ass', input), readCues('srt', input));
+  assert.doesNotMatch(generateASS(input), /0~2초 자막 시작 구간입니다!/);
 });

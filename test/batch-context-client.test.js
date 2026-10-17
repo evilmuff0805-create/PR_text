@@ -43,7 +43,7 @@ async function hookFixture({ file = 'client/src/contexts/BatchTranscriptionConte
   const addTimer = (callback) => { const timer = ++timerId; timers.set(timer, callback); return timer; };
   runInNewContext(await sourceCode(file), { module, exports: module.exports, require: (name) => { assert.ok(name in deps, name); return deps[name]; },
     localStorage, sessionStorage, FormData, Blob, File, AbortController, URLSearchParams, URL: { createObjectURL: () => 'blob:synthetic', revokeObjectURL() {} },
-    crypto: { randomUUID: () => id(counter++) }, document, window: { setInterval: addTimer, clearInterval: (timer) => timers.delete(timer) },
+    crypto: { randomUUID: () => id(counter++) }, document, window: { setInterval: addTimer, clearInterval: (timer) => timers.delete(timer), requestAnimationFrame: addTimer, cancelAnimationFrame: (timer) => timers.delete(timer) },
     setTimeout: addTimer, clearTimeout: (timer) => timers.delete(timer), fetch: fetchImpl });
   const expand = (node) => Array.isArray(node) ? node.map(expand) : node && typeof node === 'object' ? typeof node.type === 'function' ? expand(node.type(node.props)) : { ...node, props: { ...node.props, children: expand(node.props.children) } } : node;
   const render = () => { cursor = 0; dirty = false; tree = expand(module.exports[exportName](props)); };
@@ -221,4 +221,61 @@ test('corrected edits clear a prior ZIP error only after a successful track swit
   await page.nodes().find(({ type, props }) => type === 'button' && props.children === '묶음 상태로 돌아가기').props.onClick(); await page.settle();
   assert.equal(clears, 2); assert.equal(state.error, '');
   assert.deepEqual(navigations, [`/transcribe?mode=batch&batch=${batchId}`]);
+});
+
+test('actual result editor forwards display continuity for ordinary and exact-time batch downloads', async () => {
+  for (const policy of [undefined, false]) {
+    const requests = [];
+    const record = { text: '합성 안내', segments: [{ start: 3, end: 3.25, text: '합성 안내' }], transcriptionLogId: 23, ...(policy === false ? { holdShortGaps: false } : {}) };
+    const page = await hookFixture({ file: 'client/src/pages/ResultPage.jsx', exportName: 'ResultEditor', props: { resultOverride: record },
+      fetchImpl: async (url, options) => { requests.push({ url, body: JSON.parse(options.body) }); return new Response('synthetic subtitle'); } });
+    const exportButton = format => page.nodes().find(({ type, props }) => type === 'button' && props.className?.includes('export-option') && props.children.some(child => child?.props?.children === format));
+    await exportButton('SRT').props.onClick(); await page.settle();
+    await exportButton('ASS').props.onClick(); await page.settle();
+    await page.nodes().find(({ type, props }) => type === 'button' && props.children === 'ASS 자막 다운로드').props.onClick(); await page.settle();
+    assert.equal(requests.length, 2);
+    assert.deepEqual(requests.map(request => request.body.format), ['srt', 'ass']);
+    assert.equal(requests.every(request => request.url === '/api/download' && request.body.holdShortGaps === (policy !== false)), true);
+    assert.deepEqual(requests.map(request => request.body.segments), [record.segments, record.segments]);
+  }
+});
+
+test('actual batch result page keeps individual exports on recorded speech even if detail policy is omitted', async () => {
+  let record;
+  const item = { id: id(20), order: 0, label: '인물', status: 'completed', transcriptionLogId: 23 };
+  const params = new URLSearchParams({ batch: batchId, track: item.id });
+  const state = { batch: { id: batchId, items: [item] }, busy: '', error: '', notice: '',
+    api: async () => ({ segments: [{ start: 3, end: 3.25, text: '합성 안내' }], holdShortGaps: true }), registerEditor() {}, clearError() {} };
+  await hookFixture({ file: 'client/src/pages/BatchResultPage.jsx', exportName: 'default', dependencies: {
+    'react-router-dom': { useSearchParams: () => [params, () => {}], useNavigate: () => () => {}, Link: 'a' },
+    '../contexts/BatchTranscriptionContext.jsx': { useBatchTranscription: () => state },
+    '../components/BatchTranscriptionPanel.jsx': { BatchImportNotice: () => null },
+    './ResultPage.jsx': { ResultEditor: props => { record = props.resultOverride; return null; } },
+  } });
+  assert.ok(record);
+  assert.equal(record.holdShortGaps, false);
+  assert.equal(record.transcriptionLogId, 23);
+});
+
+test('actual redownload page carries owned log timing policy and supports legacy ordinary logs', async () => {
+  for (const policy of [undefined, false]) {
+    const requests = [];
+    const segments = [{ start: 3, end: 3.25, text: '최신 편집 안내' }];
+    const page = await hookFixture({ file: 'client/src/pages/RedownloadPage.jsx', exportName: 'default', dependencies: {
+      '../components/BatchTranscriptionPanel.jsx': { BatchArchiveList: () => null },
+      '../components/HistoryDateTime.jsx': { default: () => null },
+    }, fetchImpl: async (url, options) => {
+      if (url.startsWith('/api/auth/usage-logs')) return Response.json({ transcriptionLogs: [{ id: 23, filename: 'fixture.wav' }], transcriptionTotal: 1 });
+      if (url === '/api/auth/transcription/23') return Response.json({ filename: 'fixture.wav', segments, ...(policy === false ? { holdShortGaps: false } : {}) });
+      assert.equal(url, '/api/download'); requests.push(JSON.parse(options.body)); return new Response('synthetic subtitle');
+    } });
+    for (const format of ['SRT', 'ASS']) {
+      const button = page.nodes().find(({ type, props }) => type === 'button' && props['aria-label'] === `fixture.wav ${format} 다운로드`);
+      assert.ok(button);
+      await button.props.onClick(); await page.settle();
+    }
+    assert.deepEqual(requests.map(request => request.format), ['srt', 'ass']);
+    assert.equal(requests.every(request => request.holdShortGaps === (policy !== false)), true);
+    assert.deepEqual(requests.map(request => request.segments), [segments, segments]);
+  }
 });

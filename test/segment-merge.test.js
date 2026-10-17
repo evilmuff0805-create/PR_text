@@ -183,8 +183,8 @@ test('English long lines use unequal word timings in both subtitle exports', asy
     { start: 182, end: 183.1, text: 'delta echo' },
     { start: 184, end: 185.1, text: 'foxtrot golf' },
   ]);
-  assert.match(generateSRT(result.segments), /00:03:00,000 --> 00:03:01,300/);
-  assert.match(generateASS(result.segments), /0:03:00\.00,0:03:01\.30/);
+  assert.match(generateSRT(result.segments), /00:03:00,000 --> 00:03:02,000/);
+  assert.match(generateASS(result.segments), /0:03:00\.00,0:03:02\.00/);
 });
 
 test('null, malformed, and overlapping English words retain original segments', async () => {

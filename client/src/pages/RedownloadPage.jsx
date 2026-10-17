@@ -78,7 +78,7 @@ export default function RedownloadPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ segments, format }),
+        body: JSON.stringify({ segments, format, holdShortGaps: data.holdShortGaps !== false }),
       });
       if (!downloadResponse.ok) throw new Error('다운로드 실패');
       const blob = await downloadResponse.blob();
