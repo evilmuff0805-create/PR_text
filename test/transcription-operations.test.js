@@ -31,7 +31,7 @@ function fixture(options={}) {
   return {service,operation,calls,removed,uploads,diagnosticUpdates,options,buffer,providerCalls:()=>providerCalls,finalizations:()=>finalizations};
 }
 function maintenanceFixture({operations=[], owners=[], files={}, listErrors={}, removeError, updateError, existenceError}={}) {
-  const rows=operations.map(operation=>({...operation})), selectCalls=[], lists=[], removed=[], updates=[];
+  const rows=operations.map(operation=>({...operation})), selectCalls=[], lists=[], removed=[], updates=[], rpcCalls=[];
   const failureState={listErrors:{...listErrors},removeError,updateError,existenceError};
   const bucket={
     async list(prefix,options={}) { if(prefix)lists.push(prefix); if(failureState.listErrors[prefix])return {error:Error('list failed')};
@@ -78,8 +78,8 @@ function maintenanceFixture({operations=[], owners=[], files={}, listErrors={}, 
       },
     };
     return query;
-  },async rpc(name){if(name==='cancel_transcription_operation')return {data:[{updated:true}]};return {data:true};}};
-  return {service:createTranscriptionOperations({database}),rows,selectCalls,lists,removed,updates,failureState};
+  },async rpc(name,params){rpcCalls.push({name,params});if(name==='cancel_transcription_operation')return {data:[{updated:true}]};return {data:true};}};
+  return {service:createTranscriptionOperations({database}),rows,selectCalls,lists,removed,updates,failureState,rpcCalls};
 }
 
 test('maintenance excludes already cleaned terminal operations and requests only cleanup fields',async()=>{
@@ -243,3 +243,41 @@ test('response classification separates login, missing, temporary failure and te
 test('saved keys are isolated by account and corrupted storage is safe',()=>{const values=new Map([[pendingOperationStorageKey(user),JSON.stringify({operationKey:id})]]);const storage={getItem:k=>values.get(k)};assert.equal(readPendingOperation(storage,user).operationKey,id);assert.equal(readPendingOperation(storage,'other'),null);assert.equal(readPendingOperation({getItem:()=>{throw Error('denied')}},user),null)});
 
 test('pending ordinary work cannot turn same-operation retry into separately billed diarization',()=>{assert.equal(canSubmitOperation({operationKey:id},true),false);assert.equal(canSubmitOperation({operationKey:id},false),true);assert.equal(canSubmitOperation(null,true),true)});
+
+test('maintenance delegates batch expiry without generic child cancellation', async () => {
+  const f = maintenanceFixture({ operations: ['staged', 'queued'].map((status, index) => ({ id: `${id.slice(0,-1)}${index}`, user_id: user, batch_id: 'synthetic-batch', status, audio_deleted_at: null, expires_at: '2000-01-01' })) });
+  await f.service.maintenance();
+  assert.equal(f.rpcCalls.filter(call => call.name === 'expire_transcription_batches').length, 1);
+  assert.equal(f.rpcCalls.some(call => call.name === 'cancel_transcription_operation'), false);
+  assert.deepEqual(f.rows.map(row => row.status), ['staged', 'queued']);
+});
+
+test('accepted batch work drains when both admission flags are off', async () => {
+  const ordinaryFlag = process.env.TRANSCRIPTION_OPERATIONS_ENABLED;
+  const batchFlag = process.env.TRANSCRIPTION_BATCHES_ENABLED;
+  process.env.TRANSCRIPTION_OPERATIONS_ENABLED = 'false';
+  process.env.TRANSCRIPTION_BATCHES_ENABLED = 'false';
+  try {
+    const f = fixture(); f.operation.batch_id = 'synthetic-batch';
+    await f.service.processNext();
+    assert.equal(f.providerCalls(), 1); assert.equal(f.operation.status, 'completed');
+  } finally {
+    if (ordinaryFlag === undefined) delete process.env.TRANSCRIPTION_OPERATIONS_ENABLED; else process.env.TRANSCRIPTION_OPERATIONS_ENABLED = ordinaryFlag;
+    if (batchFlag === undefined) delete process.env.TRANSCRIPTION_BATCHES_ENABLED; else process.env.TRANSCRIPTION_BATCHES_ENABLED = batchFlag;
+  }
+});
+
+test('abort-only hook stops a local provider without attempting a second cancellation or refund', async () => {
+  let entered; const ready = new Promise(resolve => { entered = resolve; });
+  const f = fixture({ transcribe: async (buffer, name, language, { signal }) => {
+    entered();
+    return new Promise((resolve, reject) => signal.addEventListener('abort', () => reject(Error('aborted')), { once: true }));
+  } });
+  const work = f.service.processNext(); await ready;
+  assert.equal(f.service.abortOperation('different-operation'), false);
+  assert.equal(f.service.abortOperation(id), true);
+  await work;
+  assert.equal(f.calls.includes('cancel_transcription_operation'), false);
+  assert.equal(f.calls.includes('fail_transcription_operation'), false);
+  assert.equal(f.finalizations(), 0);
+});

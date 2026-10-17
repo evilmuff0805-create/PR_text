@@ -1,41 +1,15 @@
 import { Router } from 'express';
 import { generateSRT, generateTXT, generateASS } from '../services/subtitle.js';
 import { authMiddleware } from '../middleware/auth.js';
+import { validateSubtitleSegments } from '../services/subtitle-payload.js';
 import {
   MAX_SPEAKERS,
   normalizeStoredSpeakerMetadata,
 } from '../services/speakers.js';
 
 const router = Router();
-const MAX_SEGMENTS = 5_000;
-const MAX_SEGMENT_TEXT_LENGTH = 10_000;
-const MAX_TOTAL_TEXT_LENGTH = 1_000_000;
 const HEX_COLOR = /^#[0-9A-Fa-f]{6}$/;
 const ASS_POSITIONS = new Set(['top', 'middle', 'bottom']);
-
-function validateSegments(segments) {
-  if (!Array.isArray(segments) || segments.length === 0) return 'segments가 필요합니다.';
-  if (segments.length > MAX_SEGMENTS) return '자막 세그먼트 수가 너무 많습니다.';
-
-  let totalTextLength = 0;
-  for (const segment of segments) {
-    if (!segment || typeof segment !== 'object') return '자막 세그먼트 형식이 올바르지 않습니다.';
-    if (!Number.isFinite(segment.start) || !Number.isFinite(segment.end) || segment.start < 0 || segment.end < segment.start) {
-      return '자막 시간 정보가 올바르지 않습니다.';
-    }
-    if (typeof segment.text !== 'string' || segment.text.length > MAX_SEGMENT_TEXT_LENGTH) {
-      return '자막 텍스트가 너무 길거나 올바르지 않습니다.';
-    }
-    if (segment.speaker !== undefined && (!Number.isInteger(segment.speaker) || segment.speaker < 0 || segment.speaker >= MAX_SPEAKERS)) {
-      return '화자 정보가 올바르지 않습니다.';
-    }
-
-    totalTextLength += segment.text.length;
-    if (totalTextLength > MAX_TOTAL_TEXT_LENGTH) return '자막 전체 텍스트가 너무 큽니다.';
-  }
-
-  return null;
-}
 
 function validateSpeakerColors(speakerColors) {
   if (speakerColors === undefined || speakerColors === null) return null;
@@ -67,7 +41,7 @@ function validateAssOptions(assOptions) {
 }
 
 export function validateDownloadPayload({ segments, format, assOptions, speakerColors }) {
-  const segmentError = validateSegments(segments);
+  const segmentError = validateSubtitleSegments(segments);
   if (segmentError) return segmentError;
 
   const supportedFormats = ['srt', 'txt', 'ass'];

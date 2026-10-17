@@ -3,6 +3,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useTranscription } from '../contexts/TranscriptionContext.jsx';
 import AuthModal from '../components/AuthModal.jsx';
+import BatchTranscriptionPanel from '../components/BatchTranscriptionPanel.jsx';
+import { useBatchTranscription } from '../contexts/BatchTranscriptionContext.jsx';
 import {
   DIARIZATION_MAX_MINUTES,
   UPLOAD_ACCEPT,
@@ -84,6 +86,10 @@ export default function HomePage() {
   const optimizationAbortRef = useRef(null);
   const navigate = useNavigate();
   const location = useLocation();
+  const batchState = useBatchTranscription();
+  const requestedMode = new URLSearchParams(location.search).get('mode');
+  const mode = requestedMode === 'batch' || (!requestedMode && Boolean(batchState?.batch)) ? 'batch' : 'single';
+  const modeButtons = <div className="transcription-modes" aria-label="변환 방식"><button type="button" className={`button button--${mode === 'single' ? 'primary' : 'secondary'}`} aria-pressed={mode === 'single'} onClick={() => navigate('/transcribe?mode=single', { replace: true })}>파일 하나 변환</button><button type="button" className={`button button--${mode === 'batch' ? 'primary' : 'secondary'}`} aria-pressed={mode === 'batch'} onClick={() => navigate('/transcribe?mode=batch', { replace: true })}>사람별 오디오 묶음</button></div>;
 
   useEffect(() => {
     if (!user && location.state?.openAuth) {
@@ -250,8 +256,11 @@ export default function HomePage() {
   const displayError = formError || transcriptionError;
   const displayFile = sourceFile || file;
 
+  if (mode === 'batch') return <div className="upload-workspace">{modeButtons}<BatchTranscriptionPanel onLogin={() => setShowAuthModal(true)} /><AuthModal isOpen={showAuthModal} onClose={() => setShowAuthModal(false)} /></div>;
+
   return (
     <div className="upload-workspace">
+      {modeButtons}
       <header className="workspace-heading">
         <p className="workspace-kicker">NEW TRANSCRIPTION</p>
         <h1 className="workspace-title">새 자막 만들기</h1>

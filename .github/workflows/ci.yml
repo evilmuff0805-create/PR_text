@@ -78,3 +78,5 @@ jobs:
           node scripts/validation/db-operations.cjs
           node scripts/validation/db-concurrency.cjs
           node scripts/validation/db-welcome-credit.cjs
+          node scripts/validation/db-batches.cjs
+          node scripts/validation/db-batches-backend.cjs

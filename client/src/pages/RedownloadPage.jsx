@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext.jsx';
+import { BatchArchiveList } from '../components/BatchTranscriptionPanel.jsx';
 import HistoryDateTime from '../components/HistoryDateTime.jsx';
 
 const LIMIT = 20;
@@ -98,6 +99,7 @@ export default function RedownloadPage() {
 
   return (
     <div className="usage-page">
+      <BatchArchiveList />
       <header className="usage-heading">
         <p className="workspace-kicker">TRANSCRIPTION ARCHIVE</p>
         <h1 className="workspace-title">변환_재다운로드</h1>

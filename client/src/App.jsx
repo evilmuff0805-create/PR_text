@@ -1,7 +1,7 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import HomePage from './pages/HomePage.jsx';
-import ResultPage from './pages/ResultPage.jsx';
+import ResultRoute from './pages/ResultRoute.jsx';
 import IntroPage from './pages/IntroPage.jsx';
 import GuidePage from './pages/GuidePage.jsx';
 import TermsPage from './pages/TermsPage.jsx';
@@ -25,7 +25,7 @@ function App() {
         <Route path="/" element={<IntroPage />} />
         <Route path="/transcribe" element={<HomePage />} />
         <Route path="/caption-ideas" element={<CaptionIdeasPage />} />
-        <Route path="/result" element={<ResultPage />} />
+        <Route path="/result" element={<ResultRoute />} />
         <Route path="/intro" element={<Navigate to="/" replace />} />
         <Route path="/guide" element={<GuidePage />} />
         <Route path="/payment" element={<PaymentPage />} />

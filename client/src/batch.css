@@ -1,0 +1,31 @@
+.transcription-modes, .batch-actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.transcription-modes { margin-bottom: 24px; }
+.batch-workspace, .batch-result { display: grid; gap: 20px; min-width: 0; }
+.batch-card { display: grid; gap: 16px; padding: 24px; min-width: 0; }
+.batch-note { color: var(--text-secondary); font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.batch-field { display: grid; gap: 8px; min-width: 0; font-size: 14px; }
+.batch-field input, .batch-field select { width: 100%; min-width: 0; padding: 10px 12px; border: 1px solid var(--border-color); border-radius: var(--border-radius); background: var(--bg-primary); color: var(--text-primary); }
+.batch-field input[type="file"] { max-width: 100%; }
+.batch-field input:disabled, .batch-field select:disabled { opacity: 0.7; }
+.batch-dropzone { border-style: dashed; }
+.batch-file-list { display: grid; gap: 16px; list-style: none; }
+.batch-file-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 16px; padding: 24px; }
+.batch-file-row__main { display: grid; gap: 8px; min-width: 0; }
+.batch-file-row__actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; max-width: 350px; }
+.batch-file-row__actions > strong { width: 100%; font-size: 14px; text-align: right; }
+.batch-order { font-size: 14px; color: var(--accent); }
+.batch-filename { overflow-wrap: anywhere; font-size: 14px; color: var(--text-secondary); }
+.batch-alert { padding: 14px 16px; border: 1px solid var(--border-color); border-radius: var(--border-radius); background: var(--bg-secondary); font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+.batch-alert--error { color: #ffb7bb; border-color: #85444a; }
+.batch-file-row > .batch-alert { grid-column: 1 / -1; }
+.batch-history { display: grid; gap: 20px; list-style: none; }
+.batch-history li { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; min-width: 0; }
+.batch-history li > div { flex: 1 1 260px; overflow-wrap: anywhere; }
+.batch-editor-lock { border: 0; padding: 0; margin: 0; min-width: 0; }
+@media (max-width: 768px) {
+  .batch-card, .batch-file-row { padding: 16px; }
+  .batch-file-row { grid-template-columns: minmax(0, 1fr); }
+  .batch-file-row__actions { max-width: none; justify-content: flex-start; }
+  .batch-file-row__actions > strong { text-align: left; }
+  .transcription-modes > .button, .batch-actions > .button { flex: 1 1 220px; }
+}

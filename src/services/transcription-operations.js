@@ -166,7 +166,7 @@ export function createTranscriptionOperations({
   let timer, maintenanceTimer, active, busy = false, stopping = false, cleaning = false;
   async function rpc(name, params) {
     const { data, error } = await database.rpc(name, params);
-    if (error) throw Object.assign(new Error(error.message), { code: error.code });
+    if (error) throw Object.assign(new Error(error.message), { code: error.code, ...(error.code === 'TB409' ? { status: 409 } : {}) });
     return data;
   }
   async function row(id, userId) {
@@ -242,6 +242,11 @@ export function createTranscriptionOperations({
     if (active?.operation?.id === id) active.controller.abort();
     // Cleanup is retried by maintenance, independently of the already committed cancellation.
     return result;
+  }
+  function abortOperation(id) {
+    if (active?.operation?.id !== id) return false;
+    active.controller.abort();
+    return true;
   }
   async function readAudio(operation) {
     const buffer = Buffer.alloc(Number(operation.byte_size));
@@ -391,9 +396,10 @@ export function createTranscriptionOperations({
     cleaning = true;
     try {
       // Staging never reserves credits; its 24-hour retention also bounds orphan uploads.
-      const { error: expiryError } = await database.from('transcription_operations').update({ status: 'cancelled', completed_at: new Date().toISOString(), error_message: '업로드 접수 기한이 지났습니다. 새 변환을 시작해주세요.' }).eq('status', 'staged').lt('expires_at', new Date().toISOString());
+      await rpc('expire_transcription_batches', {});
+      const { error: expiryError } = await database.from('transcription_operations').update({ status: 'cancelled', completed_at: new Date().toISOString(), error_message: '업로드 접수 기한이 지났습니다. 새 변환을 시작해주세요.' }).eq('status', 'staged').is('batch_id', null).lt('expires_at', new Date().toISOString());
       if (expiryError) throw expiryError;
-      const expired = await database.from('transcription_operations').select('id,user_id').eq('status','queued').lt('expires_at',new Date().toISOString()).limit(20);
+      const expired = await database.from('transcription_operations').select('id,user_id').eq('status','queued').is('batch_id', null).lt('expires_at',new Date().toISOString()).limit(20);
       if (expired.error) throw expired.error;
       for (const operation of expired.data || []) await cancel(operation.id, operation.user_id);
       const { data, error } = await database.from('transcription_operations').select('id,user_id,status,audio_deleted_at').in('status', ['completed', 'failed', 'cancelled']).is('audio_deleted_at', null).order('audio_deleted_at', { ascending: true, nullsFirst: true }).limit(20);
@@ -413,12 +419,13 @@ export function createTranscriptionOperations({
     stopping = true; clearInterval(timer); clearInterval(maintenanceTimer); timer = undefined;
     const context = active; context?.controller.abort(); if (context?.operation) await release(context);
   }
-  return { enqueue, getForUser, getByKey, cancel, processNext, maintenance, cleanAudio, start, stop };
+  return { enqueue, getForUser, getByKey, cancel, abortOperation, processNext, maintenance, cleanAudio, start, stop };
 }
 const operations = createTranscriptionOperations();
 export const createAndQueueTranscriptionOperation = operations.enqueue;
 export const getTranscriptionOperationForUser = operations.getForUser;
 export const getTranscriptionOperationByKeyForUser = operations.getByKey;
 export const cancelQueuedTranscriptionOperation = operations.cancel;
+export const abortActiveTranscriptionOperation = operations.abortOperation;
 export const startTranscriptionOperationWorker = operations.start;
 export const stopTranscriptionOperationWorker = operations.stop;

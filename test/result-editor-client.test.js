@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { formatSegmentTime } from '../client/src/utils/format-segment-time.js';
+import { readResultDraft, writeResultDraft } from '../client/src/utils/result-drafts.js';
 
 const read = (path) => readFile(new URL(`../${path}`, import.meta.url), 'utf8');
 
@@ -43,12 +44,13 @@ test('mismatched line counts warn the user and block every download path', async
 
 test('edits and speaker colors survive a page refresh', async () => {
   const page = await read('client/src/pages/ResultPage.jsx');
-
-  assert.match(page, /const EDITS_STORAGE_KEY = 'lastResultEdits';/);
-  assert.match(page, /sessionStorage\.setItem\(EDITS_STORAGE_KEY/);
-  assert.match(page, /readStoredEdits\(transcriptionLogId, segments\)/);
-  // 다른 변환 결과의 편집본이 섞이면 안 된다. 변환 기록 ID로 식별한다.
-  assert.match(page, /parsed\?\.logId !== logId/);
+  assert.match(page, /readStoredEdits\(transcriptionLogId, segments, user\?\.id\)/);
+  const values = new Map(), storage = { setItem: (key, value) => values.set(key, value), getItem: (key) => values.get(key) };
+  const segments = [{ start: 1, end: 2, text: '원문', speaker: 0 }];
+  writeResultDraft(storage, 'owner', 'record', { segments: [{ ...segments[0], text: '편집본' }], baseText: '원문', speakerColors: { 0: '#39FF14' } });
+  const restored = readResultDraft(storage, 'owner', 'record', segments);
+  assert.equal(restored.segments[0].text, '편집본');
+  assert.equal(restored.speakerColors[0], '#39FF14');
 });
 
 test('ASS controls speak the same 1080p coordinate system as the generator', async () => {
