@@ -64,16 +64,24 @@ test('word-timed Korean short responses do not merge or acquire a minimum displa
 });
 
 test('a provider-separated dependent predicate is joined only with complete adjacent word timings', async () => {
-  for (const gap of [0.3, 0.301]) {
+  for (const [gap, spellingCorrection] of [[0.3, false], [0.301, false], [0.3, true], [0.301, true]]) {
     const first = source();
     first.sourceWords.pop();
     first.text = text.replace(/ 됩니다$/, '');
+    if (spellingCorrection) {
+      first.text = first.text.replace('편안하게', '편안하개');
+      first.sourceWords[0].word = '편안하개';
+    }
     first.end = 13.7;
     const tail = {
       start: 13.7 + gap, end: 14.7 + gap, text: '됩니다',
       sourceWords: [{ word: '됩니다', start: 13.7 + gap, end: 14.2 + gap }],
     };
-    const result = await processTranscriptionSegments([first, tail], 'ko', { correct });
+    const before = structuredClone([first, tail]);
+    const result = await processTranscriptionSegments([first, tail], 'ko', {
+      correct: async (value) => value.replace('편안하개', '편안하게'),
+    });
+    assert.deepEqual([first, tail], before);
     const last = result.segments.at(-1);
     assert.equal(last.end, tail.sourceWords[0].end);
     if (gap === 0.3) {
@@ -87,11 +95,89 @@ test('a provider-separated dependent predicate is joined only with complete adja
   }
 });
 
-test('changed speech after correction falls back without applying stale word times', async () => {
+test('ambiguous rewriting restores validated original cues instead of the padded source window', async () => {
   const input = source();
   const corrected = text.replace('편안하게', '차분하게');
   const result = await processTranscriptionSegments([input], 'ko', { correct: async () => corrected });
-  assert.deepEqual(result.segments, [{ start: 10, end: 20, text: corrected }]);
+  assert.deepEqual(result.segments, [
+    { start: 10.1, end: 11.8, text: front, timingSource: 'word' },
+    { start: 12, end: 14, text: back, timingSource: 'word' },
+  ]);
+});
+
+test('a spelling correction keeps a first word at two seconds and uses one existing correction request', async () => {
+  const source = { start: 0, end: 4, text: '드릴께요', sourceWords: [{ word: '드릴께요', start: 2, end: 2.4 }] };
+  const snapshot = structuredClone(source);
+  let calls = 0;
+  const result = await processTranscriptionSegments([source], 'ko', { correct: async (value) => {
+    calls += 1;
+    assert.equal(value, source.text);
+    return '드릴게요';
+  } });
+  assert.equal(calls, 1);
+  assert.deepEqual(result.segments, [{ start: 2, end: 2.4, text: '드릴게요', timingSource: 'word' }]);
+  assert.match(generateSRT(result.segments), /00:00:02,000 --> 00:00:02,400\n드릴게요/);
+  assert.deepEqual(source, snapshot);
+});
+
+test('long corrected Korean captions keep every internal start at a verified word edge', async () => {
+  const before = '긴 설명을 천천이 들으면서 중요한 내용을 하나씩 확인하고 마지막에는 결과를 차분하게 정리합니다';
+  const after = before.replace('천천이', '천천히');
+  const starts = [0.4, 0.65, 1.05, 1.45, 10, 10.35, 10.75, 15.2, 17, 17.55, 18.05, 18.55];
+  const ends = [0.6, 1, 1.4, 2, 10.3, 10.7, 11.1, 15.7, 17.5, 18, 18.5, 19];
+  const source = { start: 0, end: 20, text: before, sourceWords: before.split(' ').map((word, index) => ({ word, start: starts[index], end: ends[index] })) };
+  const snapshot = structuredClone(source);
+  const result = await processTranscriptionSegments([source], 'ko', { correct: async () => after });
+  assert.deepEqual(result.segments.map((cue) => cue.start), [0.4, 10, 15.2, 17]);
+  assert.equal(result.segments.map((cue) => cue.text).join(' '), after);
+  assert.ok(result.segments.every((cue) => cue.text.length <= 28 && cue.timingSource === 'word'));
+  assert.match(generateSRT(result.segments), /00:00:15,200 --> 00:00:15,700\n확인하고/);
+  assert.match(generateASS(result.segments), /0:00:15\.20,0:00:15\.70/);
+  assert.deepEqual(source, snapshot);
+});
+
+test('digital-prefix evidence bounds even incomplete-word Korean fallbacks and is not exposed in output', async () => {
+  for (const sourceWords of [[], [{ word: '자료를', start: 9.58, end: 9.58 }]]) {
+    const source = { start: 9.58, end: 12, text: '자료를 확인합니다', sourceWords, audioStartFloor: 10 };
+    const snapshot = structuredClone(source);
+    const result = await processTranscriptionSegments([source], 'ko', { correct });
+    assert.deepEqual(result.segments, [{ start: 10, end: 12, text: source.text, timingSource: 'audio-range' }]);
+    assert.match(generateSRT(result.segments), /00:00:10,000 --> 00:00:12,000/);
+    assert.deepEqual(source, snapshot);
+  }
+});
+
+test('digital-prefix evidence clips a corrected Korean word while English and diarization stay unchanged', async () => {
+  const korean = { start: 1.62, end: 3, text: '드릴께요', audioStartFloor: 2, sourceWords: [{ word: '드릴께요', start: 1.62, end: 2.4 }] };
+  const result = await processTranscriptionSegments([korean], 'ko', { correct: async () => '드릴게요' });
+  assert.deepEqual(result.segments, [{ start: 2, end: 2.4, text: '드릴게요', timingSource: 'word' }]);
+  const diarized = await processTranscriptionSegments([{ ...korean, speaker: 0 }], 'ko', { correct });
+  assert.equal(diarized.segments[0].start, 1.62);
+  assert.ok(!('audioStartFloor' in diarized.segments[0]));
+  const english = await processTranscriptionSegments([{ start: 1.62, end: 3, text: 'Hello', audioStartFloor: 2, sourceWords: [] }], 'en');
+  assert.equal(english.segments[0].start, 1.62);
+  assert.ok(!('audioStartFloor' in english.segments[0]));
+});
+
+test('corrected compact rows expand with latest text and keep validated internal cue starts after reload', async () => {
+  const sources = Array.from({ length: 1800 }, (_, index) => {
+    const offset = index * 3;
+    return { start: offset, end: offset + 2.5, text: '하나 둘 되요', sourceWords: [
+      { word: '하나', start: offset + 0.1, end: offset + 0.2 },
+      { word: '둘', start: offset + 0.6, end: offset + 0.7 },
+      { word: '되요', start: offset + 1.1, end: offset + 1.2 },
+    ] };
+  });
+  const result = await processTranscriptionSegments(sources, 'ko', { correct: async (value) => value.replaceAll('되요', '돼요') });
+  assert.equal(result.segments.length, 1800);
+  assert.ok(result.segments.every((source) => source.text === '하나 둘 돼요' && source.wordAlignedCues.length === 3));
+  const prepared = prepareDownloadPayload({ segments: JSON.parse(JSON.stringify(result.segments)), format: 'srt' });
+  assert.equal(prepared.error, null);
+  const srt = generateSRT(prepared.segments, null, { holdShortGaps: false });
+  assert.equal(srt.split('\n\n').length, 5401);
+  assert.match(srt, /00:00:01,100 --> 00:00:01,200\n돼요/);
+  assert.match(srt, /01:29:58,100 --> 01:29:58,200\n돼요/);
+  assert.ok(sources.every((source) => source.sourceWords.at(-1).word === '되요'));
 });
 
 test('spacing correction can retain the same Korean speech and word times', async () => {

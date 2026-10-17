@@ -1,7 +1,7 @@
 import { performance } from 'perf_hooks';
 import { processSegmentsWithTiming } from './postprocess.js';
 import { normalizeLanguage } from './language.js';
-import { alignKoreanSegmentWithWordTimings } from './korean-word-timing.js';
+import { alignCorrectedKoreanSegmentWithWordTimings, alignKoreanSegmentWithWordTimings } from './korean-word-timing.js';
 import { isKoreanDependentPredicateTail } from './korean-subtitle.js';
 
 // Provider hallucination loops are uniform, low-confidence repeats from one decode window.
@@ -261,7 +261,7 @@ export function refineEnglishSegmentsWithWordTimings(segments) {
   return segments.flatMap(refineEnglishSegment);
 }
 
-export function refineKoreanSegmentsWithWordTimings(segments) {
+export function refineKoreanSegmentsWithWordTimings(segments, { originalSegments } = {}) {
   // Download/edit payloads accept at most 5,000 source rows. Keep exact cue
   // times in a compact source row when word/pause splitting exceeds that cap.
   const maxFlatCues = 5_000;
@@ -278,6 +278,10 @@ export function refineKoreanSegmentsWithWordTimings(segments) {
     }
     refined.push(...(wordTimed ? cues.map((cue) => ({ ...cue, timingSource: 'word' })) : cues));
   };
+  const originals = Array.isArray(originalSegments) && originalSegments.length === segments.length ? originalSegments : null;
+  const alignSource = (source, index) => originals
+    ? alignCorrectedKoreanSegmentWithWordTimings(originals[index], source)
+    : alignKoreanSegmentWithWordTimings(source);
   for (let index = 0; index < segments.length; index += 1) {
     const source = segments[index];
     if (hasSpeakerLabel(source)) {
@@ -286,33 +290,43 @@ export function refineKoreanSegmentsWithWordTimings(segments) {
       continue;
     }
 
-    const aligned = alignKoreanSegmentWithWordTimings(source);
+    const aligned = alignSource(source, index);
     let cues = aligned.segments;
-    let sourceText = source.text;
+    let sourceText = aligned.text ?? source.text;
+    compactTextLength += String(sourceText).length - String(source.text).length;
     const next = segments[index + 1];
     // Repair a provider-separated dependent predicate only when BOTH sources
     // have complete, matching word timings and speech itself is adjacent.
     // Each source participates in at most one such join; no timing is invented.
     if (aligned.aligned && next && !hasSpeakerLabel(next)
-      && isKoreanDependentPredicateTail(source.text, next.text)) {
-      const following = alignKoreanSegmentWithWordTimings(next);
+      && isKoreanDependentPredicateTail(sourceText, next.text)) {
+      const following = alignSource(next, index + 1);
       const gap = following.aligned
         ? following.segments[0].start - cues.at(-1).end : Infinity;
-      const joinedText = `${String(source.text).trim()} ${String(next.text).trim()}`;
-      const addedChars = joinedText.length - String(source.text).length - String(next.text).length;
+      const joinedText = `${String(sourceText).trim()} ${String(following.text ?? next.text).trim()}`;
+      const addedChars = joinedText.length - String(sourceText).length - String(next.text).length;
       // A compact row must also fit the existing 10,000-character edit limit.
       if (gap >= 0 && gap <= MAX_MERGE_GAP_SECONDS + 1e-9 && joinedText.length <= 10_000
         && compactTextLength + addedChars <= 1_000_000) {
-        const joined = alignKoreanSegmentWithWordTimings({
+        const joinedSource = {
           ...source,
           end: Math.max(Number(source.end), Number(next.end)),
           text: joinedText,
           sourceWords: [...source.sourceWords, ...next.sourceWords],
-        });
-        if (joined.aligned) {
+        };
+        const joined = originals ? alignCorrectedKoreanSegmentWithWordTimings({
+          ...originals[index],
+          end: Math.max(Number(originals[index].end), Number(originals[index + 1].end)),
+          text: `${String(originals[index].text).trim()} ${String(originals[index + 1].text).trim()}`,
+          sourceWords: [...originals[index].sourceWords, ...originals[index + 1].sourceWords],
+        }, joinedSource) : alignKoreanSegmentWithWordTimings(joinedSource);
+        const retainedText = joined.text ?? joinedText;
+        const retainedAddedChars = String(retainedText).length - String(sourceText).length - String(next.text).length;
+        if (joined.aligned && String(retainedText).length <= 10_000
+          && compactTextLength + retainedAddedChars <= 1_000_000) {
           cues = joined.segments;
-          sourceText = joinedText;
-          compactTextLength += addedChars;
+          sourceText = retainedText;
+          compactTextLength += retainedAddedChars;
           index += 1;
         }
       }
@@ -325,7 +339,7 @@ export function refineKoreanSegmentsWithWordTimings(segments) {
       timingSource: 'word',
       // Lossless tuples avoid repeating JSON keys for every cue in long jobs.
       wordAlignedCues: cues.map(({ start, end, text }) => [start, end, text]),
-    } : source);
+    } : cues[0]);
   }
   return needsCompact ? compact : refined;
 }
@@ -359,14 +373,14 @@ export async function processTranscriptionSegments(segments, language, { correct
     processedSegments = filteredSegments;
   }
 
-  // Korean spelling/spacing correction retains sourceWords. Validate against
-  // the final text before using them; changed speech falls back to source time.
+  // Validate the original words before mapping corrected spelling. A failed
+  // mapping keeps original timed cues instead of restoring leading silence.
   const timedSegments = normalizeLanguage(language) === 'ko'
     || correctionTimings?.languageDecision === 'inferred_from_hangul_segments'
-    ? refineKoreanSegmentsWithWordTimings(processedSegments) : processedSegments;
+    ? refineKoreanSegmentsWithWordTimings(processedSegments, { originalSegments: filteredSegments }) : processedSegments;
 
   return {
-    segments: timedSegments.map(({ sourceWords: ignoredSourceWords, ...segment }) => ({
+    segments: timedSegments.map(({ sourceWords: ignoredSourceWords, audioStartFloor: ignoredAudioStartFloor, ...segment }) => ({
       ...segment,
       text: normalizeLanguage(language) === 'en' ? segment.text : removeCommas(segment.text),
     })),

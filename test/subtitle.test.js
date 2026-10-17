@@ -234,7 +234,7 @@ test('Korean clause splitting preserves the speaker and complete source time spa
   assert.equal(ranges.length, 2);
   assert.equal(ranges[0].start, 3250);
   assert.equal(ranges.at(-1).end, 12750);
-  assert.equal(ranges[0].end, ranges[1].start);
+  assert.ok(ranges[1].start - ranges[0].end >= 0 && ranges[1].start - ranges[0].end <= 1);
   assert.ok(ranges.every(({ start, end }) => end > start));
 
   const assLines = generateASS(input, {}, colors).split('\n')
@@ -276,7 +276,7 @@ test('preserves the original timeline when long subtitle text is split', () => {
   assert.equal(ranges[0].start, 3250);
   assert.equal(ranges.at(-1).end, 15750);
   for (let index = 1; index < ranges.length; index++) {
-    assert.equal(ranges[index - 1].end, ranges[index].start);
+    assert.ok(ranges[index].start - ranges[index - 1].end >= 0 && ranges[index].start - ranges[index - 1].end <= 1);
     assert.ok(ranges[index].end >= ranges[index].start);
   }
 });
@@ -295,6 +295,56 @@ test('carries rounded subtitle timestamps into the next second', () => {
   const ass = generateASS(boundarySegment);
   assert.match(ass, /Dialogue: 0,0:01:00\.00,0:01:01\.00/);
   assert.doesNotMatch(ass, /\.100(?:,|$)/m);
+});
+
+test('export starts never round below a word or verified-audio boundary while ends keep nearest rounding', () => {
+  const source = Object.freeze({ start: 3.0044, end: 4.0044, text: '검증된 시작', timingSource: 'word' });
+  const srt = dialogueBlocks(generateSRT([source], null, { holdShortGaps: false }))[0];
+  assert.match(srt, /00:00:03,005 --> 00:00:04,004/);
+  assert.match(generateASS([source], { holdShortGaps: false }), /Dialogue: 0,0:00:03\.01,0:00:04\.00,/);
+  assert.equal(source.start, 3.0044);
+  assert.equal(source.end, 4.0044);
+});
+
+test('start ceiling distinguishes exact decimal ticks from real fractions near seconds, minutes, and hours', () => {
+  for (const [start, srtTime, assTime] of [
+    [16.013, '00:00:16,013', '0:00:16.02'],
+    [16.07, '00:00:16,070', '0:00:16.07'],
+    [16.070000001, '00:00:16,071', '0:00:16.08'],
+    [59.9991, '00:01:00,000', '0:01:00.00'],
+    [3599.9991, '01:00:00,000', '1:00:00.00'],
+  ]) {
+    const source = [{ start, end: start + 1, text: '시작 경계' }];
+    assert.ok(dialogueBlocks(generateSRT(source))[0].includes(`${srtTime} --> `));
+    assert.ok(generateASS(source).includes(`Dialogue: 0,${assTime},`));
+  }
+});
+
+test('subprecision cues collapse without reversing, deleting text, padding, or mutating their recorded times', () => {
+  for (const [start, end] of [[3.0046, 3.0051], [3.0044, 3.00445]]) {
+    const source = [{ start, end, text: '짧은 말', timingSource: 'word' }];
+    assert.match(generateSRT(source), /00:00:03,005 --> 00:00:03,005\n짧은 말/);
+    assert.match(generateASS(source), /Dialogue: 0,0:00:03\.01,0:00:03\.01,Default,,0,0,0,,짧은 말/);
+    assert.deepEqual(source[0], { start, end, text: '짧은 말', timingSource: 'word' });
+  }
+});
+
+test('only an ordinary held end shares the next serialized start while batch and speaker ends stay nearest', () => {
+  const source = [
+    { start: 0.0044, end: 0.1044, text: '네', timingSource: 'word' },
+    { start: 0.2044, end: 0.4044, text: '확인했습니다', timingSource: 'word' },
+  ];
+  const snapshot = structuredClone(source);
+  const ordinary = generateSRT(source);
+  assert.match(ordinary, /00:00:00,005 --> 00:00:00,205\n네/);
+  assert.match(ordinary, /00:00:00,205 --> 00:00:00,404\n확인했습니다/);
+  assert.match(generateASS(source), /Dialogue: 0,0:00:00\.01,0:00:00\.21,Default,,0,0,0,,네/);
+  assert.match(generateASS(source), /Dialogue: 0,0:00:00\.21,0:00:00\.40,/);
+  for (const input of [source, source.map((cue, speaker) => ({ ...cue, speaker }))]) {
+    assert.match(generateSRT(input, null, { holdShortGaps: false }), /00:00:00,005 --> 00:00:00,104\n네/);
+    assert.match(generateASS(input, { holdShortGaps: false }), /Dialogue: 0,0:00:00\.01,0:00:00\.10,/);
+  }
+  assert.deepEqual(source, snapshot);
 });
 
 test('short cues preserve their recorded end even when silence follows', () => {

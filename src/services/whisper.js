@@ -10,6 +10,7 @@ import { performance } from 'perf_hooks';
 import { buildAudioChunkPlan, mapWithConcurrency, mergeChunkSegments } from './audio-chunks.js';
 import { normalizeProviderSpeakerLabels } from './speakers.js';
 import { normalizeLanguage } from './language.js';
+import { attachVerifiedAudioStartFloor } from './audio-start.js';
 import { scheduleSilenceObservation, SILENCE_OBSERVATION_MODE } from './silence-observation.js';
 
 const OPENAI_MAX_RETRIES = 4;
@@ -619,6 +620,8 @@ export async function transcribe(buffer, originalname, language, { durationSecon
         timings,
       };
     }
+
+    result = { ...result, segments: attachVerifiedAudioStartFloor(result.segments, buffer) };
 
     if (SILENCE_OBSERVATION_MODE === 'shadow') {
       const attempts = result.timings?.openaiAttempts

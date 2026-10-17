@@ -22,14 +22,120 @@ function isSubsequence(shorter, longer) {
   return index === shorter.length;
 }
 
-function changesRepeatedSpeech(sourceCharacters, candidateCharacters) {
-  const source = sourceCharacters.join('');
-  const candidate = candidateCharacters.join('');
-  const units = new Set();
-  for (const text of [source, candidate]) {
-    for (const match of text.matchAll(/([\p{L}\p{N}]{1,32}?)\1+/gu)) units.add(match[1]);
+const MAX_REPEAT_UNIT_CHARS = 32;
+
+function repeatAt(characters, start, limit, boundaries) {
+  let best = null;
+  for (let width = 1; width <= MAX_REPEAT_UNIT_CHARS && start + width * 2 <= limit; width += 1) {
+    let position = start + width;
+    let matchedEnd = null;
+    while (position + width <= limit) {
+      let matches = true;
+      for (let offset = 0; offset < width; offset += 1) {
+        if (characters[start + offset] !== characters[position + offset]) {
+          matches = false;
+          break;
+        }
+      }
+      if (!matches) break;
+      position += width;
+      if (!boundaries || boundaries.has(position)) matchedEnd = position;
+    }
+    if (matchedEnd !== null && (!best || matchedEnd > best.end)) {
+      best = { start, end: matchedEnd, unit: characters.slice(start, start + width).join(''), count: (matchedEnd - start) / width };
+      if (best.end === limit) break;
+    }
   }
-  return [...units].some((unit) => source.split(unit).length !== candidate.split(unit).length);
+  return best;
+}
+
+function repeatedSpeech(text) {
+  const characters = [];
+  const words = (String(text ?? '').normalize('NFC').match(/[\p{L}\p{N}]+/gu) ?? []).map((value) => {
+    const start = characters.length;
+    for (const character of value) characters.push(character);
+    return { value, start, end: characters.length };
+  });
+  const boundaries = new Set(words.map(({ end }) => end));
+  const spans = [];
+  for (let index = 0; index < words.length;) {
+    const word = words[index];
+    // Whole repeated words/phrases may be joined or spaced. Their last edge
+    // must remain a word edge: a following corrected word's prefix is no copy.
+    const repeated = repeatAt(characters, word.start, characters.length, boundaries);
+    if (repeated) {
+      spans.push(repeated);
+      while (index < words.length && words[index].start < repeated.end) index += 1;
+      continue;
+    }
+    // Retain protection for repetition inside a word, such as quoted laughter.
+    for (let position = word.start; position < word.end;) {
+      const internal = repeatAt(characters, position, word.end);
+      if (internal) spans.push(internal);
+      position = internal ? internal.end : position + 1;
+    }
+    index += 1;
+  }
+  return { characters, words, spans };
+}
+
+function repeatContext(speech, units) {
+  const anchors = new Map();
+  const counts = new Map();
+  let spanIndex = 0;
+  for (let index = 0; index < speech.words.length; index += 1) {
+    const word = speech.words[index];
+    while (spanIndex < speech.spans.length && speech.spans[spanIndex].end <= word.start) spanIndex += 1;
+    const nextSpan = speech.spans[spanIndex];
+    if (nextSpan && word.end > nextSpan.start) continue;
+    const positions = anchors.get(word.value) ?? [];
+    positions.push(spanIndex);
+    anchors.set(word.value, positions);
+
+    // Count additional complete occurrences outside the protected runs. Scan
+    // at most 32 characters per word start, rather than rescanning per unit.
+    let unit = '';
+    for (let following = index; following < speech.words.length; following += 1) {
+      const last = speech.words[following];
+      if (last.end - word.start > MAX_REPEAT_UNIT_CHARS || (nextSpan && last.end > nextSpan.start)) break;
+      unit += last.value;
+      if (units.has(unit)) counts.set(unit, (counts.get(unit) ?? 0) + 1);
+    }
+  }
+  return { anchors, counts };
+}
+
+function changesRepeatedSpeech(original, corrected) {
+  const source = repeatedSpeech(original);
+  const candidate = repeatedSpeech(corrected);
+  if (source.spans.length !== candidate.spans.length) return true;
+  if (source.spans.length === 0) return false;
+  let sourceEnd = 0;
+  let candidateEnd = 0;
+  for (let index = 0; index < source.spans.length; index += 1) {
+    const before = source.spans[index];
+    const after = candidate.spans[index];
+    if (before.unit !== after.unit || before.count !== after.count
+      || (before.start === sourceEnd) !== (after.start === candidateEnd)) return true;
+    sourceEnd = before.end;
+    candidateEnd = after.end;
+  }
+  if ((sourceEnd === source.characters.length) !== (candidateEnd === candidate.characters.length)) return true;
+
+  const units = new Set(source.spans.map(({ unit }) => unit));
+  const before = repeatContext(source, units);
+  const after = repeatContext(candidate, units);
+  for (const unit of units) {
+    if ((before.counts.get(unit) ?? 0) !== (after.counts.get(unit) ?? 0)) return true;
+  }
+  // Unchanged words establish which side of each repetition they belong to.
+  // A repeated run cannot move across those anchors while keeping its count.
+  for (const [word, positions] of before.anchors) {
+    const following = after.anchors.get(word);
+    if (following?.length === positions.length
+      && positions.some((position, index) => position !== following[index])) return true;
+  }
+  return false;
 }
 
 // 수치의 구분 기호와 통상 단위를 함께 보존한다. 숫자와 단위 사이의
@@ -74,8 +180,10 @@ function preserveSpokenText(original, corrected) {
     && isSubsequence(candidateCharacters, sourceCharacters)) return original;
   if (sourceCharacters.length > 0 && candidateCharacters.length > sourceCharacters.length
     && isSubsequence(sourceCharacters, candidateCharacters)) return original;
+  if (sourceCharacters.length === candidateCharacters.length
+    && sourceCharacters.every((character, index) => character === candidateCharacters[index])) return candidate;
   // 다른 부분의 맞춤법도 함께 바뀌어도 반복 대사를 줄이거나 늘리지 않는다.
-  if (changesRepeatedSpeech(sourceCharacters, candidateCharacters)) return original;
+  if (changesRepeatedSpeech(original, candidate)) return original;
   return candidate;
 }
 
