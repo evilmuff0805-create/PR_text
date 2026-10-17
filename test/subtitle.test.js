@@ -37,7 +37,7 @@ test('SRT marker preserves speech before and across the two-second boundary', ()
 
   assert.equal(blocks.length, 4);
   assert.match(blocks[0], /00:00:00,000 --> 00:00:02,000/);
-  assert.equal(blocks[1], '2\n00:00:00,000 --> 00:00:00,500\n첫 대사');
+  assert.equal(blocks[1], '2\n00:00:00,000 --> 00:00:01,000\n첫 대사');
   assert.equal(blocks[2], '3\n00:00:01,000 --> 00:00:03,000\n2초에 걸친 대사');
   assert.equal(blocks[3], '4\n00:00:05,000 --> 00:00:06,000\n다음 대사');
 });
@@ -298,7 +298,7 @@ test('carries rounded subtitle timestamps into the next second', () => {
 });
 
 test('short cues preserve their recorded end even when silence follows', () => {
-  // 실제 발화가 끝난 뒤 무음 구간까지 자막을 연장하지 않는다.
+  // 일반 표시 유지의 1초 한도를 넘는 공백은 연장하지 않는다.
   const srt = generateSRT([
     { start: 0, end: 0.2, text: '네!' },
     { start: 5, end: 6.5, text: '그렇게 하겠습니다' },
@@ -312,7 +312,7 @@ test('short cues preserve their recorded end even when silence follows', () => {
   assert.equal(first.end, 200);
 });
 
-test('a short cue never grows into the next one', () => {
+test('a short ordinary cue holds to the next start without overlapping it', () => {
   const srt = generateSRT([
     { start: 0, end: 0.2, text: '네!' },
     { start: 0.4, end: 2, text: '바로 이어지는 말' },
@@ -322,8 +322,8 @@ test('a short cue never grows into the next one', () => {
     return { start, end };
   });
 
-  assert.equal(ranges[0].end, 200);
-  assert.ok(ranges[0].end <= ranges[1].start);
+  assert.equal(ranges[0].end, 400);
+  assert.equal(ranges[0].end, ranges[1].start);
 });
 
 test('overlapping speaker cues are trimmed so players do not desync', () => {

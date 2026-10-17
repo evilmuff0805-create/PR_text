@@ -119,7 +119,8 @@ export function createBatchSrtArchive({ items, allowPartial = false } = {}) {
       if (error) throw archiveError(`${index + 1}번 자막: ${error}`, 'INVALID_BATCH_SUBTITLES');
       const recognized = item.segments.some(segment => segment.text.trim() && segment.end > segment.start);
       if (!recognized) status = '인식된 대사 없음 · 검토 필요 (시작 안내만 포함)';
-      entries.push({ name: batchSrtFilename(label, index), content: generateSRT(item.segments) });
+      // Separate-person files retain their own speech ends and cross-track sync.
+      entries.push({ name: batchSrtFilename(label, index), content: generateSRT(item.segments, null, { holdShortGaps: false }) });
     }
     statuses.push(`${String(index + 1).padStart(2, '0')}. ${label}: ${status}`);
   }

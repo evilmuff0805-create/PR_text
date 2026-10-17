@@ -40,12 +40,16 @@ function validateAssOptions(assOptions) {
   return null;
 }
 
-export function validateDownloadPayload({ segments, format, assOptions, speakerColors }) {
+export function validateDownloadPayload({ segments, format, assOptions, speakerColors, holdShortGaps }) {
   const segmentError = validateSubtitleSegments(segments);
   if (segmentError) return segmentError;
 
   const supportedFormats = ['srt', 'txt', 'ass'];
   if (!supportedFormats.includes(format)) return `지원하지 않는 형식입니다: ${format}`;
+
+  if (holdShortGaps !== undefined && typeof holdShortGaps !== 'boolean') {
+    return '자막 간격 설정은 참 또는 거짓이어야 합니다.';
+  }
 
   const speakerColorError = validateSpeakerColors(speakerColors);
   if (speakerColorError) return speakerColorError;
@@ -53,7 +57,7 @@ export function validateDownloadPayload({ segments, format, assOptions, speakerC
   return validateAssOptions(assOptions);
 }
 
-export function prepareDownloadPayload({ segments, format, assOptions, speakerColors }) {
+export function prepareDownloadPayload({ segments, format, assOptions, speakerColors, holdShortGaps }) {
   const normalized = normalizeStoredSpeakerMetadata(segments, speakerColors);
   if (normalized.error) return { error: normalized.error };
 
@@ -62,6 +66,7 @@ export function prepareDownloadPayload({ segments, format, assOptions, speakerCo
     format,
     assOptions,
     speakerColors: normalized.speakerColors,
+    holdShortGaps,
   };
   return {
     ...payload,
@@ -74,17 +79,17 @@ router.post('/', authMiddleware, (req, res) => {
   try {
     const prepared = prepareDownloadPayload(req.body);
     if (prepared.error) return res.status(400).json({ error: prepared.error });
-    const { segments, format, assOptions, speakerColors } = prepared;
+    const { segments, format, assOptions, speakerColors, holdShortGaps } = prepared;
 
     const colors = speakerColors && Object.keys(speakerColors).length > 0 ? speakerColors : null;
 
     let content;
     if (format === 'srt') {
-      content = generateSRT(segments, colors);
+      content = generateSRT(segments, colors, { holdShortGaps });
     } else if (format === 'txt') {
       content = generateTXT(segments);
     } else if (format === 'ass') {
-      content = generateASS(segments, assOptions || {}, colors);
+      content = generateASS(segments, { ...assOptions, holdShortGaps }, colors);
     }
 
     const mimeTypes = { srt: 'application/x-subrip', txt: 'text/plain', ass: 'text/x-ssa' };

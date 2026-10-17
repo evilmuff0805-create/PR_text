@@ -9,6 +9,7 @@ import {
 } from '../services/password-security.js';
 import { getWelcomeCreditMode, getWelcomeIdentityHashes, welcomeCreditStore } from '../services/welcome-credits.js';
 import { hashWelcomeIpRequest } from '../services/welcome-ip.js';
+import { holdShortGapsForLog } from '../services/log-subtitle-timing.js';
 
 const router = Router();
 const OAUTH_RETURN_PATHS = new Set(['/transcribe', '/settings', '/caption-ideas']);
@@ -339,10 +340,12 @@ router.get('/transcription/:id', authMiddleware, async (req, res) => {
 
   // 편집본이 있으면 그걸 내려준다. 재다운로드가 다듬기 전 원본을 주던 문제를 막는다.
   const { edited_segments: editedSegments, ...log } = data;
+  const holdShortGaps = await holdShortGapsForLog(supabaseAdmin, userId, data.id);
   res.json({
     ...log,
     segments: editedSegments || log.segments,
     hasEdits: Boolean(editedSegments),
+    holdShortGaps,
   });
 });
 

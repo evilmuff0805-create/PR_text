@@ -289,6 +289,7 @@ export function ResultEditor({ resultOverride = null, resultState = null, onRegi
     language = '',
     diarize = false,
     transcriptionLogId = null,
+    holdShortGaps = true,
   } = resolved || {};
 
   const [editedSegments, setEditedSegments] = useState(() => {
@@ -549,7 +550,7 @@ export function ResultEditor({ resultOverride = null, resultState = null, onRegi
     if (lineCountMismatch) return;
     setDownloading(true);
     try {
-      const body = { segments: editedSegments, format };
+      const body = { segments: editedSegments, format, holdShortGaps: holdShortGaps !== false };
       if (format === 'ass' && options) {
         body.assOptions = options;
       }

@@ -42,7 +42,7 @@ export default function BatchResultPage() {
         if (disposed) return;
         const log = await state.api(`/api/auth/transcription/${selected.transcriptionLogId}`);
         if (disposed || ownerRef.current !== owner) return;
-        setRecord({ ...log, text: segmentText(log.segments || []), diarize: false, transcriptionLogId: selected.transcriptionLogId, itemId: selected.id, ownerId: owner });
+        setRecord({ ...log, text: segmentText(log.segments || []), diarize: false, holdShortGaps: false, transcriptionLogId: selected.transcriptionLogId, itemId: selected.id, ownerId: owner });
       } catch (requestError) { if (!disposed) setError(requestError.message); }
       finally { if (!disposed) setLoading(false); }
     };

@@ -33,7 +33,7 @@ function source() {
   };
 }
 
-test('Korean correction to exports uses semantic phrases and their actual word boundaries', async () => {
+test('Korean processing keeps actual word boundaries before export-only display continuity', async () => {
   const input = [source()];
   const before = structuredClone(input);
   const result = await processTranscriptionSegments(input, 'korean', { correct });
@@ -42,9 +42,9 @@ test('Korean correction to exports uses semantic phrases and their actual word b
     { start: 12, end: 14, text: back, timingSource: 'word' },
   ]);
   assert.deepEqual(input, before);
-  assert.match(generateSRT(result.segments), /00:00:10,100 --> 00:00:11,800/);
+  assert.match(generateSRT(result.segments), /00:00:10,100 --> 00:00:12,000/);
   assert.match(generateSRT(result.segments), /00:00:12,000 --> 00:00:14,000/);
-  assert.match(generateASS(result.segments), /0:00:10\.10,0:00:11\.80/);
+  assert.match(generateASS(result.segments), /0:00:10\.10,0:00:12\.00/);
   assert.match(generateASS(result.segments), /0:00:12\.00,0:00:14\.00/);
   assert.ok(result.segments.every((segment) => !('sourceWords' in segment)));
 });
@@ -154,7 +154,7 @@ test('Korean chunk-relative words reach exports with their offset applied once',
     { start: 180.1, end: 180.4, text: '조용히', timingSource: 'word' },
     { start: 181, end: 181.7, text: '기다려 주세요', timingSource: 'word' },
   ]);
-  assert.match(generateSRT(result.segments), /00:03:00,100 --> 00:03:00,400/);
+  assert.match(generateSRT(result.segments), /00:03:00,100 --> 00:03:01,000/);
   assert.match(generateSRT(result.segments), /00:03:01,000 --> 00:03:01,700/);
 });
 
@@ -170,12 +170,12 @@ test('word cue boundaries survive JSON, short text editing, and re-download prep
   assert.equal(prepared.error, null);
   assert.deepEqual(prepared.segments, restored);
   const srt = generateSRT(prepared.segments);
-  assert.match(srt, /00:00:10,100 --> 00:00:11,800\n장면을 떠올리면/);
+  assert.match(srt, /00:00:10,100 --> 00:00:12,000\n장면을 떠올리면/);
   assert.match(srt, /00:00:12,000 --> 00:00:12,200\n됩니다/);
   assert.equal(srt.split('\n\n').length, 3);
 });
 
-test('long Korean jobs retain exact cue times without exceeding the editor row limit', async () => {
+test('long Korean jobs retain stored word times and apply display continuity after compact expansion', async () => {
   const input = Array.from({ length: 2_000 }, (_, index) => {
     const offset = index * 3;
     return {
@@ -195,8 +195,8 @@ test('long Korean jobs retain exact cue times without exceeding the editor row l
   assert.equal(prepared.error, null);
   const srt = generateSRT(prepared.segments);
   assert.equal(srt.split('\n\n').length, 6_001);
-  assert.match(srt, /00:00:00,100 --> 00:00:00,200\n하나/);
-  assert.match(srt, /00:00:00,600 --> 00:00:00,700\n둘/);
+  assert.match(srt, /00:00:00,100 --> 00:00:00,600\n하나/);
+  assert.match(srt, /00:00:00,600 --> 00:00:01,100\n둘/);
   assert.match(srt, /01:39:58,100 --> 01:39:58,200\n셋/);
 });
 
