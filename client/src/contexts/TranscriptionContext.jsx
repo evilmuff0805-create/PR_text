@@ -88,6 +88,8 @@ export function TranscriptionProvider({ children }) {
   }, [location.pathname]);
 
   const completeTranscription = useCallback((result) => {
+    if (!ownerRef.current) return;
+    result = { ...result, ownerId: ownerRef.current };
     setJob((current) => ({
       ...current,
       status: 'completed',

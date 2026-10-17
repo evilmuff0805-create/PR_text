@@ -4,7 +4,9 @@ import { BrowserRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { AuthProvider } from './contexts/AuthContext.jsx';
 import { TranscriptionProvider } from './contexts/TranscriptionContext.jsx';
+import { BatchTranscriptionProvider } from './contexts/BatchTranscriptionContext.jsx';
 import './global.css';
+import './batch.css';
 
 const rootElement = document.getElementById('root');
 const wasPrerendered = document.documentElement.dataset.prerendered === 'true';
@@ -12,7 +14,7 @@ const app = (
   <React.StrictMode>
     <BrowserRouter>
       <AuthProvider initialLoading={!wasPrerendered}>
-        <TranscriptionProvider><App /></TranscriptionProvider>
+        <TranscriptionProvider><BatchTranscriptionProvider><App /></BatchTranscriptionProvider></TranscriptionProvider>
       </AuthProvider>
     </BrowserRouter>
   </React.StrictMode>

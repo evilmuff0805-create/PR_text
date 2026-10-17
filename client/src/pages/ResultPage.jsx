@@ -9,6 +9,7 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { formatSegmentTime } from '../utils/format-segment-time.js';
+import { isTranscriptionLogId, lastResultKey, readResultDraft, writeResultDraft } from '../utils/result-drafts.js';
 import {
   buildSceneText,
   CAPTION_IDEA_MODES,
@@ -46,23 +47,12 @@ function joinSegmentLines(segments) {
   return segments.map((segment) => segment.text).join('\n');
 }
 
-const EDITS_STORAGE_KEY = 'lastResultEdits';
-
 // 변환 기록 ID로만 편집본을 식별한다. 세그먼트 개수와 앞뒤 시간으로 식별하던 때는
 // 같은 파일을 다시 올리면 값이 똑같아서, 새로 분석한 결과에 이전 편집본이 덮어씌워졌다.
 // 새 변환은 항상 새 ID를 받으므로 겹칠 수 없다. ID가 없으면 복원하지 않는다.
-function readStoredEdits(logId, segments) {
+function readStoredEdits(logId, segments, ownerId) {
   if (!logId) return null;
-  try {
-    const raw = sessionStorage.getItem(EDITS_STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (parsed?.logId !== logId) return null;
-    if (!Array.isArray(parsed.segments) || parsed.segments.length !== segments.length) return null;
-    return parsed;
-  } catch {
-    return null;
-  }
+  return readResultDraft(sessionStorage, ownerId, logId, segments);
 }
 
 // ASS 기준 해상도(src/services/subtitle.js와 동일). 글자 크기는 이 좌표계의 픽셀이다.
@@ -248,24 +238,50 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
 
 export default function ResultPage() {
   const { state } = useLocation();
+  const { user, token } = useAuth();
   const navigate = useNavigate();
-  const { token } = useAuth();
+  const [legacy, setLegacy] = useState(null);
+  const [legacyError, setLegacyError] = useState('');
+  const ownedState = state?.ownerId === user?.id ? state : null;
+  const needsVerification = Boolean(user?.id && !state?.ownerId && isTranscriptionLogId(state?.transcriptionLogId));
+  useEffect(() => {
+    if (!needsVerification || !token) return;
+    const controller = new AbortController(); setLegacy(null); setLegacyError('');
+    fetch(`/api/auth/transcription/${state.transcriptionLogId}`, { headers: { Authorization: `Bearer ${token}` }, signal: controller.signal })
+      .then(async (response) => { if (!response.ok) throw new Error('이전 변환 기록을 확인하지 못했습니다. 재다운로드에서 기록을 다시 선택해 주세요.'); return response.json(); })
+      .then((log) => { if (!controller.signal.aborted) setLegacy({ ...log, text: joinSegmentLines(log.segments || []), transcriptionLogId: state.transcriptionLogId, ownerId: user.id }); })
+      .catch((error) => { if (!controller.signal.aborted) setLegacyError(error.message); });
+    return () => controller.abort();
+  }, [needsVerification, state?.transcriptionLogId, token, user?.id]);
+  if (needsVerification && legacy?.ownerId !== user.id) return <div className="result-workspace"><p role={legacyError ? 'alert' : 'status'}>{legacyError || '이전 변환 기록의 소유권과 최신 편집본을 확인하고 있습니다…'}</p>{legacyError && <button type="button" className="button button--secondary" onClick={() => navigate('/redownload')}>변환 기록 확인</button>}</div>;
+  const resultState = ownedState || (legacy?.ownerId === user?.id ? legacy : null);
+  return <ResultEditor key={`${user?.id || 'anonymous'}:${resultState?.transcriptionLogId || 'restore'}`} resultState={resultState} />;
+}
+
+export function ResultEditor({ resultOverride = null, resultState = null, onRegisterFlush = null, onReturn = null }) {
+  const { state: routeState } = useLocation();
+  const navigate = useNavigate();
+  const { user, token } = useAuth();
+  const state = resultOverride || resultState || (routeState?.ownerId === user?.id ? routeState : null);
+  const resultStorageKey = lastResultKey(user?.id || 'anonymous');
 
   // location.state가 있으면 sessionStorage에 저장, 없으면 복원
   useEffect(() => {
+    if (!user?.id || resultOverride) return;
     if (state) {
-      sessionStorage.setItem('lastResult', JSON.stringify(state));
+      try { sessionStorage.setItem(resultStorageKey, JSON.stringify({ ...state, ownerId: user.id })); } catch { /* Server history is still available. */ }
     } else {
-      const saved = sessionStorage.getItem('lastResult');
+      let saved;
+      try { saved = sessionStorage.getItem(resultStorageKey); } catch { saved = null; }
       if (!saved) navigate('/transcribe');
     }
-  }, [state, navigate]);
+  }, [state, navigate, resultOverride, resultStorageKey, user?.id]);
 
   const resolved = useMemo(() => (
     state || (() => {
-      try { return JSON.parse(sessionStorage.getItem('lastResult')); } catch { return null; }
+      try { const saved = JSON.parse(sessionStorage.getItem(resultStorageKey)); return saved?.ownerId === user?.id ? saved : null; } catch { return null; }
     })()
-  ), [state]);
+  ), [state, resultStorageKey, user?.id]);
 
   const {
     text = '',
@@ -276,14 +292,14 @@ export default function ResultPage() {
   } = resolved || {};
 
   const [editedSegments, setEditedSegments] = useState(() => {
-    const restored = readStoredEdits(transcriptionLogId, segments);
+    const restored = readStoredEdits(transcriptionLogId, segments, user?.id);
     if (restored) return restored.segments;
     return buildEditedSegments(segments, text);
   });
   // 사용자가 입력한 원문 그대로. 줄 수가 맞지 않아 아직 반영하지 못한 상태도 담는다.
   const [fullTextDraft, setFullTextDraft] = useState(() => {
-    const restored = readStoredEdits(transcriptionLogId, segments);
-    if (restored) return joinSegmentLines(restored.segments);
+    const restored = readStoredEdits(transcriptionLogId, segments, user?.id);
+    if (restored) return restored.fullTextDraft ?? joinSegmentLines(restored.segments);
     return joinSegmentLines(buildEditedSegments(segments, text));
   });
   const [editorMode, setEditorMode] = useState('text');
@@ -326,55 +342,57 @@ export default function ResultPage() {
   const [speakerColors, setSpeakerColors] = useState(() => {
     const init = {};
     speakerIds.forEach(id => { init[String(id)] = DEFAULT_SPEAKER_COLORS[id] ?? '#39FF14'; });
-    const restored = readStoredEdits(transcriptionLogId, segments);
+    const restored = readStoredEdits(transcriptionLogId, segments, user?.id);
     return restored?.speakerColors ? { ...init, ...restored.speakerColors } : init;
   });
 
-  // 편집한 내용과 화자 색상을 보존한다. 새로고침해도 작업이 사라지지 않는다.
+  const [saveState, setSaveState] = useState('idle');
+  const persistedTextRef = useRef(joinSegmentLines(segments));
+  const saveRequestRef = useRef(null);
+
+  // 사용자와 기록별로 초안을 분리한다. 묶음의 다른 파일이나 계정에 편집본이 섞이지 않는다.
   useEffect(() => {
     if (editedSegments.length === 0 || !transcriptionLogId) return;
-    try {
-      sessionStorage.setItem(EDITS_STORAGE_KEY, JSON.stringify({
-        logId: transcriptionLogId,
-        segments: editedSegments,
-        speakerColors,
-      }));
-    } catch {
-      // 저장 공간이 없으면 보존만 포기하고 편집은 계속할 수 있게 둔다.
-    }
-  }, [editedSegments, speakerColors, transcriptionLogId]);
+    writeResultDraft(sessionStorage, user?.id, transcriptionLogId, { segments: editedSegments, fullTextDraft, speakerColors, baseText: persistedTextRef.current });
+  }, [editedSegments, fullTextDraft, speakerColors, transcriptionLogId, user?.id, saveState]);
 
   // 편집본을 서버에도 보관한다. sessionStorage만으로는 창을 닫으면 사라지고,
   // 재다운로드가 다듬기 전 원본을 내려주는 문제가 남는다.
-  const [saveState, setSaveState] = useState('idle');
+  const flushEdits = useCallback(async () => {
+    if (!transcriptionLogId || !token || !user?.id) throw new Error('로그인 후 편집 저장 상태를 확인해 주세요.');
+    while (true) {
+      if (lineCountMismatchRef.current) throw new Error('편집한 줄 수가 자막 수와 다릅니다. 먼저 줄 수를 맞춰 주세요.');
+      if (saveRequestRef.current) { await saveRequestRef.current; continue; }
+      const snapshot = editedSegmentsRef.current;
+      const nextText = joinSegmentLines(snapshot);
+      if (nextText === persistedTextRef.current) return;
+      const request = (async () => {
+        setSaveState('saving');
+        try {
+          const res = await fetch(`/api/auth/transcription/${transcriptionLogId}/segments`, {
+            method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ segments: snapshot }),
+          });
+          if (!res.ok) throw new Error('편집 내용을 저장하지 못했습니다. 이 화면의 내용을 유지한 채 다시 시도해 주세요.');
+          persistedTextRef.current = nextText; setSaveState('saved');
+        } catch (error) { setSaveState('failed'); throw error; }
+      })();
+      saveRequestRef.current = request;
+      try { await request; } finally { if (saveRequestRef.current === request) saveRequestRef.current = null; }
+    }
+  }, [transcriptionLogId, token, user?.id]);
 
   useEffect(() => {
-    if (!transcriptionLogId || !token) return;
-    if (editedSegments.length === 0) return;
-    // 줄 수가 어긋난 상태는 화면에서도 반영을 보류하므로 저장하지 않는다.
+    if (!transcriptionLogId || !token || !editedSegments.length) return;
     if (lineCountMismatch) return;
-    // 원본 그대로면 저장할 것이 없다.
-    if (editedSegments.every((segment, index) => segment.text === segments[index]?.text)) return;
-
-    const timer = setTimeout(async () => {
-      setSaveState('saving');
-      try {
-        const res = await fetch(`/api/auth/transcription/${transcriptionLogId}/segments`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ segments: editedSegments }),
-        });
-        setSaveState(res.ok ? 'saved' : 'failed');
-      } catch {
-        setSaveState('failed');
-      }
-    }, 1500);
-
+    const timer = setTimeout(() => { flushEdits().catch(() => {}); }, 1500);
     return () => clearTimeout(timer);
-  }, [editedSegments, transcriptionLogId, token, lineCountMismatch, segments]);
+  }, [editedSegments, transcriptionLogId, token, lineCountMismatch, flushEdits]);
+
+  useEffect(() => {
+    onRegisterFlush?.(flushEdits);
+    return () => onRegisterFlush?.(null);
+  }, [flushEdits, onRegisterFlush]);
 
   // 구간에서 바로 뽑는 자막 아이디어. 장면을 다시 타이핑하지 않아도 되게 한다.
   const [ideaIndex, setIdeaIndex] = useState(null);
@@ -620,7 +638,7 @@ export default function ResultPage() {
   const resultDuration = useMemo(() => formatResultDuration(segments), [segments]);
   const hasSpeakers = speakerIds.length > 0;
 
-  if (!resolved) return null;
+  if (!resolved || !user) return null;
 
   const languageLabel = LANGUAGE_LABELS[String(language).toLowerCase()] || language || '알 수 없음';
 
@@ -634,10 +652,10 @@ export default function ResultPage() {
         </div>
         <button
           className="button button--secondary result-new-file"
-          onClick={() => navigate('/transcribe')}
+          onClick={onReturn || (() => navigate('/transcribe'))}
           type="button"
         >
-          새 파일 변환
+          {onReturn ? '묶음으로 돌아가기' : '새 파일 변환'}
         </button>
       </header>
 
@@ -701,7 +719,7 @@ export default function ResultPage() {
                 <span className={`result-save-state result-save-state--${saveState}`} role="status">
                   {saveState === 'saving' && '저장 중...'}
                   {saveState === 'saved' && '저장됨 · 재다운로드 반영'}
-                  {saveState === 'failed' && '저장 실패 · 이 창에서는 다운로드 가능'}
+                  {saveState === 'failed' && (resultOverride ? '저장 실패 · ZIP 전에 다시 저장해 주세요' : '저장 실패 · 이 창에서는 다운로드 가능')}
                 </span>
               )}
               <span>{editedSegments.length}개 구간</span>
