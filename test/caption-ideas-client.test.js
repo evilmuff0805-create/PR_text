@@ -20,7 +20,8 @@ test('caption ideas route and sidebar entry are wired into the application', asy
 test('caption ideas UI exposes the agreed five-use flow and accessible controls', async () => {
   const page = await read('client/src/pages/CaptionIdeasPage.jsx');
 
-  assert.match(page, /maxLength=\{500\}/);
+  assert.match(page, /maxLength=\{1000\}/);
+  assert.match(page, /Array\.from\(event\.target\.value\)\.length > 500/);
   assert.match(page, /useState\('entertainment'\)/);
   assert.match(page, /role="radiogroup"/);
   assert.match(page, /role="radio"/);
@@ -59,12 +60,11 @@ test('server rate limits only generation requests and completes billing after mo
   ]);
 
   assert.match(server, /const captionIdeasLimiter = rateLimit\([\s\S]*max: 5/);
-  assert.match(server, /app\.post\('\/api\/caption-ideas', captionIdeasLimiter\)/);
-  assert.ok(
-    route.indexOf('generateCaptionIdeas(text, mode)')
-      < route.indexOf('completeCaptionIdeaRequest({'),
-    'billing completion must run only after a valid model response',
-  );
+  assert.match(server, /app\.post\(CAPTION_IDEA_GENERATION_PATHS, captionIdeasLimiter\)/);
+  assert.match(route, /Object\.freeze\(\['\/api\/caption-ideas', '\/api\/caption-ideas\/context'\]\)/);
+  const generation = route.indexOf('const generation = withContext ? await generate(');
+  const completion = route.indexOf('const result = await completeCaptionIdeaRequest({');
+  assert.ok(generation >= 0 && completion > generation, 'generation must exist before billing completion');
   assert.match(store, /ideas_expires_at/);
   assert.match(route, /expiresAt > Date\.now\(\)/);
   assert.doesNotMatch(route, /console\.[a-z]+\([^\n]*(req\.body|normalizedText|generation\.ideas)/i);
@@ -113,7 +113,8 @@ test('caption ideas page exposes lazy user-scoped history with copy controls', a
     read('src/services/caption-idea-store.js'),
   ]);
 
-  assert.match(route, /router\.get\('\/history', featureEnabled, authMiddleware/);
+  assert.match(route, /authenticate = authMiddleware/);
+  assert.match(route, /router\.get\('\/history', featureEnabled, authenticate/);
   assert.match(route, /listCaptionIdeaHistory\(req\.user\.id/);
   assert.match(store, /\.eq\('user_id', userId\)/);
   assert.match(store, /\.gt\('ideas_expires_at'/);

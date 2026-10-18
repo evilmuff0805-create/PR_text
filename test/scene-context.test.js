@@ -1,102 +1,97 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {
-  buildSceneText,
-  CAPTION_IDEA_MODES,
-  SCENE_TEXT_MAX_CHARS,
-} from '../client/src/utils/caption-ideas.js';
+import { readFile } from 'node:fs/promises';
+import { buildSceneContext, CAPTION_IDEA_MODES, SCENE_TEXT_MAX_CHARS, createCaptionRequestTracker } from '../client/src/utils/caption-ideas.js';
 
-const segments = [
-  { text: '첫 번째 대사' },
-  { text: '두 번째 대사' },
-  { text: '세 번째 대사' },
-  { text: '네 번째 대사' },
-  { text: '다섯 번째 대사' },
-  { text: '여섯 번째 대사' },
-];
+const segments = Array.from({ length: 6 }, (_, index) => ({ start: index, end: index + 0.5, text: `${index + 1}번째 대사` }));
 
-test('scene text surrounds the focused line with nearby dialogue', () => {
-  const scene = buildSceneText(segments, 2);
-
-  assert.equal(scene, [
-    '첫 번째 대사',
-    '두 번째 대사',
-    '> 세 번째 대사',
-    '네 번째 대사',
-    '다섯 번째 대사',
-  ].join('\n'));
+test('scene context separates an intact focus from two nearby lines on each side', () => {
+  const source = structuredClone(segments);
+  const scene = buildSceneContext(source, 2);
+  assert.equal(scene.text, '3번째 대사');
+  assert.deepEqual(scene.context, { before: ['1번째 대사', '2번째 대사'], after: ['4번째 대사', '5번째 대사'] });
+  assert.equal(scene.valid, true);
+  assert.deepEqual(source, segments);
+  assert.deepEqual(buildSceneContext(segments, 0).context.before, []);
+  assert.deepEqual(buildSceneContext(segments, 5).context.after, []);
 });
 
-test('the focused line is marked so the model knows what to caption', () => {
-  const scene = buildSceneText(segments, 0);
-
-  assert.match(scene, /^> 첫 번째 대사$/m);
-  assert.equal((scene.match(/^> /gm) || []).length, 1);
+test('the 500 codepoint budget drops distant whole context lines without slicing the focus', () => {
+  const source = [{ text: '가'.repeat(100) }, { text: '나'.repeat(100) }, { text: '초'.repeat(300) }, { text: '다'.repeat(100) }, { text: '라'.repeat(100) }];
+  const scene = buildSceneContext(source, 2);
+  assert.equal(scene.text, source[2].text);
+  assert.deepEqual(scene.context, { before: [source[1].text], after: [source[3].text] });
+  assert.equal(scene.totalChars, SCENE_TEXT_MAX_CHARS);
+  assert.equal(scene.omittedBefore, 1);
+  assert.equal(scene.omittedAfter, 1);
+  const exact = buildSceneContext([{ text: '> ' + '😀'.repeat(498) }], 0);
+  assert.equal(exact.text, '> ' + '😀'.repeat(498));
+  assert.equal(exact.totalChars, 500);
+  assert.equal(exact.valid, true);
 });
 
-test('context is clipped at the edges without breaking', () => {
-  assert.match(buildSceneText(segments, 0), /^> 첫 번째 대사/);
-  assert.match(buildSceneText(segments, segments.length - 1), /> 여섯 번째 대사$/);
+test('long focus requires an explicit original substring and never truncates the source', () => {
+  const text = '가'.repeat(250) + '조건은 그대로 유지해요' + '나'.repeat(250);
+  const blocked = buildSceneContext([{ text }], 0);
+  assert.equal(blocked.valid, false);
+  assert.equal(blocked.requiresSelection, true);
+  assert.equal(blocked.text, text);
+  const selected = buildSceneContext([{ text }], 0, '조건은 그대로 유지해요');
+  assert.equal(selected.valid, true);
+  assert.equal(selected.text, '조건은 그대로 유지해요');
+  assert.equal(selected.sourceText, text);
+  assert.equal(buildSceneContext([{ text }], 0, '원문에 없는 내용').valid, false);
+  assert.equal(buildSceneContext([{ text: '가'.repeat(501) }], 0, '가'.repeat(501)).valid, false);
 });
 
-test('long dialogue is trimmed to the server input limit, keeping the focus line', () => {
-  const long = Array.from({ length: 9 }, (_, index) => ({ text: `${index}${'가'.repeat(200)}` }));
-  const scene = buildSceneText(long, 4);
-
-  assert.ok(Array.from(scene).length <= SCENE_TEXT_MAX_CHARS);
-  assert.match(scene, /^> 4/m);
+test('empty selections are blocked and context line breaks are presentation-only normalized', () => {
+  for (const index of [-1, 99, null]) assert.equal(buildSceneContext(segments, index).valid, false);
+  assert.equal(buildSceneContext([], 0).valid, false);
+  const source = [{ text: '앞\n대사' }, { text: '가  네네네 3.5kg' }, { text: '뒤\t대사' }];
+  const before = structuredClone(source), scene = buildSceneContext(source, 1);
+  assert.equal(scene.text, source[1].text);
+  assert.deepEqual(scene.context, { before: ['앞 대사'], after: ['뒤 대사'] });
+  assert.deepEqual(source, before);
 });
 
-test('empty or out of range selections produce nothing to send', () => {
-  assert.equal(buildSceneText(segments, -1), '');
-  assert.equal(buildSceneText(segments, 99), '');
-  assert.equal(buildSceneText([{ text: '   ' }], 0), '');
-  assert.equal(buildSceneText([], 0), '');
+test('request tracker reuses only an unresolved unchanged snapshot and rejects old generations', () => {
+  const tracker = createCaptionRequestTracker();
+  const first = { ownerId: 'owner', logId: 1, focusIndex: 0, mode: 'situation', text: '첫 대사', context: { before: [], after: [] } };
+  tracker.sync(first);
+  const a = tracker.begin(first);
+  assert.equal(tracker.begin(first), null);
+  assert.equal(tracker.finish(a), true);
+  const retry = tracker.begin(first);
+  assert.equal(retry.requestId, a.requestId);
+  tracker.complete(retry); tracker.finish(retry);
+  const next = tracker.begin(first);
+  assert.notEqual(next.requestId, a.requestId);
+  tracker.invalidate(); tracker.sync({ ...first, mode: 'emotion' }); tracker.sync(first);
+  assert.equal(tracker.isCurrent(next), false);
+  tracker.finish(next);
+  const changed = tracker.begin(first);
+  assert.notEqual(changed.requestId, next.requestId);
+  tracker.sync({ ...first, ownerId: 'another-owner' });
+  assert.equal(tracker.isCurrent(changed), false);
+  assert.equal(tracker.begin(first), null);
 });
 
-test('the editor offers the same modes as the standalone page', () => {
-  assert.deepEqual(
-    CAPTION_IDEA_MODES.map((mode) => mode.id),
-    ['entertainment', 'situation', 'emphasis', 'emotion'],
-  );
+test('both screens keep the four existing modes and use the shared tracker', async () => {
+  assert.deepEqual(CAPTION_IDEA_MODES.map(({ id }) => id), ['entertainment', 'situation', 'emphasis', 'emotion']);
+  for (const file of ['CaptionIdeasPage.jsx', 'ResultPage.jsx']) {
+    const page = await readFile(new URL(`../client/src/pages/${file}`, import.meta.url), 'utf8');
+    assert.match(page, /createCaptionRequestTracker/);
+    assert.doesNotMatch(page, /function createRequestId/);
+  }
 });
 
-test('the editor wires each segment to the existing caption idea endpoint', async () => {
-  const { readFile } = await import('node:fs/promises');
+test('the editor wires structured context into a dedicated route and keeps full-width presentation', async () => {
   const page = await readFile(new URL('../client/src/pages/ResultPage.jsx', import.meta.url), 'utf8');
-
-  assert.match(page, /buildSceneText\(editedSegments, ideaIndex\)/);
-  assert.match(page, /fetch\('\/api\/caption-ideas'/);
-  assert.match(page, /requestId: createRequestId\(\)/);
-  assert.match(page, /자막 아이디어\s*<\/button>/);
-  // 과금 규칙을 화면에서 알려준다.
-  assert.match(page, /성공 5회당 변환 시간 1분이 차감됩니다/);
-});
-
-test('the full text tab points to where the idea button lives', async () => {
-  const { readFile } = await import('node:fs/promises');
-  const page = await readFile(new URL('../client/src/pages/ResultPage.jsx', import.meta.url), 'utf8');
-
-  // 버튼이 구간별 편집에만 있어 전체 텍스트 탭에서 그냥 지나치기 쉬웠다.
-  assert.match(page, /result-editor-tip/);
-  assert.match(page, /selectEditorMode\('segments'\)/);
-});
-
-test('the idea panel spans the whole segment row instead of the narrow meta column', async () => {
-  const { readFile } = await import('node:fs/promises');
   const css = await readFile(new URL('../client/src/global.css', import.meta.url), 'utf8');
+  assert.match(page, /buildSceneContext\(editedSegments, ideaIndex, selectedFocus\)/);
+  assert.match(page, /fetch\('\/api\/caption-ideas\/context'/);
+  assert.match(page, /selectEditorMode\('segments'\)/);
+  assert.match(page, /성공 5회당 변환 시간 1분이 차감됩니다/);
   const panel = css.slice(css.indexOf('.segment-idea-panel {'), css.indexOf('.segment-idea-panel__hint'));
-
-  // 구간 행이 132px + 1fr 그리드라, 지정하지 않으면 패널이 132px 칸에 끼어 세로로 눌린다.
   assert.match(panel, /grid-column: 1 \/ -1;/);
-});
-
-test('both screens share one mode list and request id helper', async () => {
-  const { readFile } = await import('node:fs/promises');
-  const standalone = await readFile(new URL('../client/src/pages/CaptionIdeasPage.jsx', import.meta.url), 'utf8');
-
-  assert.match(standalone, /from '\.\.\/utils\/caption-ideas\.js'/);
-  // 모드 목록과 requestId 생성이 페이지마다 따로 있으면 어긋난다.
-  assert.doesNotMatch(standalone, /function createRequestId/);
-  assert.doesNotMatch(standalone, /const MODES = \[/);
 });
