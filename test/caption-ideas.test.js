@@ -82,7 +82,9 @@ test('every caption mode example stays inside the 28 character subtitle limit', 
       );
       assert.doesNotMatch(example, /\./, `${mode} 예시에 마침표가 있습니다: ${example}`);
     }
-    assert.ok(Array.from(config.contextExample.caption).length <= 28);
+    for (const example of [config.contextExample, config.stageExample].filter(Boolean)) {
+      assert.ok(Array.from(example.caption).length <= 28);
+    }
   }
 });
 
@@ -99,6 +101,12 @@ test('style supplements keep existing techniques while stating grounded exceptio
   assert.match(situation, /필요한 만큼 28자 안에서/);
   assert.match(emphasis, /문장의 힘과 사실의 확실성은 구분/);
   assert.match(emphasis, /조건 자체를 또렷하게 강조/);
+  assert.match(emphasis, /접수·검토 예정을 심사 착수·진행으로, 계획을 실행·승인으로 올려 표현하지/);
+  assert.match(emphasis, /착수가 확인되지 않으면 접수·예정 상태 자체를 힘 있게/);
+  assert.match(emphasis, /승인 미정은 불허·반려 결정도 아닙니다/);
+  assert.match(emphasis, /긍정·부정 어느 결정도 확인되지 않았으면 접수·미정 상태로만/);
+  assert.match(emphasis, /비행 신청 접수, 운항 허가는 미정/);
+  assert.match(emphasis, /심사 착수·진행이나 운항 허가로 단계를 올리지 않음/);
   assert.match(emotion, /따뜻하고 인간적인 정서를 가볍게 시적으로/);
   assert.match(emotion, /상실·회한에는 절제된 시성과 여운/);
   assert.match(emotion, /시적인 비유는 확인된 행동과 사물에 연결하되/);

@@ -29,7 +29,7 @@ export const CAPTION_IDEA_MODES = Object.freeze({
   },
   emphasis: {
     label: '강조',
-    direction: '입력에서 확인된 충격이나 반전은 단정적으로 못 박는 자막입니다. 사실을 전달하되 강도 높은 한자어 평가 어휘로 눌러 담고, 짧고 끊어지게 쓰세요. 느낌표는 강도를 올릴 때만 절제해서 사용하세요. 문장의 힘과 사실의 확실성은 구분하세요. 조건부 내용은 조건 자체를 또렷하게 강조하고 가능성·추정·대부분·약·제외·남은 수량을 삭제해 확정하지 마세요. 상황 자막과 달리 감정의 무게를 실어도 되지만, 입력에 없는 사실을 지어내거나 농담·밈·구어체 댓글투로 흐르지는 마세요.',
+    direction: '입력에서 확인된 충격이나 반전은 단정적으로 못 박는 자막입니다. 사실을 전달하되 강도 높은 한자어 평가 어휘로 눌러 담고, 짧고 끊어지게 쓰세요. 느낌표는 강도를 올릴 때만 절제해서 사용하세요. 문장의 힘과 사실의 확실성은 구분하세요. 조건부 내용은 조건 자체를 또렷하게 강조하고 가능성·추정·대부분·약·제외·남은 수량을 삭제해 확정하지 마세요. 강한 표현을 위해 접수·검토 예정을 심사 착수·진행으로, 계획을 실행·승인으로 올려 표현하지 마세요. 착수가 확인되지 않으면 접수·예정 상태 자체를 힘 있게 강조하세요. 승인 미정은 불허·반려 결정도 아닙니다. 긍정·부정 어느 결정도 확인되지 않았으면 접수·미정 상태로만 표현하세요. 상황 자막과 달리 감정의 무게를 실어도 되지만, 입력에 없는 사실을 지어내거나 농담·밈·구어체 댓글투로 흐르지는 마세요.',
     examples: [
       '천인공노할 행동들에 경악',
       '악행에 큰 충격!',
@@ -40,6 +40,10 @@ export const CAPTION_IDEA_MODES = Object.freeze({
     contextExample: {
       before: '전체 12팀 중 2팀은 심사가 보류됐다', focus: '조건을 충족하면 10팀이 공연할 수 있다', after: '최종 결정은 아직 나지 않았다',
       caption: '조건 충족 시 10팀 공연 가능!', caution: '조건과 가능성을 힘 있게 강조하며 12팀 공연 확정으로 바꾸지 않음',
+    },
+    stageExample: {
+      before: '시험 비행 신청이 접수됐다', focus: '심사가 시작됐는지는 확인되지 않았다', after: '운항 허가는 아직 미정이다',
+      caption: '비행 신청 접수, 운항 허가는 미정', caution: '접수만 확인됐으므로 심사 착수·진행이나 운항 허가로 단계를 올리지 않음',
     },
   },
   emotion: {
@@ -53,7 +57,7 @@ export const CAPTION_IDEA_MODES = Object.freeze({
 });
 
 const DEFAULT_MODEL = 'gpt-5.6-luna';
-export const CAPTION_IDEA_PROMPT_VERSION = 'caption-ideas-context-v2-20261018-r2';
+export const CAPTION_IDEA_PROMPT_VERSION = 'caption-ideas-context-v2-20261018-r4';
 const MAX_IDEA_LENGTH = 28;
 const BLOCKED_MODERATION_CATEGORIES = [
   'sexual/minors',
@@ -116,6 +120,10 @@ export function buildCaptionIdeaRequest(text, mode, model = getCaptionIdeasModel
     : '';
   const reference = modeConfig.contextExample;
   const contextExampleBlock = `\n\n문맥 판단 참고(익명 합성, 후보 방향 한 개만 표시):\n앞말: ${reference.before}\n초점: ${reference.focus}\n뒤말: ${reference.after}\n후보 방향: ${reference.caption}\n판단: ${reference.caution}\n이 사례의 소재를 옮기지 말고 판단 방식만 참고하세요. 실제 응답은 같은 유형의 서로 다른 후보 세 개입니다.`;
+  const stage = modeConfig.stageExample;
+  const stageExampleBlock = stage
+    ? `\n\n진행 단계 참고(익명 합성):\n앞말: ${stage.before}\n초점: ${stage.focus}\n뒤말: ${stage.after}\n후보 방향: ${stage.caption}\n판단: ${stage.caution}`
+    : '';
   const normalizedContext = context === undefined ? undefined : normalizeCaptionIdeaContext(text, context);
   const contextInstructions = normalizedContext
     ? '\n문맥 입력의 JSON에서 focus는 자막을 제안할 초점 원문입니다. before는 앞말, after는 뒤말이며 각각 순서대로 읽는 참고 자료입니다. 주변 줄 자체를 제안 대상으로 바꾸거나 줄들에 없는 관계·결말을 추정하지 마세요.'
@@ -129,7 +137,7 @@ export function buildCaptionIdeaRequest(text, mode, model = getCaptionIdeasModel
         content: `당신은 한국 방송과 영상 편집에 쓰이는 짧은 자막 문구를 제안하는 편집 도우미입니다.
 
 작업 유형: ${modeConfig.label} 자막
-방향: ${modeConfig.direction}${exampleBlock}${contextExampleBlock}
+방향: ${modeConfig.direction}${exampleBlock}${contextExampleBlock}${stageExampleBlock}
 
 반드시 지킬 규칙:
 1. 서로 표현과 관점이 다른 한국어 후보를 정확히 3개 만드세요.
