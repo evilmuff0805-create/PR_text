@@ -47,9 +47,14 @@ function LandingHeader() {
           <Link to="/payment">요금</Link>
         </nav>
 
-        <Link className="button button--primary landing-header__cta" to="/transcribe">
-          변환 시작
-        </Link>
+        <div className="landing-header__actions">
+          <Link className="button button--primary landing-header__cta" to="/transcribe">
+            변환 시작
+          </Link>
+          <Link className="button button--secondary landing-header__cta" to="/transcribe" state={{ openAuth: true }}>
+            로그인
+          </Link>
+        </div>
       </div>
     </header>
   );
