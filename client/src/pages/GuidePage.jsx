@@ -178,19 +178,19 @@ export default function GuidePage() {
         <dl className="guide-idea-modes">
           <div>
             <dt>예능</dt>
-            <dd>댓글형 구어체와 가벼운 반전으로 재미를 살립니다.</dd>
+            <dd>댓글형 구어체와 가벼운 반전으로 재미를 살립니다.<span className="guide-idea-note">앞말과 행동에서 웃음의 근거를 찾고 억지 농담은 피합니다.</span></dd>
           </div>
           <div>
             <dt>상황</dt>
-            <dd>화면에서 보이는 사실을 짧고 명확하게 정리합니다.</dd>
+            <dd>화면에서 보이는 사실을 짧고 명확하게 정리합니다.<span className="guide-idea-note">입력에 드러난 주체·목적·조건을 살려 짧게 압축합니다.</span></dd>
           </div>
           <div>
             <dt>강조</dt>
-            <dd>장면의 충격이나 반전을 단정적인 문구로 못 박습니다.</dd>
+            <dd>장면의 충격이나 반전을 단정적인 문구로 못 박습니다.<span className="guide-idea-note">확인된 사실은 힘 있게, 조건·가능성은 그 범위 그대로 강조합니다.</span></dd>
           </div>
           <div>
             <dt>감성</dt>
-            <dd>장면의 감정을 따뜻하고 여운 있는 문장으로 표현합니다.</dd>
+            <dd>장면의 감정을 따뜻하고 여운 있는 문장으로 표현합니다.<span className="guide-idea-note">변화·상실·바람도 장면에 맞게 담으며 억지 결말은 만들지 않습니다.</span></dd>
           </div>
         </dl>
 

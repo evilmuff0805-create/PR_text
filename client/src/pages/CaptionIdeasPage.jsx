@@ -4,7 +4,7 @@ import AuthModal from '../components/AuthModal.jsx';
 import CaptionIdeaHistory from '../components/CaptionIdeaHistory.jsx';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { useDialogAccessibility } from '../utils/use-dialog-accessibility.js';
-import { CAPTION_IDEA_MODES as MODES, createRequestId } from '../utils/caption-ideas.js';
+import { CAPTION_IDEA_MODES as MODES, createCaptionRequestTracker, isCaptionIdeaResult } from '../utils/caption-ideas.js';
 
 export default function CaptionIdeasPage() {
   const { user, getToken, updateCredits } = useAuth();
@@ -28,7 +28,14 @@ export default function CaptionIdeasPage() {
   const confirmationDialogRef = useRef(null);
   const confirmationCancelRef = useRef(null);
   const generateButtonRef = useRef(null);
-  const pendingRequestRef = useRef(null);
+  const requestTrackerRef = useRef(null);
+  if (!requestTrackerRef.current) requestTrackerRef.current = createCaptionRequestTracker();
+  const snapshot = { ownerId: user?.id ?? null, logId: null, mode, text: text.trim() };
+  const snapshotKey = requestTrackerRef.current.sync(snapshot);
+  const activeOwnerRef = useRef(user?.id);
+  activeOwnerRef.current = user?.id;
+  const [resultInfo, setResultInfo] = useState(null);
+  const visibleIdeas = resultInfo?.ownerId === user?.id ? ideas : [];
   const copyTimerRef = useRef(null);
 
   const closeConfirmation = useCallback(() => {
@@ -44,7 +51,21 @@ export default function CaptionIdeasPage() {
     closeOnEscape: !generating,
   });
 
-  useEffect(() => () => window.clearTimeout(copyTimerRef.current), []);
+  useEffect(() => () => {
+    window.clearTimeout(copyTimerRef.current);
+    requestTrackerRef.current.reset();
+  }, []);
+
+  useEffect(() => {
+    setIdeas([]);
+    setResultInfo(null);
+    setGenerating(false);
+    setConfirmationOpen(false);
+    setCopiedIndex(null);
+    setError('');
+    setAnnouncement('');
+    window.clearTimeout(copyTimerRef.current);
+  }, [user?.id]);
 
   useEffect(() => {
     setHistoryOpen(false);
@@ -96,17 +117,18 @@ export default function CaptionIdeasPage() {
       return;
     }
 
-    const pending = pendingRequestRef.current;
-    const requestId = pending?.text === normalizedText && pending?.mode === mode
-      ? pending.requestId
-      : createRequestId();
-    pendingRequestRef.current = { requestId, text: normalizedText, mode };
+    if (!user?.id || Array.from(normalizedText).length > 500) {
+      setError('장면 또는 대사를 500자 이내로 입력해주세요.');
+      return;
+    }
+    const requestSnapshot = { ownerId: user.id, logId: null, mode, text: normalizedText };
+    const ticket = requestTrackerRef.current.begin(requestSnapshot);
+    if (!ticket) return;
 
     setGenerating(true);
     setConfirmationOpen(false);
     setError('');
     setAnnouncement('자막 아이디어를 만들고 있습니다.');
-    setIdeas([]);
 
     try {
       const response = await fetch('/api/caption-ideas', {
@@ -115,9 +137,10 @@ export default function CaptionIdeasPage() {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${getToken()}`,
         },
-        body: JSON.stringify({ requestId, mode, text: normalizedText }),
+        body: JSON.stringify({ requestId: ticket.requestId, mode, text: normalizedText }),
       });
       const data = await response.json().catch(() => ({}));
+      if (!requestTrackerRef.current.isCurrent(ticket)) return;
       if (!response.ok) {
         if (response.status === 402) {
           updateCredits(Number(data.creditsHave || 0));
@@ -129,18 +152,24 @@ export default function CaptionIdeasPage() {
         throw requestError;
       }
 
-      pendingRequestRef.current = null;
-      setIdeas(data.ideas || []);
+      if (!isCaptionIdeaResult(data)) throw new Error('생성 결과를 확인하지 못했습니다. 같은 입력으로 다시 시도해 주세요.');
+      requestTrackerRef.current.complete(ticket);
+      setIdeas(data.ideas);
+      setResultInfo({ ownerId: user.id, snapshotKey: ticket.key, mode });
       setRemainingUses(Number(data.remainingUses || 0));
       updateCredits(Number(data.creditsRemaining || 0));
       setAnnouncement(`자막 아이디어 3개가 완성되었습니다. ${data.remainingUses}회 남았습니다.`);
       setHistoryRefreshKey((current) => current + 1);
     } catch (generationError) {
-      if (generationError.status === 409) pendingRequestRef.current = null;
-      setError(generationError.message || '자막 아이디어를 만들지 못했습니다.');
-      setAnnouncement('자막 아이디어 생성에 실패했습니다. 사용 횟수는 차감되지 않습니다.');
+      if (!requestTrackerRef.current.isCurrent(ticket)) return;
+      if (generationError.status === 409) requestTrackerRef.current.complete(ticket);
+      const message = generationError.status
+        ? generationError.message
+        : '생성 결과를 확인하지 못했습니다. 같은 입력으로 다시 시도하면 완료된 요청을 확인합니다.';
+      setError(message);
+      setAnnouncement(message);
     } finally {
-      setGenerating(false);
+      if (requestTrackerRef.current.finish(ticket)) setGenerating(false);
     }
   };
 
@@ -166,23 +195,31 @@ export default function CaptionIdeasPage() {
     runGeneration();
   };
 
+  const changeMode = (nextMode) => {
+    if (nextMode !== mode) requestTrackerRef.current.invalidate();
+    setMode(nextMode);
+  };
+
   const handleModeKeyDown = (event, index) => {
     if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
     event.preventDefault();
     const direction = event.key === 'ArrowRight' ? 1 : -1;
     const nextIndex = (index + direction + MODES.length) % MODES.length;
-    setMode(MODES[nextIndex].id);
+    changeMode(MODES[nextIndex].id);
     modeRefs.current[nextIndex]?.focus();
   };
 
   const copyIdea = async (idea, index) => {
+    if (resultInfo?.ownerId !== activeOwnerRef.current) return;
     try {
       await navigator.clipboard.writeText(idea);
+      if (resultInfo?.ownerId !== activeOwnerRef.current) return;
       setCopiedIndex(index);
       setAnnouncement(`${index + 1}번 자막을 복사했습니다.`);
       window.clearTimeout(copyTimerRef.current);
       copyTimerRef.current = window.setTimeout(() => setCopiedIndex(null), 1600);
     } catch {
+      if (resultInfo?.ownerId !== activeOwnerRef.current) return;
       setError('클립보드에 복사하지 못했습니다.');
     }
   };
@@ -232,15 +269,22 @@ export default function CaptionIdeasPage() {
         <textarea
           id="caption-ideas-text"
           value={text}
-          maxLength={500}
+          maxLength={1000}
+          aria-describedby="caption-ideas-input-help"
           rows={6}
           placeholder="자막이 필요한 장면이나 대사를 입력하세요"
           onChange={(event) => {
+            if (Array.from(event.target.value).length > 500) {
+              setError('장면 또는 대사를 500자 이내로 입력해주세요.');
+              return;
+            }
+            if (event.target.value !== text) requestTrackerRef.current.invalidate();
             setText(event.target.value);
             setError('');
           }}
           disabled={generating}
         />
+        <p className="caption-ideas-help" id="caption-ideas-input-help">지금 하는 행동과 앞뒤 상황, 누구의 말인지 아는 범위에서 함께 적어 주세요.</p>
 
         <div className="caption-ideas-mode" role="radiogroup" aria-label="자막 유형">
           {MODES.map((item, index) => (
@@ -253,13 +297,14 @@ export default function CaptionIdeasPage() {
               className={mode === item.id ? 'is-active' : ''}
               tabIndex={mode === item.id ? 0 : -1}
               disabled={generating}
-              onClick={() => setMode(item.id)}
+              onClick={() => changeMode(item.id)}
               onKeyDown={(event) => handleModeKeyDown(event, index)}
             >
               {item.label}
             </button>
           ))}
         </div>
+        <p className="caption-ideas-help">{MODES.find((item) => item.id === mode)?.hint}</p>
 
         <button
           ref={generateButtonRef}
@@ -279,7 +324,7 @@ export default function CaptionIdeasPage() {
         {error && <p className="caption-ideas-error" role="alert">{error}</p>}
       </section>
 
-      {ideas.length > 0 && (
+      {visibleIdeas.length > 0 && (
         <section className="caption-ideas-results" aria-labelledby="caption-ideas-results-title">
           <div className="caption-ideas-results-heading">
             <div>
@@ -288,8 +333,10 @@ export default function CaptionIdeasPage() {
             </div>
             <span>3개</span>
           </div>
+          <p className="caption-ideas-help">입력 장면을 바탕으로 만든 편집용 제안입니다.</p>
+          {resultInfo?.snapshotKey !== snapshotKey && <p className="caption-ideas-help">이전 입력·유형으로 만든 추천입니다. 새 입력으로 만들려면 생성 버튼을 눌러 주세요.</p>}
           <ol>
-            {ideas.map((idea, index) => (
+            {visibleIdeas.map((idea, index) => (
               <li key={`${idea}-${index}`}>
                 <span className="caption-ideas-number">{String(index + 1).padStart(2, '0')}</span>
                 <strong>{idea}</strong>

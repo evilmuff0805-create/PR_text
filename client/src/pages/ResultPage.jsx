@@ -11,9 +11,10 @@ import { useAuth } from '../contexts/AuthContext.jsx';
 import { formatSegmentTime } from '../utils/format-segment-time.js';
 import { isTranscriptionLogId, lastResultKey, readResultDraft, writeResultDraft } from '../utils/result-drafts.js';
 import {
-  buildSceneText,
+  buildSceneContext,
+  createCaptionRequestTracker,
+  isCaptionIdeaResult,
   CAPTION_IDEA_MODES,
-  createRequestId,
 } from '../utils/caption-ideas.js';
 
 function splitTextLines(value) {
@@ -152,11 +153,14 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
   ideaLoading,
   ideaMode,
   ideaResults,
+  ideaScene,
+  ideaResultPrevious,
   index,
   isIdeaOpen,
   onCopyIdea,
   onGenerateIdeas,
   onIdeaModeChange,
+  onIdeaFocusSelection,
   onTextChange,
   onToggleIdea,
   segment,
@@ -192,8 +196,32 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
       {isIdeaOpen && (
         <div className="segment-idea-panel">
           <p className="segment-idea-panel__hint">
-            앞뒤 대사를 함께 넘겨 이 구간에 어울리는 자막 문구를 제안합니다.
+            앞뒤 대사를 참고해 이번 구간의 편집용 문구를 제안합니다. 원래 대사와 시간은 유지됩니다.
           </p>
+          <details className="segment-idea-panel__context">
+            <summary>생성에 사용할 문맥 확인</summary>
+            <dl>
+              <dt>앞 대사</dt><dd>{ideaScene.context.before.join('\n') || '앞 대사 없음'}</dd>
+              <dt>이번 대사 · {formatSegmentTime(segment.start)} - {formatSegmentTime(segment.end)}</dt>
+              <dd>{ideaScene.text || ideaScene.sourceText}</dd>
+              <dt>뒤 대사</dt><dd>{ideaScene.context.after.join('\n') || '뒤 대사 없음'}</dd>
+            </dl>
+          </details>
+          {(ideaScene.omittedBefore > 0 || ideaScene.omittedAfter > 0) && (
+            <p className="caption-ideas-help" role="status">500자 한도로 앞 {ideaScene.omittedBefore}줄·뒤 {ideaScene.omittedAfter}줄을 제외했습니다. 문맥을 확인해 주세요.</p>
+          )}
+          {ideaScene.requiresSelection && (
+            <div className="segment-idea-panel__selection">
+              <label htmlFor={`idea-focus-${index}`}>아이디어에 쓸 부분을 아래 원문에서 드래그해 선택해 주세요.</label>
+              <p className="caption-ideas-help" id={`idea-focus-help-${index}`}>이 대사는 500자를 넘습니다. 선택한 부분만 아이디어에 사용하며 원래 편집본은 그대로 둡니다.</p>
+              <textarea id={`idea-focus-${index}`} aria-describedby={`idea-focus-help-${index}`} readOnly rows={5}
+                value={ideaScene.sourceText} onSelect={(event) => {
+                  const field = event.currentTarget;
+                  if (field.selectionStart !== field.selectionEnd) onIdeaFocusSelection(field.value, field.selectionStart, field.selectionEnd);
+                }} />
+              <p className="caption-ideas-help" role="status">{ideaScene.valid ? `선택한 부분 ${Array.from(ideaScene.text).length}/500자` : '500자 이내의 부분을 선택하면 생성할 수 있습니다.'}</p>
+            </div>
+          )}
           <div className="segment-idea-panel__modes" role="radiogroup" aria-label="자막 유형">
             {CAPTION_IDEA_MODES.map((item) => (
               <button
@@ -208,16 +236,18 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
               </button>
             ))}
           </div>
+          <p className="caption-ideas-help">{CAPTION_IDEA_MODES.find((item) => item.id === ideaMode)?.hint}</p>
           <button
             className="gradient-btn segment-idea-panel__run"
-            disabled={ideaLoading}
+            disabled={ideaLoading || !ideaScene.valid}
             onClick={onGenerateIdeas}
             type="button"
           >
-            {ideaLoading ? '만드는 중...' : '아이디어 3개 만들기'}
+            {ideaLoading ? '만드는 중...' : ideaScene.requiresSelection ? '선택한 부분으로 3개 만들기' : '아이디어 3개 만들기'}
           </button>
           <p className="segment-idea-panel__cost">성공 5회당 변환 시간 1분이 차감됩니다</p>
           {ideaError && <p className="segment-idea-panel__error" role="alert">{ideaError}</p>}
+          {ideaResultPrevious && <p className="caption-ideas-help">이전 입력·유형으로 만든 추천입니다. 새 후보가 필요하면 생성 버튼을 눌러 주세요.</p>}
           {ideaResults?.length > 0 && (
             <ul className="segment-idea-panel__results">
               {ideaResults.map((idea) => (
@@ -395,58 +425,111 @@ export function ResultEditor({ resultOverride = null, resultState = null, onRegi
     return () => onRegisterFlush?.(null);
   }, [flushEdits, onRegisterFlush]);
 
-  // 구간에서 바로 뽑는 자막 아이디어. 장면을 다시 타이핑하지 않아도 되게 한다.
+  // 아이디어 상태는 대사 편집·저장과 분리한다. 입력과 요청 키는 메모리에만 둔다.
   const [ideaIndex, setIdeaIndex] = useState(null);
   const [ideaMode, setIdeaMode] = useState('situation');
   const [ideaResults, setIdeaResults] = useState([]);
   const [ideaLoading, setIdeaLoading] = useState(false);
   const [ideaError, setIdeaError] = useState('');
   const [copiedIdea, setCopiedIdea] = useState('');
+  const [ideaSelection, setIdeaSelection] = useState(null);
+  const [ideaResultInfo, setIdeaResultInfo] = useState(null);
+  const ideaRequestRef = useRef(null);
+  if (!ideaRequestRef.current) ideaRequestRef.current = createCaptionRequestTracker();
+  const sourceFocus = String(editedSegments[ideaIndex]?.text ?? '').trim();
+  const selectedFocus = ideaSelection?.index === ideaIndex && ideaSelection.sourceText === sourceFocus
+    ? ideaSelection.text : '';
+  const ideaScene = useMemo(() => buildSceneContext(editedSegments, ideaIndex, selectedFocus),
+    [editedSegments, ideaIndex, selectedFocus]);
+  const ideaSnapshot = { ownerId: user?.id ?? null, logId: transcriptionLogId, focusIndex: ideaIndex,
+    mode: ideaMode, text: ideaScene.text, context: ideaScene.context, sourceText: sourceFocus };
+  const ideaSnapshotKey = ideaRequestRef.current.sync(ideaSnapshot);
+  const ideaScopeKey = JSON.stringify([user?.id ?? null, transcriptionLogId]);
+  const activeIdeaScopeRef = useRef(ideaScopeKey);
+  activeIdeaScopeRef.current = ideaScopeKey;
+  const visibleIdeaResults = ideaResultInfo?.scopeKey === ideaScopeKey ? ideaResults : [];
+
+  useEffect(() => {
+    setIdeaIndex(null); setIdeaSelection(null); setIdeaResults([]); setIdeaResultInfo(null);
+    setIdeaLoading(false); setIdeaError(''); setCopiedIdea('');
+  }, [user?.id, transcriptionLogId]);
+  useEffect(() => () => ideaRequestRef.current.reset(), []);
 
   const openIdeaPanel = useCallback((index) => {
+    ideaRequestRef.current.invalidate();
     setIdeaIndex((current) => (current === index ? null : index));
-    setIdeaResults([]);
-    setIdeaError('');
-    setCopiedIdea('');
+    setIdeaSelection(null); setIdeaResults([]); setIdeaResultInfo(null);
+    setIdeaError(''); setCopiedIdea('');
   }, []);
 
+  const changeIdeaMode = (nextMode) => {
+    if (nextMode !== ideaMode) ideaRequestRef.current.invalidate();
+    setIdeaMode(nextMode);
+  };
+
+  const selectIdeaFocus = (sourceText, start, end) => {
+    if (sourceText !== sourceFocus || !Number.isInteger(start) || !Number.isInteger(end)) return;
+    // 브라우저의 UTF16 선택 경계가 이모지 한 글자를 반으로 나누지 않게 한다.
+    let first = Math.max(0, start), last = Math.min(sourceText.length, end);
+    if (first > 0 && /[\uDC00-\uDFFF]/.test(sourceText[first]) && /[\uD800-\uDBFF]/.test(sourceText[first - 1])) first -= 1;
+    if (last < sourceText.length && /[\uDC00-\uDFFF]/.test(sourceText[last]) && /[\uD800-\uDBFF]/.test(sourceText[last - 1])) last += 1;
+    const text = sourceText.slice(first, last).trim();
+    if (ideaSelection?.index === ideaIndex && ideaSelection.sourceText === sourceText && ideaSelection.text === text) return;
+    ideaRequestRef.current.invalidate();
+    setIdeaSelection({ index: ideaIndex, sourceText, text });
+  };
+
   async function generateIdeas() {
-    const sceneText = buildSceneText(editedSegments, ideaIndex);
-    if (!sceneText) {
-      setIdeaError('이 구간에는 내용이 없습니다.');
+    if (!user?.id || !ideaScene.valid) {
+      setIdeaError(ideaScene.requiresSelection ? '원문에서 아이디어에 쓸 부분을 500자 이내로 선택해 주세요.' : '이 구간에는 내용이 없습니다.');
       return;
     }
-
-    setIdeaLoading(true);
-    setIdeaError('');
-    setIdeaResults([]);
+    const latestSnapshot = () => {
+      const scene = buildSceneContext(editedSegmentsRef.current, ideaIndex, selectedFocus);
+      return { ...ideaSnapshot, text: scene.text, context: scene.context, sourceText: scene.sourceText };
+    };
+    if (JSON.stringify(latestSnapshot()) !== ideaSnapshotKey) return;
+    const ticket = ideaRequestRef.current.begin(ideaSnapshot);
+    if (!ticket) return;
+    setIdeaLoading(true); setIdeaError('');
     try {
-      const res = await fetch('/api/caption-ideas', {
+      const res = await fetch('/api/caption-ideas/context', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ requestId: createRequestId(), mode: ideaMode, text: sceneText }),
+        headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        body: JSON.stringify({ requestId: ticket.requestId, mode: ideaMode, text: ideaScene.text, context: ideaScene.context }),
       });
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.error || '자막 아이디어를 만들지 못했습니다.');
-      setIdeaResults(data.ideas || []);
+      if (!ideaRequestRef.current.isCurrent(ticket) || JSON.stringify(latestSnapshot()) !== ticket.key) return;
+      if (!res.ok) {
+        const error = new Error(res.status === 404
+          ? '문맥을 활용하는 자막 아이디어를 준비 중입니다. 입력을 유지한 채 업데이트 후 다시 시도해 주세요.'
+          : data.error || '자막 아이디어를 만들지 못했습니다.');
+        error.status = res.status; error.code = data.code;
+        throw error;
+      }
+      if (!isCaptionIdeaResult(data)) throw new Error('생성 결과를 확인하지 못했습니다. 같은 입력으로 다시 시도해 주세요.');
+      ideaRequestRef.current.complete(ticket);
+      setIdeaResults(data.ideas);
+      setIdeaResultInfo({ scopeKey: ideaScopeKey, snapshotKey: ticket.key });
     } catch (error) {
-      setIdeaError(error.message || '자막 아이디어를 만들지 못했습니다.');
+      if (!ideaRequestRef.current.isCurrent(ticket) || JSON.stringify(latestSnapshot()) !== ticket.key) return;
+      if (error.status === 409) ideaRequestRef.current.complete(ticket);
+      setIdeaError(error.status ? error.message : '생성 결과를 확인하지 못했습니다. 같은 입력으로 다시 시도하면 완료된 요청을 확인합니다.');
     } finally {
-      setIdeaLoading(false);
+      if (ideaRequestRef.current.finish(ticket)) setIdeaLoading(false);
     }
   }
 
   const copyIdea = useCallback(async (idea) => {
+    const scopeKey = ideaResultInfo?.scopeKey;
+    if (scopeKey !== activeIdeaScopeRef.current) return;
     try {
       await navigator.clipboard.writeText(idea);
-      setCopiedIdea(idea);
+      if (scopeKey === activeIdeaScopeRef.current) setCopiedIdea(idea);
     } catch {
-      setIdeaError('복사하지 못했습니다. 직접 선택해 복사해주세요.');
+      if (scopeKey === activeIdeaScopeRef.current) setIdeaError('복사하지 못했습니다. 직접 선택해 복사해주세요.');
     }
-  }, []);
+  }, [ideaResultInfo]);
 
   // 영어 번역 상태
   const [showTranslation, setShowTranslation] = useState(false);
@@ -793,13 +876,16 @@ export function ResultEditor({ resultOverride = null, resultState = null, onRegi
                     ideaError={isIdeaOpen ? ideaError : null}
                     ideaLoading={isIdeaOpen ? ideaLoading : false}
                     ideaMode={isIdeaOpen ? ideaMode : null}
-                    ideaResults={isIdeaOpen ? ideaResults : null}
+                    ideaResults={isIdeaOpen ? visibleIdeaResults : null}
+                    ideaScene={isIdeaOpen ? ideaScene : null}
+                    ideaResultPrevious={isIdeaOpen && visibleIdeaResults.length > 0 && ideaResultInfo?.snapshotKey !== ideaSnapshotKey}
                     index={index}
                     isIdeaOpen={isIdeaOpen}
                     key={`${segment.start}-${segment.end}-${index}`}
                     onCopyIdea={isIdeaOpen ? copyIdea : null}
                     onGenerateIdeas={isIdeaOpen ? generateIdeas : null}
-                    onIdeaModeChange={isIdeaOpen ? setIdeaMode : null}
+                    onIdeaModeChange={isIdeaOpen ? changeIdeaMode : null}
+                    onIdeaFocusSelection={isIdeaOpen ? selectIdeaFocus : null}
                     onTextChange={updateSegmentText}
                     onToggleIdea={openIdeaPanel}
                     segment={segment}

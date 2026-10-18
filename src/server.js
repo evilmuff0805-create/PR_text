@@ -16,7 +16,7 @@ import { supabaseAdmin } from './lib/supabase.js';
 import { probeAudioDuration } from './services/whisper.js';
 import downloadRouter from './routes/download.js';
 import translateRouter from './routes/translate.js';
-import captionIdeasRouter from './routes/caption-ideas.js';
+import captionIdeasRouter, { CAPTION_IDEA_GENERATION_PATHS } from './routes/caption-ideas.js';
 import { requestObservability, apiErrorHandler } from './middleware/observability.js';
 import { startDiarizationJobWorker, stopDiarizationJobWorker } from './services/diarization-jobs.js';
 import { startTranscriptionOperationWorker, stopTranscriptionOperationWorker, abortActiveTranscriptionOperation } from './services/transcription-operations.js';
@@ -187,7 +187,7 @@ app.use('/api/transcribe/batches', generalLimiter, createTranscriptionBatchesRou
 app.use('/api/transcribe', transcribeLimiter, transcribeRouter);
 app.use('/api/download', downloadLimiter, downloadRouter);
 app.use('/api/translate', translateLimiter, translateRouter);
-app.post('/api/caption-ideas', captionIdeasLimiter);
+app.post(CAPTION_IDEA_GENERATION_PATHS, captionIdeasLimiter);
 app.use('/api/caption-ideas', generalLimiter, captionIdeasRouter);
 app.use(apiErrorHandler);
 

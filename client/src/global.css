@@ -6165,3 +6165,59 @@ textarea:focus-visible {
 ::-webkit-scrollbar-thumb:hover {
   background: #4a5665;
 }
+
+/* Caption idea context and guidance */
+.caption-ideas-help,
+.guide-idea-note {
+  display: block;
+  margin: 10px 0;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+.guide-idea-note {
+  margin-bottom: 0;
+}
+.segment-idea-panel__context {
+  margin: 12px 0;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+.segment-idea-panel__context summary {
+  cursor: pointer;
+  font-size: 0.875rem;
+}
+.segment-idea-panel__context dt {
+  margin-top: 12px;
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+.segment-idea-panel__context dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+.segment-idea-panel__selection {
+  margin: 14px 0;
+}
+.segment-idea-panel__selection label {
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
+.segment-idea-panel__selection textarea {
+  display: block;
+  width: 100%;
+  min-height: 120px;
+  padding: 12px;
+  resize: vertical;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.7;
+}
