@@ -58,6 +58,23 @@ export default function GuidePage() {
         </video>
       </section>
 
+      <section className="guide-tutorial" aria-label="PR-text 실무팀 활용법">
+        <video
+          className="guide-tutorial__video"
+          controls
+          playsInline
+          preload="metadata"
+          poster="/images/pr-text-team-guide-20261018-poster.webp"
+          width="1920"
+          height="1080"
+          aria-label="PR-text 실무팀 활용법"
+        >
+          <source src="/videos/pr-text-team-guide-20261018.mp4" type="video/mp4" />
+          이 브라우저는 영상 재생을 지원하지 않습니다.{' '}
+          <a href="/videos/pr-text-team-guide-20261018.mp4">영상 파일 열기</a>
+        </video>
+      </section>
+
       <header className="info-heading" aria-labelledby="guide-title">
         <p className="workspace-kicker">USER GUIDE</p>
         <div className="info-heading__row">
