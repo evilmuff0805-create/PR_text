@@ -6221,3 +6221,22 @@ textarea:focus-visible {
   font-size: 0.875rem;
   line-height: 1.7;
 }
+
+/* Landing header account access */
+.landing-header__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 430px) {
+  .landing-header__inner {
+    gap: 8px;
+  }
+  .landing-header__actions {
+    gap: 6px;
+  }
+  .landing-header__cta {
+    padding-inline: 6px;
+  }
+}
