@@ -4,20 +4,19 @@ import { performance } from 'perf_hooks';
 import { supabaseAdmin } from '../lib/supabase.js';
 import { transcribeWithDiarization } from './whisper.js';
 import { joinSegmentText, processTranscriptionSegments } from './transcription-processing.js';
+import { createDiarizationWorkerScheduler } from './diarization-worker-scheduler.js';
 
 const STORAGE_BUCKET = 'transcription-jobs';
-const JOB_POLL_INTERVAL_MS = 5_000;
 const JOB_LEASE_HEARTBEAT_INTERVAL_MS = 30_000;
 const JOB_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 // OpenAI charges gpt-4o-transcribe-diarize per minute of audio. The diarized
 // response carries no usage block, so cost is derived from the job duration.
 const OPENAI_DIARIZATION_USD_PER_AUDIO_MINUTE = 0.006;
 
-let workerTimer;
 let workerBusy = false;
-let workerCycleBusy = false;
 let workerStopping = false;
 let activeJobContext = null;
+let workerScheduler;
 
 export function isDiarizationJobId(value) {
   return typeof value === 'string' && JOB_ID_PATTERN.test(value);
@@ -198,7 +197,11 @@ async function removeJobAudio(job) {
     .update({ audio_deleted_at: new Date().toISOString() })
     .eq('id', job.id)
     .is('audio_deleted_at', null);
-  if (error) console.warn(`[diarization.job] 원본 삭제 기록 실패: ${error.message}`);
+  if (error) {
+    console.warn(`[diarization.job] 원본 삭제 기록 실패: ${error.message}`);
+    return false;
+  }
+  return true;
 }
 
 async function cleanUpFinishedAudio() {
@@ -210,7 +213,9 @@ async function cleanUpFinishedAudio() {
     .limit(10);
 
   if (error) throw new Error(`다화자 작업 원본 정리 조회 실패: ${error.message}`);
-  await Promise.all((jobs || []).map(removeJobAudio));
+  const batch = jobs || [];
+  const results = await Promise.all(batch.map(removeJobAudio));
+  return { count: batch.length, complete: results.every(Boolean) };
 }
 
 export async function enqueueDiarizationJob({
@@ -559,30 +564,13 @@ async function processNextDiarizationJob() {
   }
 }
 
-async function runWorkerCycle() {
-  if (workerCycleBusy) return;
-  workerCycleBusy = true;
-  try {
-    await cleanUpFinishedAudio();
-    await processNextDiarizationJob();
-  } finally {
-    workerCycleBusy = false;
-  }
-}
-
 export function startDiarizationJobWorker() {
-  if (workerTimer) return;
   workerStopping = false;
-
-  workerTimer = setInterval(() => {
-    runWorkerCycle().catch((error) => {
-      console.error(`[diarization.job] worker 오류: ${error.message}`);
-    });
-  }, JOB_POLL_INTERVAL_MS);
-
-  runWorkerCycle().catch((error) => {
-    console.error(`[diarization.job] worker 초기화 오류: ${error.message}`);
+  workerScheduler ??= createDiarizationWorkerScheduler({
+    processNext: processNextDiarizationJob,
+    cleanFinishedAudioBatch: cleanUpFinishedAudio,
   });
+  workerScheduler.start();
 }
 
 // Railway replaces the container on every deploy. Without this the in-flight job
@@ -590,10 +578,7 @@ export function startDiarizationJobWorker() {
 // worker restarts it minutes later and pays for the transcription twice.
 export async function stopDiarizationJobWorker() {
   workerStopping = true;
-  if (workerTimer) {
-    clearInterval(workerTimer);
-    workerTimer = undefined;
-  }
+  workerScheduler?.stop();
 
   const context = activeJobContext;
   if (!context) return false;
