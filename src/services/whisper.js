@@ -12,6 +12,7 @@ import { normalizeProviderSpeakerLabels } from './speakers.js';
 import { normalizeLanguage } from './language.js';
 import { attachVerifiedAudioStartFloor } from './audio-start.js';
 import { scheduleSilenceObservation, SILENCE_OBSERVATION_MODE } from './silence-observation.js';
+import { buildTranscriptionVocabularyPrompt, recheckCompressedTranscriptionSegments } from './transcription-review.js';
 
 const OPENAI_MAX_RETRIES = 4;
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY, maxRetries: OPENAI_MAX_RETRIES });
@@ -575,7 +576,7 @@ export async function transcribeWithDiarization(
  * @param {string} [language] - ISO-639-1 언어 코드 (없으면 자동 감지)
  * @returns {{ text: string, segments: object[], language: string }}
  */
-export async function transcribe(buffer, originalname, language, { durationSeconds, signal } = {}) {
+export async function transcribe(buffer, originalname, language, { durationSeconds, signal, vocabulary, recheckCompressed = true } = {}) {
   try {
     const params = {
       model: 'whisper-1',
@@ -586,6 +587,8 @@ export async function transcribe(buffer, originalname, language, { durationSecon
     if (language) {
       params.language = language;
     }
+    const prompt = buildTranscriptionVocabularyPrompt(vocabulary);
+    if (prompt) params.prompt = prompt;
 
     let result;
     if (PARALLEL_TRANSCRIBE_ENABLED && Number.isFinite(durationSeconds) && durationSeconds >= PARALLEL_TRANSCRIBE_MIN_SECONDS) {
@@ -621,6 +624,26 @@ export async function transcribe(buffer, originalname, language, { durationSecon
       };
     }
 
+    if (recheckCompressed && normalizeLanguage(result.language) === 'ko') {
+      const review = await recheckCompressedTranscriptionSegments(result.segments, {
+        durationSeconds, signal,
+        transcribeRange: async ({ start, end }) => {
+          const inputPath = createTempPath('stt-review-input', getExtension(originalname) || '.audio');
+          const outputPath = createTempPath('stt-review-range', '.wav');
+          try {
+            await writeFile(inputPath, buffer);
+            await execFileAsync('ffmpeg', ['-hide_banner', '-loglevel', 'error', '-i', inputPath,
+              '-ss', String(start), '-t', String(end - start), '-vn', '-c:a', 'pcm_s16le', '-y', outputPath],
+            { timeout: 120_000, signal });
+            const file = await toFile(await readFile(outputPath), 'review.wav');
+            return await openai.audio.transcriptions.create({ ...params, file }, { signal, maxRetries: 0 });
+          } finally {
+            await Promise.all([inputPath, outputPath].map(async (file) => { try { await unlink(file); } catch {} }));
+          }
+        },
+      });
+      result = { ...result, segments: review.segments, timings: { ...result.timings, reviewMeasurements: review.measurements } };
+    }
     result = { ...result, segments: attachVerifiedAudioStartFloor(result.segments, buffer) };
 
     if (SILENCE_OBSERVATION_MODE === 'shadow') {

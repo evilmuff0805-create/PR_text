@@ -5,6 +5,7 @@ import test from 'node:test';
 import { transformWithEsbuild } from 'vite';
 import * as captionIdeas from '../client/src/utils/caption-ideas.js';
 import * as drafts from '../client/src/utils/result-drafts.js';
+import * as subtitleReview from '../client/src/utils/subtitle-review.js';
 import { formatSegmentTime } from '../client/src/utils/format-segment-time.js';
 
 const owner = 'synthetic-owner';
@@ -40,7 +41,7 @@ async function fixture({ editor = false, result, respond } = {}) {
     '../contexts/AuthContext.jsx': { useAuth: () => auth },
     '../components/AuthModal.jsx': { default: () => null }, '../components/CaptionIdeaHistory.jsx': { default: () => null },
     '../utils/use-dialog-accessibility.js': { useDialogAccessibility() {} },
-    '../utils/caption-ideas.js': captionIdeas, '../utils/result-drafts.js': drafts, '../utils/format-segment-time.js': { formatSegmentTime },
+    '../utils/caption-ideas.js': captionIdeas, '../utils/result-drafts.js': drafts, '../utils/subtitle-review.js': subtitleReview, '../utils/format-segment-time.js': { formatSegmentTime },
   };
   const fetch = async (url, options = {}) => {
     const request = { url, method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : null };

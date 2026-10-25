@@ -88,3 +88,19 @@ test('chunk offsets never turn malformed word times into valid zero timestamps',
     }
   }
 });
+
+test('explicit non-Korean and labelled sources keep their existing ownership even with a Korean name', () => {
+  for (const extra of [{ language: 'english' }, { language: 'japanese' }, { language: 'korean', speaker: 0 }]) {
+    const [source] = mergeChunkSegments([{
+      chunk: { ownedStart: 10, ownedEnd: 20, inputStart: 5 },
+      response: { language: extra.language,
+        segments: [{ start: 4, end: 7, text: '김 선생 hello', ...(extra.speaker === undefined ? {} : { speaker: extra.speaker }) }],
+        words: [{ word: '김', start: 4, end: 4.5 }, { word: '선생', start: 4.5, end: 5.5 }, { word: 'hello', start: 5.5, end: 7 }],
+      },
+    }]);
+    assert.equal(source.text, '김 선생 hello');
+    assert.equal(source.start, 9);
+    assert.equal(source.end, 12);
+    assert.equal(source.subtitleReview, undefined);
+  }
+});

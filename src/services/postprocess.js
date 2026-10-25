@@ -1,6 +1,7 @@
 import { performance } from 'perf_hooks';
 import { isKoreanLanguage, normalizeLanguage, UNKNOWN_LANGUAGE } from './language.js';
 import { normalizeTokenUsage } from './correction-pricing.js';
+import { mergeSubtitleReviews } from './subtitle-review.js';
 
 const CHUNK_SIZE = 30;
 const DEFAULT_CONCURRENCY = 4;
@@ -169,30 +170,31 @@ function changesNumericExpressions(original, corrected) {
   return source.length !== candidate.length || source.some((value, index) => value !== candidate[index]);
 }
 
-function preserveSpokenText(original, corrected) {
+export function evaluateSpokenTextCorrection(original, corrected) {
   const candidate = corrected.trim();
   const sourceCharacters = speechCharacters(original);
   const candidateCharacters = speechCharacters(candidate);
   // 공백 결과 및 원문에서 글자만 빼거나 더한 교정은 대사 삭제/추가의 명확한
   // 근거다. 해당 줄만 원문으로 되돌리고 다른 줄의 맞춤법 교정은 유지한다.
-  if (!candidate || (sourceCharacters.length > 0 && candidateCharacters.length === 0)) return original;
-  if (changesNumericExpressions(original, candidate)) return original;
+  const reject = (reason) => ({ text: original, accepted: false, reason });
+  if (!candidate || (sourceCharacters.length > 0 && candidateCharacters.length === 0)) return reject('empty');
+  if (changesNumericExpressions(original, candidate)) return reject('numeric_change');
   if (candidateCharacters.length < sourceCharacters.length
-    && isSubsequence(candidateCharacters, sourceCharacters)) return original;
+    && isSubsequence(candidateCharacters, sourceCharacters)) return reject('speech_deletion');
   if (sourceCharacters.length > 0 && candidateCharacters.length > sourceCharacters.length
-    && isSubsequence(sourceCharacters, candidateCharacters)) return original;
+    && isSubsequence(sourceCharacters, candidateCharacters)) return reject('speech_insertion');
   if (sourceCharacters.length === candidateCharacters.length
-    && sourceCharacters.every((character, index) => character === candidateCharacters[index])) return candidate;
+    && sourceCharacters.every((character, index) => character === candidateCharacters[index])) return { text: candidate, accepted: true };
   // 다른 부분의 맞춤법도 함께 바뀌어도 반복 대사를 줄이거나 늘리지 않는다.
-  if (changesRepeatedSpeech(original, candidate)) return original;
-  return candidate;
+  if (changesRepeatedSpeech(original, candidate)) return reject('repetition_change');
+  return { text: candidate, accepted: true };
 }
 
-async function correctChunk(chunk, correct) {
+async function correctChunk(chunk, correct, { includeReviews = false, ...context } = {}) {
   const allText = chunk.map(segment => segment.text).join('\n');
 
   try {
-    const corrected = await correct(allText, 'ko');
+    const corrected = await correct(allText, 'ko', context);
     const processed = typeof corrected === 'string' ? corrected : corrected.text;
     if (typeof processed !== 'string') throw new Error('GPT 교정 결과 형식이 올바르지 않습니다.');
 
@@ -211,10 +213,22 @@ async function correctChunk(chunk, correct) {
     }
 
     return {
-      segments: chunk.map((segment, index) => ({
-        ...segment,
-        text: preserveSpokenText(segment.text, lines[index]),
-      })),
+      segments: chunk.map((segment, index) => {
+        const decision = evaluateSpokenTextCorrection(segment.text, lines[index]);
+        if (!includeReviews || decision.accepted) return { ...segment, text: decision.text };
+        return {
+          ...segment,
+          text: decision.text,
+          subtitleReview: mergeSubtitleReviews(segment.subtitleReview, {
+            version: 1,
+            issues: [{ code: 'correction_guard_rejected', reason: decision.reason }],
+            originalText: segment.text,
+            candidateText: lines[index].trim(),
+            textStatus: 'candidate',
+            timingStatus: 'unverified',
+          }),
+        };
+      }),
       outcome: 'success',
       model: corrected.model,
       requestedModel: corrected.requestedModel,
@@ -260,7 +274,7 @@ function hasMostlyKoreanText(segments) {
   return hangulCount >= 4 && hangulCount / Math.max(letterCount, 1) >= 0.5;
 }
 
-export async function processSegmentsWithTiming(segments, detectedLang, correct) {
+export async function processSegmentsWithTiming(segments, detectedLang, correct, { includeReviews = false } = {}) {
   const startedAt = performance.now();
   const language = normalizeLanguage(detectedLang);
   const detectedKorean = isKoreanLanguage(language);
@@ -290,6 +304,8 @@ export async function processSegmentsWithTiming(segments, detectedLang, correct)
     chunks.push({
       index: chunks.length,
       segments: segments.slice(index, index + CHUNK_SIZE),
+      contextBefore: segments.slice(Math.max(0, index - 3), index).map((segment) => segment.text),
+      contextAfter: segments.slice(index + CHUNK_SIZE, index + CHUNK_SIZE + 3).map((segment) => segment.text),
     });
   }
 
@@ -302,7 +318,9 @@ export async function processSegmentsWithTiming(segments, detectedLang, correct)
     const batchStartedAt = performance.now();
     const batchResults = await Promise.all(batch.map(async (chunk) => {
       const chunkStartedAt = performance.now();
-      const result = await correctChunk(chunk.segments, corrector);
+      const result = await correctChunk(chunk.segments, corrector, {
+        includeReviews, contextBefore: chunk.contextBefore, contextAfter: chunk.contextAfter,
+      });
       return {
         index: chunk.index,
         segmentCount: chunk.segments.length,

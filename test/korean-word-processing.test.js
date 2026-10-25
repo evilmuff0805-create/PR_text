@@ -57,10 +57,13 @@ test('word-timed Korean short responses do not merge or acquire a minimum displa
       { word: '이어갑니다', start: 6.4, end: 6.8 },
     ] },
   ], 'ko', { correct });
-  assert.deepEqual(result.segments, [
+  assert.deepEqual(result.segments.map(({ subtitleReview: ignored, ...cue }) => cue), [
     { start: 5.1, end: 5.2, text: '네', timingSource: 'word' },
     { start: 5.8, end: 6.8, text: '설명을 이어갑니다', timingSource: 'word' },
   ]);
+  assert.equal(result.segments[0].subtitleReview.issues[0].code, 'short_cue');
+  assert.equal(result.segments[0].subtitleReview.issues[0].shortResponse, true);
+  assert.equal(result.segments[0].subtitleReview.timingStatus, 'unverified');
 });
 
 test('a provider-separated dependent predicate is joined only with complete adjacent word timings', async () => {
@@ -99,10 +102,15 @@ test('ambiguous rewriting restores validated original cues instead of the padded
   const input = source();
   const corrected = text.replace('편안하게', '차분하게');
   const result = await processTranscriptionSegments([input], 'ko', { correct: async () => corrected });
-  assert.deepEqual(result.segments, [
-    { start: 10.1, end: 11.8, text: front, timingSource: 'word' },
-    { start: 12, end: 14, text: back, timingSource: 'word' },
-  ]);
+  assert.equal(result.segments.length, 1);
+  assert.equal(result.segments[0].text, text);
+  assert.deepEqual(result.segments[0].wordAlignedCues, [[10.1, 11.8, front], [12, 14, back]]);
+  assert.equal(result.segments[0].subtitleReview.originalText, text);
+  assert.equal(result.segments[0].subtitleReview.candidateText, corrected);
+  assert.equal(result.segments[0].subtitleReview.textStatus, 'candidate');
+  assert.equal(result.segments[0].subtitleReview.issues[0].code, 'correction_alignment_rejected');
+  assert.ok(generateSRT(result.segments, null, { holdShortGaps: false }).includes(front));
+  assert.equal(generateSRT(result.segments).includes(corrected), false);
 });
 
 test('a spelling correction keeps a first word at two seconds and uses one existing correction request', async () => {
@@ -141,7 +149,10 @@ test('digital-prefix evidence bounds even incomplete-word Korean fallbacks and i
     const source = { start: 9.58, end: 12, text: '자료를 확인합니다', sourceWords, audioStartFloor: 10 };
     const snapshot = structuredClone(source);
     const result = await processTranscriptionSegments([source], 'ko', { correct });
-    assert.deepEqual(result.segments, [{ start: 10, end: 12, text: source.text, timingSource: 'audio-range' }]);
+    assert.deepEqual(result.segments.map(({ subtitleReview: ignored, ...cue }) => cue), [
+      { start: 10, end: 12, text: source.text, timingSource: 'audio-range' },
+    ]);
+    assert.equal(result.segments[0].subtitleReview.issues[0].code, 'word_timing_fallback');
     assert.match(generateSRT(result.segments), /00:00:10,000 --> 00:00:12,000/);
     assert.deepEqual(source, snapshot);
   }

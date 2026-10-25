@@ -9,7 +9,8 @@ import {
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { formatSegmentTime } from '../utils/format-segment-time.js';
-import { isTranscriptionLogId, lastResultKey, readResultDraft, writeResultDraft } from '../utils/result-drafts.js';
+import { cacheSavedResult, isTranscriptionLogId, lastResultKey, readResultDraft, resolveSavedResult, resultSnapshotSignature, writeResultDraft } from '../utils/result-drafts.js';
+import { confirmSubtitleCandidate, editSubtitleText, findRememberedSubtitle, getSubtitleReviewIssues, normalizeReviewMemory, normalizeSubtitleReview, rememberSubtitleCandidate, subtitleEditSignature, subtitleReviewIssueLabel, validateSubtitleCandidate } from '../utils/subtitle-review.js';
 import {
   buildSceneContext,
   createCaptionRequestTracker,
@@ -38,10 +39,7 @@ function buildEditedSegments(segments, editedText) {
 
   const lines = splitTextLines(editedText);
 
-  return segments.map((segment, index) => ({
-    ...segment,
-    text: lines[index] ?? segment.text ?? '',
-  }));
+  return segments.map((segment, index) => editSubtitleText(segment, lines[index] ?? segment.text ?? ''));
 }
 
 function joinSegmentLines(segments) {
@@ -165,7 +163,24 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
   onToggleIdea,
   segment,
   speakerColor,
+  originalText,
+  pendingReview,
+  rememberedReview,
+  reviewError,
+  reviewApplyDisabled,
+  audioAvailable,
+  reviewSession,
+  onReviewChange,
+  onApplyReview,
+  onConfirmCurrentReview,
+  onUseRememberedReview,
+  onPlayReviewRange,
 }) {
+  const review = normalizeSubtitleReview(segment.subtitleReview, segment.text);
+  const issues = getSubtitleReviewIssues(segment);
+  const candidate = pendingReview?.base === segment ? pendingReview.value : review?.candidateText ?? '';
+  const remember = pendingReview?.base === segment && pendingReview.remember === true;
+  const duration = Number.isFinite(segment.start) && Number.isFinite(segment.end) ? segment.end - segment.start : NaN;
   return (
     <article className="result-segment-row">
       <div className="result-segment-meta">
@@ -193,6 +208,40 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
         rows={2}
         value={segment.text}
       />
+      <details className="subtitle-review">
+        <summary>문구·시간 검토{issues.length > 0 ? ` · ${issues.length}개 표시` : ''}</summary>
+        <div className="subtitle-review__body">
+          <p className="subtitle-review__status">{review?.textStatus === 'confirmed' ? '문구 확인됨 · 발화 싱크 미확인' : '문구·발화 싱크 미확인'}</p>
+          <p>{formatSegmentTime(segment.start)} - {formatSegmentTime(segment.end)} · {Number.isFinite(duration) && duration > 0 ? `${duration.toFixed(3)}초` : '시간 확인 필요'} · {Array.from(segment.text || '').length}자</p>
+          {issues.length > 0 && <ul>{issues.map((issue, issueIndex) => <li key={`${issue.code}-${issueIndex}`}>{subtitleReviewIssueLabel(issue)}</li>)}</ul>}
+          <p className="subtitle-review__hint">표시는 원본 확인을 돕는 기준입니다. 짧은 구간만으로 인식 오류나 실제 발화 시간을 단정하지 않습니다.</p>
+          <button type="button" className="button button--secondary" disabled={!audioAvailable} onClick={() => onPlayReviewRange(index, segment, reviewSession)}>앞뒤 포함 듣기</button>
+          <dl className="subtitle-review__comparison">
+            <div><dt>보존 문구</dt><dd>{review?.originalText ?? originalText ?? segment.text}</dd></div>
+            <div><dt>현재 편집 문구</dt><dd>{segment.text}</dd></div>
+          </dl>
+          {rememberedReview && <div className="subtitle-review__memory">
+            <p>이 창의 현재 파일에서 기억한 후보입니다. 다른 구간의 정답으로 보장하지 않습니다.</p>
+            <p>기억한 원문: {rememberedReview.originalText}</p>
+            <p>기억한 후보: {rememberedReview.candidateText}</p>
+            <button type="button" className="button button--secondary" onClick={() => onUseRememberedReview(index, segment, rememberedReview, reviewSession)}>기억한 후보 불러오기</button>
+          </div>}
+          <label htmlFor={`review-candidate-${index}`}>정정 후보 · 적용 전까지 현재 문구와 분리됩니다</label>
+          <textarea id={`review-candidate-${index}`} value={candidate} rows={2} maxLength={10000}
+            onChange={(event) => onReviewChange(index, segment, { value: event.target.value }, reviewSession)} />
+          <label className="subtitle-review__remember"><input type="checkbox" checked={remember}
+            onChange={(event) => onReviewChange(index, segment, { remember: event.target.checked }, reviewSession)} />이 창의 현재 파일에만 후보 기억</label>
+          <p className="subtitle-review__hint">후보는 권장 정답이 아닙니다. 숫자·말투·반복을 원본과 확인한 뒤 적용하세요. 문구를 바꿔도 자막 시간은 그대로이며, 발화 싱크는 따로 확인해야 합니다.</p>
+          <p className="subtitle-review__hint">긴 문구는 내보내기에서 28자 이내로 나뉩니다. 수동 정정 후의 단어별 시간 정렬은 보장하지 않습니다.</p>
+          {reviewApplyDisabled && <p>전체 편집의 줄 수를 먼저 맞춰 주세요. 입력 중인 내용은 유지됩니다.</p>}
+          <div className="subtitle-review__actions">
+            <button type="button" className="button button--secondary" disabled={reviewApplyDisabled} onClick={() => onConfirmCurrentReview(index, segment, reviewSession)}>현재 문구만 확인</button>
+            <button type="button" className="button button--primary" disabled={reviewApplyDisabled || !candidate.trim()}
+              onClick={() => onApplyReview(index, segment, candidate, remember, reviewSession)}>이 문구 적용·확인</button>
+          </div>
+          {reviewError && <p className="subtitle-review__error" role="alert">{reviewError}</p>}
+        </div>
+      </details>
       {isIdeaOpen && (
         <div className="segment-idea-panel">
           <p className="segment-idea-panel__hint">
@@ -285,27 +334,30 @@ export default function ResultPage() {
   }, [needsVerification, state?.transcriptionLogId, token, user?.id]);
   if (needsVerification && legacy?.ownerId !== user.id) return <div className="result-workspace"><p role={legacyError ? 'alert' : 'status'}>{legacyError || '이전 변환 기록의 소유권과 최신 편집본을 확인하고 있습니다…'}</p>{legacyError && <button type="button" className="button button--secondary" onClick={() => navigate('/redownload')}>변환 기록 확인</button>}</div>;
   const resultState = ownedState || (legacy?.ownerId === user?.id ? legacy : null);
-  return <ResultEditor key={`${user?.id || 'anonymous'}:${resultState?.transcriptionLogId || 'restore'}`} resultState={resultState} />;
+  const restoredLogId = !resultState ? resolveSavedResult(sessionStorage, user?.id, null)?.transcriptionLogId : null;
+  return <ResultEditor key={`${user?.id || 'anonymous'}:${resultState?.transcriptionLogId || restoredLogId || 'restore'}`} resultState={resultState} serverVerified={Boolean(!ownedState && legacy?.ownerId === user?.id)} />;
 }
 
-export function ResultEditor({ resultOverride = null, resultState = null, onRegisterFlush = null, onReturn = null }) {
-  const { state: routeState } = useLocation();
+export function ResultEditor({ resultOverride = null, resultState = null, serverVerified = false, onRegisterFlush = null, onReturn = null }) {
+  const { state: routeState, pathname = '/result', search = '', hash = '' } = useLocation();
   const navigate = useNavigate();
   const { user, token } = useAuth();
-  const state = resultOverride || resultState || (routeState?.ownerId === user?.id ? routeState : null);
+  const incomingState = resultOverride || resultState || (routeState?.ownerId === user?.id ? routeState : null);
+  const state = useMemo(() => resultOverride || resolveSavedResult(sessionStorage, user?.id, incomingState, serverVerified),
+    [resultOverride, incomingState, serverVerified, user?.id]);
   const resultStorageKey = lastResultKey(user?.id || 'anonymous');
 
   // location.state가 있으면 sessionStorage에 저장, 없으면 복원
   useEffect(() => {
     if (!user?.id || resultOverride) return;
     if (state) {
-      try { sessionStorage.setItem(resultStorageKey, JSON.stringify({ ...state, ownerId: user.id })); } catch { /* Server history is still available. */ }
+      try { const current = resolveSavedResult(sessionStorage, user.id, state, serverVerified); sessionStorage.setItem(resultStorageKey, JSON.stringify({ ...current, ownerId: user.id })); } catch { /* Server history is still available. */ }
     } else {
       let saved;
       try { saved = sessionStorage.getItem(resultStorageKey); } catch { saved = null; }
       if (!saved) navigate('/transcribe');
     }
-  }, [state, navigate, resultOverride, resultStorageKey, user?.id]);
+  }, [state, navigate, resultOverride, resultStorageKey, user?.id, serverVerified]);
 
   const resolved = useMemo(() => (
     state || (() => {
@@ -321,6 +373,8 @@ export function ResultEditor({ resultOverride = null, resultState = null, onRegi
     transcriptionLogId = null,
     holdShortGaps = true,
   } = resolved || {};
+  const resultSourceRef = useRef(null);
+  resultSourceRef.current = { ownerId: user?.id, logId: transcriptionLogId, resolved, resultOverride, path: `${pathname}${search}${hash}` };
 
   const [editedSegments, setEditedSegments] = useState(() => {
     const restored = readStoredEdits(transcriptionLogId, segments, user?.id);
@@ -330,7 +384,8 @@ export function ResultEditor({ resultOverride = null, resultState = null, onRegi
   // 사용자가 입력한 원문 그대로. 줄 수가 맞지 않아 아직 반영하지 못한 상태도 담는다.
   const [fullTextDraft, setFullTextDraft] = useState(() => {
     const restored = readStoredEdits(transcriptionLogId, segments, user?.id);
-    if (restored) return restored.fullTextDraft ?? joinSegmentLines(restored.segments);
+    if (restored) return restored.fullTextDraft !== undefined && !canApplyFullText(restored.segments, restored.fullTextDraft)
+      ? restored.fullTextDraft : joinSegmentLines(restored.segments);
     return joinSegmentLines(buildEditedSegments(segments, text));
   });
   const [editorMode, setEditorMode] = useState('text');
@@ -345,7 +400,7 @@ export function ResultEditor({ resultOverride = null, resultState = null, onRegi
 
   const selectEditorMode = useCallback((nextMode) => {
     if (nextMode !== editorMode && nextMode === 'text') {
-      setFullTextDraft(joinSegmentLines(editedSegments));
+      if (!lineCountMismatchRef.current) setFullTextDraft(joinSegmentLines(editedSegments));
     }
     setEditorMode(nextMode);
   }, [editedSegments, editorMode]);
@@ -379,13 +434,131 @@ export function ResultEditor({ resultOverride = null, resultState = null, onRegi
 
   const [saveState, setSaveState] = useState('idle');
   const persistedTextRef = useRef(joinSegmentLines(segments));
+  const persistedEditSignatureRef = useRef(subtitleEditSignature(segments));
   const saveRequestRef = useRef(null);
+
+  const reviewScope = `${user?.id || 'anonymous'}:${transcriptionLogId || 'unsaved'}`;
+  const reviewScopeRef = useRef(reviewScope);
+  reviewScopeRef.current = reviewScope;
+  const reviewSession = useMemo(() => ({ scope: reviewScope }), [reviewScope]);
+  const reviewSessionRef = useRef(reviewSession);
+  reviewSessionRef.current = reviewSession;
+  const reviewMountedRef = useRef(true);
+  useEffect(() => { reviewMountedRef.current = true; return () => { reviewMountedRef.current = false; }; }, []);
+  const [pendingReviews, setPendingReviews] = useState({});
+  const pendingReviewsRef = useRef({});
+  const [reviewError, setReviewError] = useState(null);
+  const [reviewMemoryState, setReviewMemoryState] = useState(() => ({ scope: reviewScope,
+    items: normalizeReviewMemory(readStoredEdits(transcriptionLogId, segments, user?.id)?.reviewMemory) }));
+  const reviewMemory = reviewMemoryState.scope === reviewScope ? reviewMemoryState.items : [];
+  const reviewMemoryRef = useRef(reviewMemory);
+  reviewMemoryRef.current = reviewMemory;
+  const [sourceAudio, setSourceAudio] = useState(null);
+  const [sourceAudioError, setSourceAudioError] = useState('');
+  const sourceAudioRef = useRef(null);
+  const sourceAudioElementRef = useRef(null);
+  const sourceLastElementRef = useRef(null);
+  const sourceRangeRef = useRef(null);
+  const sourceStopTimerRef = useRef(null);
+  const playRequestRef = useRef(0);
+  const visibleSourceAudio = sourceAudio?.scope === reviewScope ? sourceAudio : null;
+  const stopRangeTimer = useCallback(() => {
+    if (sourceStopTimerRef.current !== null) window.clearInterval(sourceStopTimerRef.current);
+    sourceStopTimerRef.current = null;
+    sourceRangeRef.current = null;
+  }, []);
+  const releaseSourceAudio = useCallback(() => {
+    playRequestRef.current += 1;
+    stopRangeTimer();
+    const media = sourceAudioElementRef.current || sourceLastElementRef.current;
+    sourceLastElementRef.current = null;
+    media?.pause();
+    media?.removeAttribute('src');
+    media?.load();
+    if (sourceAudioRef.current?.url) URL.revokeObjectURL(sourceAudioRef.current.url);
+    sourceAudioRef.current = null;
+    setSourceAudio(null);
+    setSourceAudioError('');
+  }, [stopRangeTimer]);
+  useEffect(() => () => releaseSourceAudio(), [reviewScope, releaseSourceAudio]);
+  const connectSourceAudio = useCallback((event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !reviewMountedRef.current) return;
+    releaseSourceAudio();
+    try {
+      const next = { scope: reviewScopeRef.current, url: URL.createObjectURL(file), name: file.name, ready: false };
+      sourceAudioRef.current = next; setSourceAudio(next);
+    } catch { setSourceAudioError('원본 파일을 연결하지 못했습니다. 다시 선택해 주세요.'); }
+  }, [releaseSourceAudio]);
+  const isCurrentSource = useCallback((source) => Boolean(reviewMountedRef.current && source && source.scope === reviewScopeRef.current && source.url === sourceAudioRef.current?.url), []);
+  const checkRangeEnd = useCallback(() => {
+    const range = sourceRangeRef.current, media = sourceAudioElementRef.current;
+    if (!range || !media) return;
+    if (!isCurrentSource(range) || media.currentTime >= range.end) { media.pause(); stopRangeTimer(); }
+  }, [isCurrentSource, stopRangeTimer]);
+  const playReviewRange = useCallback(async (index, expectedSegment, session) => {
+    if (!reviewMountedRef.current || reviewSessionRef.current !== session) return;
+    const source = sourceAudioRef.current, media = sourceAudioElementRef.current;
+    if (!isCurrentSource(source) || !source.ready || !media || editedSegmentsRef.current[index] !== expectedSegment) return;
+    const { start, end } = expectedSegment;
+    if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > media.duration + 0.001) {
+      setSourceAudioError('연결한 파일의 길이와 이 구간 시간을 확인해 주세요.'); return;
+    }
+    const ticket = ++playRequestRef.current;
+    stopRangeTimer(); media.pause(); setSourceAudioError('');
+    try {
+      media.currentTime = Math.max(0, start - 0.5);
+      sourceRangeRef.current = { ...source, start: media.currentTime, end: Math.min(media.duration, end + 0.5) };
+      sourceStopTimerRef.current = window.setInterval(checkRangeEnd, 50);
+      await media.play();
+      if (ticket !== playRequestRef.current || !isCurrentSource(source)) media.pause();
+    } catch {
+      if (ticket === playRequestRef.current && isCurrentSource(source)) { stopRangeTimer(); setSourceAudioError('재생하지 못했습니다. 원본 플레이어에서 파일 상태를 확인해 주세요.'); }
+    }
+  }, [checkRangeEnd, isCurrentSource, stopRangeTimer]);
+  const changeReviewCandidate = useCallback((index, base, update, session) => {
+    if (!reviewMountedRef.current || reviewSessionRef.current !== session || editedSegmentsRef.current[index] !== base) return;
+    const scope = reviewScopeRef.current;
+    const current = pendingReviewsRef.current;
+    const previous = current[index]?.base === base && current[index].session === session ? current[index] : null;
+    const next = { ...current, [index]: { base, scope, session, value: previous?.value ?? normalizeSubtitleReview(base.subtitleReview, base.text)?.candidateText ?? '', remember: false, ...previous, ...update } };
+    pendingReviewsRef.current = next; setPendingReviews(next);
+    setReviewError(null);
+  }, []);
+  const useRememberedReview = useCallback((index, base, entry, session) => {
+    if (!reviewMountedRef.current || reviewSessionRef.current !== session || editedSegmentsRef.current[index] !== base || entry.originalText !== base.text
+      || findRememberedSubtitle(reviewMemoryRef.current, editedSegmentsRef.current, index) !== entry) return;
+    changeReviewCandidate(index, base, { value: entry.candidateText, remember: false }, session);
+  }, [changeReviewCandidate]);
+  const applyReviewCandidate = useCallback((index, base, candidate, remember, session) => {
+    if (!reviewMountedRef.current || reviewSessionRef.current !== session || editedSegmentsRef.current[index] !== base || lineCountMismatchRef.current) return;
+    const scope = reviewScopeRef.current;
+    const pending = pendingReviewsRef.current[index];
+    if (pending?.base === base && pending.session === session && (pending.value !== candidate || Boolean(pending.remember) !== remember)) return;
+    if ((!pending || pending.base !== base || pending.session !== session) && candidate !== (normalizeSubtitleReview(base.subtitleReview, base.text)?.candidateText ?? '')) return;
+    const error = validateSubtitleCandidate(editedSegmentsRef.current, index, candidate);
+    if (error) { setReviewError({ scope, index, message: error }); return; }
+    if (remember) {
+      const items = rememberSubtitleCandidate(reviewMemoryRef.current, editedSegmentsRef.current, index, candidate);
+      reviewMemoryRef.current = items; setReviewMemoryState({ scope, items });
+    }
+    const next = editedSegmentsRef.current.map((segment, position) => position === index ? confirmSubtitleCandidate(segment, candidate) : segment);
+    editedSegmentsRef.current = next; setEditedSegments(next);
+    setFullTextDraft(joinSegmentLines(next)); setReviewError(null);
+  }, []);
+
+  const confirmCurrentReview = useCallback((index, base, session) => {
+    if (!reviewMountedRef.current || reviewSessionRef.current !== session || editedSegmentsRef.current[index] !== base || lineCountMismatchRef.current) return;
+    changeReviewCandidate(index, base, { value: base.text, remember: false }, session);
+    applyReviewCandidate(index, base, base.text, false, session);
+  }, [applyReviewCandidate, changeReviewCandidate]);
 
   // 사용자와 기록별로 초안을 분리한다. 묶음의 다른 파일이나 계정에 편집본이 섞이지 않는다.
   useEffect(() => {
     if (editedSegments.length === 0 || !transcriptionLogId) return;
-    writeResultDraft(sessionStorage, user?.id, transcriptionLogId, { segments: editedSegments, fullTextDraft, speakerColors, baseText: persistedTextRef.current });
-  }, [editedSegments, fullTextDraft, speakerColors, transcriptionLogId, user?.id, saveState]);
+    writeResultDraft(sessionStorage, user?.id, transcriptionLogId, { segments: editedSegments, fullTextDraft, speakerColors, baseText: persistedTextRef.current, baseSignature: persistedEditSignatureRef.current, reviewMemory });
+  }, [editedSegments, fullTextDraft, speakerColors, transcriptionLogId, user?.id, saveState, reviewMemory]);
 
   // 편집본을 서버에도 보관한다. sessionStorage만으로는 창을 닫으면 사라지고,
   // 재다운로드가 다듬기 전 원본을 내려주는 문제가 남는다.
@@ -395,8 +568,12 @@ export function ResultEditor({ resultOverride = null, resultState = null, onRegi
       if (lineCountMismatchRef.current) throw new Error('편집한 줄 수가 자막 수와 다릅니다. 먼저 줄 수를 맞춰 주세요.');
       if (saveRequestRef.current) { await saveRequestRef.current; continue; }
       const snapshot = editedSegmentsRef.current;
+      const saveSource = resultSourceRef.current;
+      const cachedBefore = !saveSource.resultOverride ? resolveSavedResult(sessionStorage, saveSource.ownerId, null) : null;
+      const expectedCacheSignature = resultSnapshotSignature(cachedBefore || saveSource.resolved);
       const nextText = joinSegmentLines(snapshot);
-      if (nextText === persistedTextRef.current) return;
+      const nextSignature = subtitleEditSignature(snapshot);
+      if (nextSignature === persistedEditSignatureRef.current) return;
       const request = (async () => {
         setSaveState('saving');
         try {
@@ -405,13 +582,22 @@ export function ResultEditor({ resultOverride = null, resultState = null, onRegi
             body: JSON.stringify({ segments: snapshot }),
           });
           if (!res.ok) throw new Error('편집 내용을 저장하지 못했습니다. 이 화면의 내용을 유지한 채 다시 시도해 주세요.');
-          persistedTextRef.current = nextText; setSaveState('saved');
+          persistedTextRef.current = nextText; persistedEditSignatureRef.current = nextSignature;
+          const currentSource = resultSourceRef.current;
+          if (!saveSource.resultOverride && reviewMountedRef.current && currentSource.ownerId === saveSource.ownerId
+            && currentSource.logId === saveSource.logId && currentSource.resolved === saveSource.resolved) {
+            const saved = cacheSavedResult(sessionStorage, saveSource.ownerId, saveSource.logId, saveSource.resolved, snapshot, expectedCacheSignature);
+            if (saved) {
+              try { navigate(saveSource.path, { replace: true, state: saved }); } catch { /* The acknowledged session cache and server history remain available. */ }
+            }
+          }
+          setSaveState('saved');
         } catch (error) { setSaveState('failed'); throw error; }
       })();
       saveRequestRef.current = request;
       try { await request; } finally { if (saveRequestRef.current === request) saveRequestRef.current = null; }
     }
-  }, [transcriptionLogId, token, user?.id]);
+  }, [transcriptionLogId, token, user?.id, navigate]);
 
   useEffect(() => {
     if (!transcriptionLogId || !token || !editedSegments.length) return;
@@ -595,12 +781,12 @@ export function ResultEditor({ resultOverride = null, resultState = null, onRegi
 
   const updateSegmentText = useCallback((index, nextText) => {
     const next = editedSegmentsRef.current.map((segment, segmentIndex) => (
-      segmentIndex === index ? { ...segment, text: nextText } : segment
+      segmentIndex === index ? editSubtitleText(segment, nextText) : segment
     ));
     editedSegmentsRef.current = next;
     setEditedSegments(next);
+    setFullTextDraft(joinSegmentLines(next));
     if (lineCountMismatchRef.current) {
-      setFullTextDraft(joinSegmentLines(next));
       lineCountMismatchRef.current = false;
     }
   }, []);
@@ -810,6 +996,32 @@ export function ResultEditor({ resultOverride = null, resultState = null, onRegi
             </div>
           </div>
 
+          <details className="subtitle-review-source">
+            <summary>원본 오디오로 검토하기 · 선택</summary>
+            <p>파일은 이 창에서만 재생하며 서버에 업로드하지 않습니다. 이 변환과 시작점이 같은 원본인지 직접 확인해 주세요. 다른 파일·계정으로 이동하거나 새로고침하면 다시 연결합니다.</p>
+            <label htmlFor="review-source-audio">이 파일의 원본 오디오 또는 영상 연결</label>
+            <input id="review-source-audio" type="file" accept="audio/*,video/mp4,video/webm" onChange={connectSourceAudio} />
+            {visibleSourceAudio && <div>
+              <p>{visibleSourceAudio.name} · {visibleSourceAudio.ready ? '이 창에서 재생 준비됨' : '파일 정보 확인 중'}</p>
+              <audio key={visibleSourceAudio.url} ref={sourceAudioElementRef} src={visibleSourceAudio.url} controls preload="metadata" aria-label="현재 파일의 원본 오디오"
+                onLoadedMetadata={(event) => {
+                  if (!isCurrentSource(visibleSourceAudio)) return;
+                  sourceLastElementRef.current = event.currentTarget;
+                  const duration = event.currentTarget.duration;
+                  if (!Number.isFinite(duration) || duration <= 0) { setSourceAudioError('원본 파일의 재생 길이를 확인하지 못했습니다.'); return; }
+                  const next = { ...visibleSourceAudio, ready: true }; sourceAudioRef.current = next; setSourceAudio(next);
+                }}
+                onTimeUpdate={checkRangeEnd} onEnded={stopRangeTimer}
+                onSeeking={(event) => { const range = sourceRangeRef.current; if (range && (event.currentTarget.currentTime < range.start || event.currentTarget.currentTime >= range.end)) stopRangeTimer(); }}
+                onError={() => { if (isCurrentSource(visibleSourceAudio)) { stopRangeTimer(); const next = { ...visibleSourceAudio, ready: false }; sourceAudioRef.current = next; setSourceAudio(next); setSourceAudioError('브라우저에서 이 원본 파일을 재생하지 못했습니다.'); } }} />
+              <button type="button" className="button button--secondary" onClick={releaseSourceAudio}>원본 연결 해제</button>
+            </div>}
+            <p>구간별 편집의 ‘앞뒤 포함 듣기’는 앞뒤 0.5초를 함께 재생합니다. 자막 시간이나 파일은 바꾸지 않습니다.</p>
+            {sourceAudioError && <p className="subtitle-review__error" role="alert">{sourceAudioError}</p>}
+            {reviewMemory.length > 0 && <div><p>이 창의 현재 파일에 기억한 후보 {reviewMemory.length}개 · 다른 영상이나 계정에서 사용하지 않습니다.</p><button type="button" className="button button--secondary" onClick={() => { if (!reviewMountedRef.current || reviewSessionRef.current !== reviewSession) return; reviewMemoryRef.current = []; setReviewMemoryState({ scope: reviewScope, items: [] }); }}>이 파일의 후보 기억 지우기</button></div>}
+          </details>
+          <p className="subtitle-review-guidance">구간별 편집에서 문구·시간 검토와 원본 듣기를 사용할 수 있습니다. 검토가 끝나지 않은 대사도 삭제하지 않고 다운로드에 포함합니다.</p>
+
           <div className="result-editor-tabs" aria-label="자막 편집 방식" role="tablist">
             {EDITOR_MODES.map((mode, index) => (
               <button
@@ -890,6 +1102,18 @@ export function ResultEditor({ resultOverride = null, resultState = null, onRegi
                     onToggleIdea={openIdeaPanel}
                     segment={segment}
                     speakerColor={speakerColors[String(segment.speaker)] || 'var(--text-secondary)'}
+                    originalText={segments[index]?.text}
+                    pendingReview={pendingReviews[index]?.session === reviewSession ? pendingReviews[index] : undefined}
+                    rememberedReview={findRememberedSubtitle(reviewMemory, editedSegments, index)}
+                    reviewError={reviewError?.scope === reviewScope && reviewError.index === index ? reviewError.message : ''}
+                    reviewApplyDisabled={lineCountMismatch}
+                    audioAvailable={Boolean(visibleSourceAudio?.ready)}
+                    reviewSession={reviewSession}
+                    onReviewChange={changeReviewCandidate}
+                    onApplyReview={applyReviewCandidate}
+                    onConfirmCurrentReview={confirmCurrentReview}
+                    onUseRememberedReview={useRememberedReview}
+                    onPlayReviewRange={playReviewRange}
                   />
                 );
               })}
