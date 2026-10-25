@@ -348,14 +348,16 @@ export function refineKoreanSegmentsWithWordTimings(segments, { originalSegments
       timingSource: 'word',
       // Lossless tuples avoid repeating JSON keys for every cue in long jobs.
       wordAlignedCues: cues.map(({ start, end, text }) => [start, end, text]),
+      ...(Number.isFinite(source.audioStartFloor) ? { audioStartFloor: source.audioStartFloor } : {}),
       ...(rowReview ? { subtitleReview: rowReview } : {}),
     } : { ...cues[0], ...(rowReview ? { subtitleReview: rowReview } : {}) };
-    if (typeof rowReview?.candidateText === 'string' && cues.length > 1) {
+    if ((typeof rowReview?.candidateText === 'string' || rowReview?.timingCandidate) && cues.length > 1) {
       appendFlat([compactRow]);
     } else {
       appendFlat(reviewedCues.map(cue => {
         const review = mergeSubtitleReviews(subtitleReview, cue.subtitleReview);
-        return review ? { ...cue, subtitleReview: review } : cue;
+        return { ...cue, ...(Number.isFinite(source.audioStartFloor) ? { audioStartFloor: source.audioStartFloor } : {}),
+          ...(review ? { subtitleReview: review } : {}) };
       }), aligned.aligned);
     }
     compact.push(compactRow);
@@ -403,8 +405,12 @@ export async function processTranscriptionSegments(segments, language, { correct
     ? annotateSubtitleReviews(timedSegments) : timedSegments;
 
   return {
-    segments: reviewedSegments.map(({ sourceWords: ignoredSourceWords, audioStartFloor: ignoredAudioStartFloor, ...segment }) => ({
+    segments: reviewedSegments.map(({ sourceWords: ignoredSourceWords, audioStartFloor, ...segment }) => ({
       ...segment,
+      ...((normalizeLanguage(language) === 'ko'
+        || correctionTimings?.languageDecision === 'inferred_from_hangul_segments')
+        && !hasSpeakerLabel(segment) && Number.isFinite(audioStartFloor) && audioStartFloor >= 0
+        && audioStartFloor <= segment.start && audioStartFloor < segment.end ? { audioStartFloor } : {}),
       text: normalizeLanguage(language) === 'en' ? segment.text : removeCommas(segment.text),
     })),
     correctionTimings,

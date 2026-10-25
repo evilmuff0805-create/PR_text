@@ -144,13 +144,13 @@ test('long corrected Korean captions keep every internal start at a verified wor
   assert.deepEqual(source, snapshot);
 });
 
-test('digital-prefix evidence bounds even incomplete-word Korean fallbacks and is not exposed in output', async () => {
+test('digital-prefix evidence bounds Korean fallbacks and survives for later manual timing validation', async () => {
   for (const sourceWords of [[], [{ word: '자료를', start: 9.58, end: 9.58 }]]) {
     const source = { start: 9.58, end: 12, text: '자료를 확인합니다', sourceWords, audioStartFloor: 10 };
     const snapshot = structuredClone(source);
     const result = await processTranscriptionSegments([source], 'ko', { correct });
     assert.deepEqual(result.segments.map(({ subtitleReview: ignored, ...cue }) => cue), [
-      { start: 10, end: 12, text: source.text, timingSource: 'audio-range' },
+      { start: 10, end: 12, text: source.text, timingSource: 'audio-range', audioStartFloor: 10 },
     ]);
     assert.equal(result.segments[0].subtitleReview.issues[0].code, 'word_timing_fallback');
     assert.match(generateSRT(result.segments), /00:00:10,000 --> 00:00:12,000/);
@@ -161,7 +161,7 @@ test('digital-prefix evidence bounds even incomplete-word Korean fallbacks and i
 test('digital-prefix evidence clips a corrected Korean word while English and diarization stay unchanged', async () => {
   const korean = { start: 1.62, end: 3, text: '드릴께요', audioStartFloor: 2, sourceWords: [{ word: '드릴께요', start: 1.62, end: 2.4 }] };
   const result = await processTranscriptionSegments([korean], 'ko', { correct: async () => '드릴게요' });
-  assert.deepEqual(result.segments, [{ start: 2, end: 2.4, text: '드릴게요', timingSource: 'word' }]);
+  assert.deepEqual(result.segments, [{ start: 2, end: 2.4, text: '드릴게요', timingSource: 'word', audioStartFloor: 2 }]);
   const diarized = await processTranscriptionSegments([{ ...korean, speaker: 0 }], 'ko', { correct });
   assert.equal(diarized.segments[0].start, 1.62);
   assert.ok(!('audioStartFloor' in diarized.segments[0]));
