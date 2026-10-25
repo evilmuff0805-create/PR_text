@@ -6256,3 +6256,114 @@ textarea:focus-visible {
     padding-inline: 6px;
   }
 }
+
+/* Optional subtitle review stays inside the existing result editor. */
+.result-segment-row > .subtitle-review {
+  grid-column: 1 / -1;
+}
+
+.subtitle-review,
+.subtitle-review-source {
+  min-width: 0;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.subtitle-review summary,
+.subtitle-review-source summary {
+  min-height: 44px;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.subtitle-review summary:focus-visible,
+.subtitle-review-source summary:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.subtitle-review__body {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
+.subtitle-review__body p,
+.subtitle-review-source p,
+.subtitle-review__comparison dd {
+  overflow-wrap: anywhere;
+}
+
+.subtitle-review__body textarea,
+.subtitle-review-source input[type="file"],
+.subtitle-review-source audio {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.subtitle-review__body textarea {
+  min-height: 90px;
+}
+
+.subtitle-review__comparison {
+  display: grid;
+  gap: 12px;
+}
+
+.subtitle-review__comparison dt,
+.subtitle-review__status {
+  font-weight: 700;
+}
+
+.subtitle-review__comparison dd {
+  margin-top: 4px;
+  white-space: pre-wrap;
+}
+
+.subtitle-review__remember {
+  display: flex;
+  min-height: 44px;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.subtitle-review__remember input {
+  padding: 0;
+  width: 18px;
+  height: 18px;
+  margin-top: 4px;
+  flex: 0 0 18px;
+}
+
+.subtitle-review__hint,
+.subtitle-review-guidance {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  line-height: 1.6;
+}
+
+.subtitle-review-guidance {
+  margin: 12px 0;
+}
+
+.subtitle-review__memory {
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.subtitle-review__error {
+  color: var(--danger);
+}
+
+.subtitle-review__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}

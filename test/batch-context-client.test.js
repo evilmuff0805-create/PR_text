@@ -5,6 +5,7 @@ import test from 'node:test';
 import { transformWithEsbuild } from 'vite';
 import * as batchUtils from '../client/src/utils/batch-transcription.js';
 import * as drafts from '../client/src/utils/result-drafts.js';
+import * as subtitleReview from '../client/src/utils/subtitle-review.js';
 import * as uploadValidation from '../client/src/utils/upload-validation.js';
 import * as captionIdeas from '../client/src/utils/caption-ideas.js';
 import { formatSegmentTime } from '../client/src/utils/format-segment-time.js';
@@ -35,7 +36,7 @@ async function hookFixture({ file = 'client/src/contexts/BatchTranscriptionConte
   const deps = { react, 'react/jsx-runtime': { jsx: element, jsxs: element, Fragment: 'Fragment' }, './AuthContext.jsx': { useAuth: () => auth }, '../contexts/AuthContext.jsx': { useAuth: () => auth },
     'react-router-dom': { useLocation: () => ({ search: '', state: null }), useNavigate: () => () => {} },
     '../utils/batch-transcription.js': { ...batchUtils, createBatchApi: (options) => batchUtils.createBatchApi({ ...options, fetchImpl }) },
-    '../utils/result-drafts.js': drafts, '../utils/upload-validation.js': uploadValidation, '../utils/wav-optimization.js': { optimizeLargeWavForUpload: async (file) => ({ file }) },
+    '../utils/result-drafts.js': drafts, '../utils/subtitle-review.js': subtitleReview, '../utils/upload-validation.js': uploadValidation, '../utils/wav-optimization.js': { optimizeLargeWavForUpload: async (file) => ({ file }) },
     '../utils/caption-ideas.js': captionIdeas, '../utils/format-segment-time.js': { formatSegmentTime }, ...dependencies };
   const module = { exports: {} };
   const anchors = [];
@@ -173,7 +174,7 @@ test('actual result editor flush serializes the latest text, preserves timing an
   const input = () => page.nodes().find(({ props }) => props.id === 'full-transcript');
   input().props.onChange({ target: { value: '첫 수정' } }); await page.settle(); const saving = flush(); await page.settle();
   input().props.onChange({ target: { value: '최신 수정' } }); await page.settle(); release(); await saving; await page.settle();
-  assert.equal(requests.length, 2); assert.deepEqual(requests[1].body.segments, [{ ...segments[0], text: '최신 수정' }]);
+  assert.equal(requests.length, 2); assert.deepEqual(requests[1].body.segments, [{ ...segments[0], text: '최신 수정', subtitleReview: { version: 1, issues: [], originalText: segments[0].text, timingStatus: 'unverified' } }]);
   input().props.onChange({ target: { value: '최신 수정\n여분 줄' } }); await page.settle();
   await assert.rejects(flush(), /줄 수/); assert.equal(requests.length, 2);
   const saved = JSON.parse(page.sessionStorage.getItem(drafts.resultDraftKey(ownerId, 20)));

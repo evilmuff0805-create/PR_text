@@ -1,5 +1,6 @@
 import { isKoreanDependentPredicateTail, splitKoreanSubtitleText } from './korean-subtitle.js';
 import { alignKoreanSegmentWithWordTimings } from './korean-word-timing.js';
+import { annotateSubtitleReviews, mergeSubtitleReviews, overlapTrimReview } from './subtitle-review.js';
 
 export const DEFAULT_SPEAKER_COLORS = [
   '#FFFFFF', // 0: 흰색
@@ -106,6 +107,14 @@ function splitSegment(segment, maxLen = SUBTITLE_MAX_CHARS) {
   const end = segment.end;
   const split = [];
   const hasSpeaker = spk !== undefined && spk !== null && spk !== '';
+  // Full-line candidates remain on editor source rows. Export diagnostics may
+  // carry numeric issues, but never duplicate that candidate into split text.
+  const review = mergeSubtitleReviews(segment.subtitleReview);
+  const cueReview = review ? {
+    version: 1, issues: review.issues,
+    ...(review.timingStatus ? { timingStatus: review.timingStatus } : {}),
+  } : undefined;
+  const withReview = cue => cueReview ? { ...cue, subtitleReview: cueReview } : cue;
   if (!hasSpeaker && segment.timingSource === 'word'
     && Array.isArray(segment.wordAlignedCues)
     && segment.wordAlignedCues.length <= text.length) {
@@ -120,7 +129,7 @@ function splitSegment(segment, maxLen = SUBTITLE_MAX_CHARS) {
       )),
     }, { maxChars: maxLen });
     if (aligned.aligned) {
-      return aligned.segments.map((cue) => ({ ...cue, text: cleanText(cue.text), speaker: spk }));
+      return aligned.segments.map((cue) => withReview({ ...cue, text: cleanText(cue.text), speaker: spk }));
     }
   }
   const splitKoreanSpeakerText = hasSpeaker && /[가-힣]/.test(text);
@@ -148,12 +157,12 @@ function splitSegment(segment, maxLen = SUBTITLE_MAX_CHARS) {
       midTime = Math.min(Math.max(midTime, start + MIN_CUE_SECONDS), end - MIN_CUE_SECONDS);
     }
 
-    split.push({ start, end: midTime, text: frontText, speaker: spk });
+    split.push(withReview({ start, end: midTime, text: frontText, speaker: spk }));
     start = midTime;
     text = backText;
   }
 
-  split.push({ start, end, text: text || '', speaker: spk });
+  split.push(withReview({ start, end, text: text || '', speaker: spk }));
   return split;
 }
 
@@ -219,19 +228,21 @@ function prepareOrdinarySources(segments) {
 
   // Clip source windows before splitting so later fragments cannot jump past
   // the next source and interleave its text. Never extend a source into silence.
-  return continued.map((segment, index) => ({
-    ...segment,
-    end: index + 1 < continued.length
-      ? Math.min(segment.end, continued[index + 1].start) : segment.end,
-  }));
+  return continued.map((segment, index) => {
+    const next = continued[index + 1];
+    const reviewed = next ? overlapTrimReview(segment, next.start) : segment;
+    return { ...reviewed, end: next ? Math.min(segment.end, next.start) : segment.end };
+  });
 }
 
-function buildCues(segments, options = {}) {
+export function buildSubtitleCues(segments, options = {}) {
   // Invalid sources must not clip valid speech, even before long-text splitting.
   const usable = segments.filter((segment) => cleanText(segment.text) !== '' && segment.end > segment.start);
   const ordinary = usable.every(({ speaker }) => speaker === undefined || speaker === null || speaker === '');
   if (ordinary) {
-    const cues = prepareOrdinarySources(usable).flatMap((segment) => splitSegment(segment));
+    const cues = annotateSubtitleReviews(
+      prepareOrdinarySources(usable).flatMap((segment) => splitSegment(segment)), { stage: 'export' },
+    );
     if (options?.holdShortGaps === false) return cues;
     // Export-only display continuity: preserve source/word times and splitting,
     // then hold the preceding dialogue through at most one second of silence.
@@ -286,7 +297,7 @@ export function generateSRT(segments, speakerColors = null, options = {}) {
   // Keep the marker outside dialogue normalization: trimming overlaps would erase
   // either the two-second marker or speech at the start of the original audio.
   const marker = `1\n${formatSRT(0)} --> ${formatSRT(2)}\n<font size="48"><b>${SRT_START_MARKER_TEXT}</b></font>`;
-  const split = buildCues(segments ?? [], options);
+  const split = buildSubtitleCues(segments ?? [], options);
   const dialogue = split.map((seg, i) => {
     let line = seg.text;
     if (speakerColors && seg.speaker !== undefined) {
@@ -369,7 +380,7 @@ export function generateASS(segments, options = {}, speakerColors = null) {
     '',
   ].join('\n');
 
-  const split = buildCues(segments, options);
+  const split = buildSubtitleCues(segments, options);
 
   const events = [
     '[Events]',

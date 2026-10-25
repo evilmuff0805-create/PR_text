@@ -12,6 +12,7 @@ const ADNOMINAL_END = /(?:하는|되는|있는|없는|했던|됐던|있던|없�
 const BOUND_NOUN = /^(?:수|것|거|데|바|지|중|때|대로|만큼|듯|뿐)(?:이|가|은|는|을|를|도|에|에는)?$/;
 const PARTICLE = /^(?:은|는|이|가|을|를|에|의|와|과|도|로|으로|만|부터|까지|에게|께서|처럼|보다)$/;
 const POSTPOSITION_END = /(?:은|는|이|가|을|를|에|도|로|에게|에서|부터|까지)$/;
+const ADVERBIAL_PARTICLE_END = /(?:에서|에서는|에서도|에게서|으로|로|에|에는|에도)$/;
 const AUXILIARY_START = /^(?:되(?:면|고|는|기|지|게|겠|셨|었|세요|나요|다)|됩|돼|됐|하(?:고|는|기|지|면|게|겠|였|다|세요|나요)|합|해|했|있|없|않|못|싶|같|주(?:세|시|었|겠|는|기|지|고|다)|줘|드리|드릴|드렸|보(?:세|시|았|겠|는|기|지|고|다)|봐|버리|두(?:었|는|고|겠|세)|놓|내(?:었|는|고|겠|세)|아니|아닙|입니다|입니까|이었|였)/;
 const PREDICATE_COMPLEMENT_END = /(?:으면|면|아야|어야|여야|해야|아도|어도|여도|해도|더라도|라도|라고|다고|냐고|자고|하지|되지|않지)$/;
 const AUXILIARY_COMPLEMENT_END = /(?:아|어|해|고)$/;
@@ -57,7 +58,7 @@ export function isKoreanDependentPredicateTail(previousText, tailText) {
   return dependentPredicatePair(previousWord, firstWord(tail));
 }
 
-function boundaryCost(before, after) {
+export function koreanSubtitleBoundaryCost(before, after) {
   const word = lastWord(before);
   const next = firstWord(after);
   let cost = 0;
@@ -66,6 +67,9 @@ function boundaryCost(before, after) {
   if (dependent) cost += 120;
   if (BOUND_NOUN.test(next) || PARTICLE.test(next)) cost += 120;
   if (dependentPredicatePair(word, next)) cost += 160;
+  // An adverbial phrase may modify the following adnominal predicate rather
+  // than finish a clause. This is a preference, never a morphology claim.
+  if (ADVERBIAL_PARTICLE_END.test(word) && ADNOMINAL_END.test(next)) cost += 120;
 
   if (/[.!?。！？]["”’'\)\]\}]*$/u.test(before)) cost -= 150;
   else if (!dependent && SENTENCE_END.test(word)) cost -= 60;
@@ -122,7 +126,7 @@ function planCuts(text, maxChars) {
       const candidate = {
         count: rest.count + 1,
         cost: rest.cost + lineCost(front, maxChars, start === 0)
-          + (wordBoundary ? boundaryCost(front, text.slice(next)) : 0),
+          + (wordBoundary ? koreanSubtitleBoundaryCost(front, text.slice(next)) : 0),
         end,
         next,
       };

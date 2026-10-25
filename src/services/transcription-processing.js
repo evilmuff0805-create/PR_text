@@ -3,6 +3,7 @@ import { processSegmentsWithTiming } from './postprocess.js';
 import { normalizeLanguage } from './language.js';
 import { alignCorrectedKoreanSegmentWithWordTimings, alignKoreanSegmentWithWordTimings } from './korean-word-timing.js';
 import { isKoreanDependentPredicateTail } from './korean-subtitle.js';
+import { annotateSubtitleReviews, mergeSubtitleReviews } from './subtitle-review.js';
 
 // Provider hallucination loops are uniform, low-confidence repeats from one decode window.
 // These thresholds intentionally leave ordinary or weakly evidenced repetition untouched.
@@ -293,12 +294,15 @@ export function refineKoreanSegmentsWithWordTimings(segments, { originalSegments
     const aligned = alignSource(source, index);
     let cues = aligned.segments;
     let sourceText = aligned.text ?? source.text;
+    let subtitleReview = mergeSubtitleReviews(source.subtitleReview, aligned.subtitleReview);
     compactTextLength += String(sourceText).length - String(source.text).length;
     const next = segments[index + 1];
     // Repair a provider-separated dependent predicate only when BOTH sources
     // have complete, matching word timings and speech itself is adjacent.
     // Each source participates in at most one such join; no timing is invented.
     if (aligned.aligned && next && !hasSpeakerLabel(next)
+      && typeof subtitleReview?.candidateText !== 'string'
+      && typeof next.subtitleReview?.candidateText !== 'string'
       && isKoreanDependentPredicateTail(sourceText, next.text)) {
       const following = alignSource(next, index + 1);
       const gap = following.aligned
@@ -306,7 +310,8 @@ export function refineKoreanSegmentsWithWordTimings(segments, { originalSegments
       const joinedText = `${String(sourceText).trim()} ${String(following.text ?? next.text).trim()}`;
       const addedChars = joinedText.length - String(sourceText).length - String(next.text).length;
       // A compact row must also fit the existing 10,000-character edit limit.
-      if (gap >= 0 && gap <= MAX_MERGE_GAP_SECONDS + 1e-9 && joinedText.length <= 10_000
+      if (typeof following.subtitleReview?.candidateText !== 'string'
+        && gap >= 0 && gap <= MAX_MERGE_GAP_SECONDS + 1e-9 && joinedText.length <= 10_000
         && compactTextLength + addedChars <= 1_000_000) {
         const joinedSource = {
           ...source,
@@ -326,20 +331,34 @@ export function refineKoreanSegmentsWithWordTimings(segments, { originalSegments
           && compactTextLength + retainedAddedChars <= 1_000_000) {
           cues = joined.segments;
           sourceText = retainedText;
+          subtitleReview = mergeSubtitleReviews(subtitleReview, next.subtitleReview, following.subtitleReview, joined.subtitleReview);
           compactTextLength += retainedAddedChars;
           index += 1;
         }
       }
     }
-    appendFlat(cues, aligned.aligned);
-    compact.push(aligned.aligned ? {
+    // Review candidates belong to one complete editor row. Replicating a full
+    // candidate onto each split cue would let a user apply the whole line N times.
+    const reviewedCues = annotateSubtitleReviews(cues);
+    const rowReview = mergeSubtitleReviews(subtitleReview, ...reviewedCues.map(cue => cue.subtitleReview));
+    const compactRow = aligned.aligned ? {
       start: cues[0].start,
       end: cues.at(-1).end,
       text: sourceText,
       timingSource: 'word',
       // Lossless tuples avoid repeating JSON keys for every cue in long jobs.
       wordAlignedCues: cues.map(({ start, end, text }) => [start, end, text]),
-    } : cues[0]);
+      ...(rowReview ? { subtitleReview: rowReview } : {}),
+    } : { ...cues[0], ...(rowReview ? { subtitleReview: rowReview } : {}) };
+    if (typeof rowReview?.candidateText === 'string' && cues.length > 1) {
+      appendFlat([compactRow]);
+    } else {
+      appendFlat(reviewedCues.map(cue => {
+        const review = mergeSubtitleReviews(subtitleReview, cue.subtitleReview);
+        return review ? { ...cue, subtitleReview: review } : cue;
+      }), aligned.aligned);
+    }
+    compact.push(compactRow);
   }
   return needsCompact ? compact : refined;
 }
@@ -365,7 +384,7 @@ export async function processTranscriptionSegments(segments, language, { correct
   let correctionTimings;
 
   try {
-    const correctionResult = await processSegmentsWithTiming(filteredSegments, language, correct);
+    const correctionResult = await processSegmentsWithTiming(filteredSegments, language, correct, { includeReviews: true });
     processedSegments = correctionResult.segments;
     correctionTimings = correctionResult.timings;
   } catch (error) {
@@ -379,8 +398,12 @@ export async function processTranscriptionSegments(segments, language, { correct
     || correctionTimings?.languageDecision === 'inferred_from_hangul_segments'
     ? refineKoreanSegmentsWithWordTimings(processedSegments, { originalSegments: filteredSegments }) : processedSegments;
 
+  const reviewedSegments = normalizeLanguage(language) === 'ko'
+    || correctionTimings?.languageDecision === 'inferred_from_hangul_segments'
+    ? annotateSubtitleReviews(timedSegments) : timedSegments;
+
   return {
-    segments: timedSegments.map(({ sourceWords: ignoredSourceWords, audioStartFloor: ignoredAudioStartFloor, ...segment }) => ({
+    segments: reviewedSegments.map(({ sourceWords: ignoredSourceWords, audioStartFloor: ignoredAudioStartFloor, ...segment }) => ({
       ...segment,
       text: normalizeLanguage(language) === 'en' ? segment.text : removeCommas(segment.text),
     })),

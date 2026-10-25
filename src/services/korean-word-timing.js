@@ -1,4 +1,5 @@
-import { splitKoreanSubtitleText } from './korean-subtitle.js';
+import { koreanSubtitleBoundaryCost, splitKoreanSubtitleText } from './korean-subtitle.js';
+import { mergeSubtitleReviews } from './subtitle-review.js';
 
 const LETTER_OR_NUMBER = /[\p{L}\p{N}]/u;
 const LETTERS_AND_NUMBERS = /[\p{L}\p{N}]/gu;
@@ -23,6 +24,18 @@ function sourceWithAudioFloor(segment) {
   const floor = audioStartFloor(segment);
   return floor !== null && floor > segment.start
     ? { ...segment, start: floor, timingSource: 'audio-range' } : segment;
+}
+
+function alignmentFallback(segment, reason) {
+  const report = reason === 'not-korean'
+    || (reason === 'missing-words' && !Array.isArray(segment?.sourceWords)) ? undefined : {
+      version: 1, issues: [{ code: 'word_timing_fallback', reason }], timingStatus: 'unverified',
+    };
+  const subtitleReview = mergeSubtitleReviews(segment?.subtitleReview, report);
+  return {
+    aligned: false, segments: [sourceWithAudioFloor(segment)], reason,
+    ...(subtitleReview ? { subtitleReview } : {}),
+  };
 }
 
 // Keep source spelling, punctuation, and Unicode representation in the output.
@@ -126,9 +139,12 @@ function planWordBoundaries(text, cuts, safeCuts, firstWord, afterLastWord, maxC
       if (!rest) continue;
       const distance = end === afterLastWord ? 0 : distanceToCut(cuts[end], preferredCuts);
       const unused = maxChars - length;
+      const boundaryCost = end === afterLastWord ? 0 : koreanSubtitleBoundaryCost(
+        text.slice(sliceStart, cuts[end]), text.slice(cuts[end], cuts[afterLastWord]).trimStart(),
+      );
       const candidate = {
         count: rest.count + 1,
-        cost: rest.cost + distance * distance + unused * unused / 4,
+        cost: rest.cost + boundaryCost + distance * distance + unused * unused / 4,
         next: end,
       };
       if (!best || candidate.count < best.count
@@ -146,7 +162,7 @@ function planWordBoundaries(text, cuts, safeCuts, firstWord, afterLastWord, maxC
 }
 
 function alignValidatedText(segment, text, words, wordLengths, maxChars, maxPauseSeconds, characterMap = sourceCharacterMap(text)) {
-  const fallback = (reason) => ({ aligned: false, segments: [sourceWithAudioFloor(segment)], reason });
+  const fallback = (reason) => alignmentFallback(segment, reason);
   const cuts = wordCuts(text, characterMap, wordLengths);
   if (!cuts) return fallback('unmapped-word-boundary');
   const safeCuts = cuts.map((cut) => !splitsInternalDot(text, cut));
@@ -298,7 +314,7 @@ export function alignKoreanSegmentWithWordTimings(
   segment,
   { maxChars = 28, maxPauseSeconds = 0.3 } = {},
 ) {
-  const fallback = (reason) => ({ aligned: false, segments: [sourceWithAudioFloor(segment)], reason });
+  const fallback = (reason) => alignmentFallback(segment, reason);
   if (!Number.isSafeInteger(maxChars) || maxChars < 1
     || !finiteNumber(maxPauseSeconds) || maxPauseSeconds < 0) return fallback('invalid-options');
   if (!segment || typeof segment !== 'object' || Array.isArray(segment)
@@ -348,9 +364,18 @@ export function alignCorrectedKoreanSegmentWithWordTimings(original, corrected, 
     if (Object.hasOwn(original ?? {}, 'audioStartFloor')) candidate.audioStartFloor = original.audioStartFloor;
     else delete candidate.audioStartFloor;
   }
-  if (!prior.aligned) return { aligned: false, segments: [sourceWithAudioFloor(candidate)], reason: prior.reason };
+  if (!prior.aligned) return alignmentFallback(candidate, prior.reason);
   const originalText = original.text.replace(/\s+/gu, ' ').trim();
-  const preserve = (reason) => ({ ...prior, text: originalText, correctionRetained: false, reason });
+  const preserve = (reason) => {
+    const subtitleReview = mergeSubtitleReviews(original.subtitleReview, candidate?.subtitleReview, {
+      version: 1, issues: [{ code: 'correction_alignment_rejected', reason }],
+      ...(typeof candidate?.text === 'string' && candidate.text !== originalText ? {
+        originalText, candidateText: candidate.text, textStatus: 'candidate',
+      } : {}),
+      timingStatus: 'unverified',
+    });
+    return { ...prior, text: originalText, correctionRetained: false, reason, subtitleReview };
+  };
   if (!corrected || typeof corrected.text !== 'string'
     || corrected.start !== original.start || corrected.end !== original.end) return preserve('invalid-corrected-source');
   const text = corrected.text.replace(/\s+/gu, ' ').trim();
