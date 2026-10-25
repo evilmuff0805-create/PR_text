@@ -6367,3 +6367,57 @@ textarea:focus-visible {
   flex-wrap: wrap;
   gap: 8px;
 }
+
+.subtitle-review__timing {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding: 16px 0;
+  border-block: 1px solid var(--border-color);
+}
+
+.subtitle-review__timing h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.subtitle-review__timing-candidate {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.subtitle-review__time-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  min-width: 0;
+  gap: 12px;
+}
+
+.subtitle-review__time-inputs label {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+  font-weight: 700;
+}
+
+.subtitle-review__time-inputs input {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  font-variant-numeric: tabular-nums;
+}
+
+.subtitle-review__time-inputs input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+@media (max-width: 440px) {
+  .subtitle-review__time-inputs {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

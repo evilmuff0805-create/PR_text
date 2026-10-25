@@ -10,7 +10,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { formatSegmentTime } from '../utils/format-segment-time.js';
 import { cacheSavedResult, isTranscriptionLogId, lastResultKey, readResultDraft, resolveSavedResult, resultSnapshotSignature, writeResultDraft } from '../utils/result-drafts.js';
-import { confirmSubtitleCandidate, editSubtitleText, findRememberedSubtitle, getSubtitleReviewIssues, normalizeReviewMemory, normalizeSubtitleReview, rememberSubtitleCandidate, subtitleEditSignature, subtitleReviewIssueLabel, validateSubtitleCandidate } from '../utils/subtitle-review.js';
+import { confirmSubtitleCandidate, confirmSubtitleTiming, editSubtitleText, findRememberedSubtitle, formatSubtitleTimeInput, getSubtitleReviewIssues, getSubtitleTimingCandidate, getSubtitleTimingConfirmation, normalizeReviewMemory, normalizeSubtitleReview, parseSubtitleTimeInput, rememberSubtitleCandidate, subtitleEditSignature, subtitleReviewIssueLabel, validateSubtitleCandidate, validateSubtitleTiming } from '../utils/subtitle-review.js';
 import {
   buildSceneContext,
   createCaptionRequestTracker,
@@ -175,12 +175,23 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
   onConfirmCurrentReview,
   onUseRememberedReview,
   onPlayReviewRange,
+  timingEnabled,
+  displayHoldEnabled,
+  pendingTiming,
+  timingError,
+  onTimingChange,
+  onUseTimingCandidate,
+  onConfirmTiming,
 }) {
   const review = normalizeSubtitleReview(segment.subtitleReview, segment.text);
   const issues = getSubtitleReviewIssues(segment);
   const candidate = pendingReview?.base === segment ? pendingReview.value : review?.candidateText ?? '';
   const remember = pendingReview?.base === segment && pendingReview.remember === true;
   const duration = Number.isFinite(segment.start) && Number.isFinite(segment.end) ? segment.end - segment.start : NaN;
+  const timingCandidate = getSubtitleTimingCandidate(segment);
+  const timingConfirmation = getSubtitleTimingConfirmation(segment);
+  const timingStart = pendingTiming?.base === segment ? pendingTiming.startInput : formatSubtitleTimeInput(segment.start, { isStart: true });
+  const timingEnd = pendingTiming?.base === segment ? pendingTiming.endInput : formatSubtitleTimeInput(segment.end);
   return (
     <article className="result-segment-row">
       <div className="result-segment-meta">
@@ -216,6 +227,34 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
           {issues.length > 0 && <ul>{issues.map((issue, issueIndex) => <li key={`${issue.code}-${issueIndex}`}>{subtitleReviewIssueLabel(issue)}</li>)}</ul>}
           <p className="subtitle-review__hint">표시는 원본 확인을 돕는 기준입니다. 짧은 구간만으로 인식 오류나 실제 발화 시간을 단정하지 않습니다.</p>
           <button type="button" className="button button--secondary" disabled={!audioAvailable} onClick={() => onPlayReviewRange(index, segment, reviewSession)}>앞뒤 포함 듣기</button>
+          {timingEnabled && <section className="subtitle-review__timing" aria-labelledby={`review-timing-${index}`}>
+            <h3 id={`review-timing-${index}`}>발화 시간 검토</h3>
+            <p className="subtitle-review__status">{timingConfirmation ? '시간 수동 확인 · 음소·내부 단어 싱크 미확인' : '발화 시간 미확인'}</p>
+            <dl className="subtitle-review__comparison">
+              {review?.originalTiming && <div><dt>보존 발화 범위</dt><dd>{formatSegmentTime(review.originalTiming.start)} - {formatSegmentTime(review.originalTiming.end)}</dd></div>}
+              <div><dt>현재 발화 범위</dt><dd>{formatSegmentTime(segment.start)} - {formatSegmentTime(segment.end)}</dd></div>
+            </dl>
+            {displayHoldEnabled && <p className="subtitle-review__hint">발화 끝과 표시 끝은 다를 수 있습니다. 일반 단일 SRT·ASS는 발화 뒤 간격이 1초 이내면 다음 자막까지 표시합니다. 마지막 자막과 1초 초과 간격은 늘리지 않습니다.</p>}
+            {timingCandidate && <div className="subtitle-review__timing-candidate">
+              <p className="subtitle-review__status">오디오 재측정 시간 후보 · {timingCandidate.status === 'consistent_estimate' ? '반복 측정 추정' : '미확인'}</p>
+              <p>후보 발화 시작 {formatSegmentTime(timingCandidate.start)} · 발화 끝 {formatSegmentTime(timingCandidate.end)}</p>
+              <p className="subtitle-review__hint">현재 문구와 원래 범위가 일치하는 후보입니다. 실제 음소 경계의 정답은 아닙니다. 불러오기만으로 현재 시간은 바뀌지 않습니다.</p>
+              <button type="button" className="button button--secondary" onClick={() => onUseTimingCandidate(index, segment, reviewSession)}>시간 후보 불러오기</button>
+            </div>}
+            <div className="subtitle-review__time-inputs">
+              <label htmlFor={`review-start-${index}`}><span>발화 시작</span><input id={`review-start-${index}`} type="text" inputMode="decimal" autoComplete="off" aria-describedby={`review-timing-help-${index}`} value={timingStart}
+                onChange={(event) => onTimingChange(index, segment, { startInput: event.target.value }, reviewSession)} /></label>
+              <label htmlFor={`review-end-${index}`}><span>발화 끝</span><input id={`review-end-${index}`} type="text" inputMode="decimal" autoComplete="off" aria-describedby={`review-timing-help-${index}`} value={timingEnd}
+                onChange={(event) => onTimingChange(index, segment, { endInput: event.target.value }, reviewSession)} /></label>
+            </div>
+            <p id={`review-timing-help-${index}`} className="subtitle-review__hint">초(예: 338.125) 또는 HH:MM:SS.mmm로 입력합니다. 원본을 직접 듣고 시작·끝을 확인한 뒤 적용하세요. 긴 문구의 내부 분할 시간은 이 범위 안의 글자 수 비례 추정이며, 단어별 재정렬은 보장하지 않습니다.</p>
+            {!audioAvailable && <p className="subtitle-review__hint">시간을 적용하려면 위에서 이 파일의 원본을 연결해 재생 길이를 확인해 주세요.</p>}
+            <button type="button" className="button button--secondary" disabled={!audioAvailable}
+              onClick={() => onPlayReviewRange(index, segment, reviewSession, { start: parseSubtitleTimeInput(timingStart), end: parseSubtitleTimeInput(timingEnd) })}>입력 범위 앞뒤 듣기</button>
+            <button type="button" className="button button--secondary" disabled={reviewApplyDisabled || !audioAvailable}
+              onClick={() => onConfirmTiming(index, segment, timingStart, timingEnd, reviewSession)}>이 시간 적용·확인</button>
+            {timingError && <p className="subtitle-review__error" role="alert">{timingError}</p>}
+          </section>}
           <dl className="subtitle-review__comparison">
             <div><dt>보존 문구</dt><dd>{review?.originalText ?? originalText ?? segment.text}</dd></div>
             <div><dt>현재 편집 문구</dt><dd>{segment.text}</dd></div>
@@ -425,6 +464,7 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
     [...new Set(segments.filter(s => s.speaker !== undefined).map(s => s.speaker))]
       .sort((a, b) => a - b)
   ), [segments]);
+  const timingEnabled = !diarize && segments.every((segment) => segment.speaker === undefined || segment.speaker === null || segment.speaker === '');
   const [speakerColors, setSpeakerColors] = useState(() => {
     const init = {};
     speakerIds.forEach(id => { init[String(id)] = DEFAULT_SPEAKER_COLORS[id] ?? '#39FF14'; });
@@ -448,6 +488,9 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
   const [pendingReviews, setPendingReviews] = useState({});
   const pendingReviewsRef = useRef({});
   const [reviewError, setReviewError] = useState(null);
+  const [pendingTimings, setPendingTimings] = useState({});
+  const pendingTimingsRef = useRef({});
+  const [timingError, setTimingError] = useState(null);
   const [reviewMemoryState, setReviewMemoryState] = useState(() => ({ scope: reviewScope,
     items: normalizeReviewMemory(readStoredEdits(transcriptionLogId, segments, user?.id)?.reviewMemory) }));
   const reviewMemory = reviewMemoryState.scope === reviewScope ? reviewMemoryState.items : [];
@@ -497,11 +540,11 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
     if (!range || !media) return;
     if (!isCurrentSource(range) || media.currentTime >= range.end) { media.pause(); stopRangeTimer(); }
   }, [isCurrentSource, stopRangeTimer]);
-  const playReviewRange = useCallback(async (index, expectedSegment, session) => {
+  const playReviewRange = useCallback(async (index, expectedSegment, session, requestedRange = null) => {
     if (!reviewMountedRef.current || reviewSessionRef.current !== session) return;
     const source = sourceAudioRef.current, media = sourceAudioElementRef.current;
     if (!isCurrentSource(source) || !source.ready || !media || editedSegmentsRef.current[index] !== expectedSegment) return;
-    const { start, end } = expectedSegment;
+    const { start, end } = requestedRange || expectedSegment;
     if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > media.duration + 0.001) {
       setSourceAudioError('연결한 파일의 길이와 이 구간 시간을 확인해 주세요.'); return;
     }
@@ -553,6 +596,42 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
     changeReviewCandidate(index, base, { value: base.text, remember: false }, session);
     applyReviewCandidate(index, base, base.text, false, session);
   }, [applyReviewCandidate, changeReviewCandidate]);
+
+  const changeTiming = useCallback((index, base, update, session) => {
+    if (!reviewMountedRef.current || reviewSessionRef.current !== session || editedSegmentsRef.current[index] !== base) return;
+    const previous = pendingTimingsRef.current[index];
+    const pending = previous?.base === base && previous.session === session ? previous : {
+      base, session, startInput: formatSubtitleTimeInput(base.start, { isStart: true }), endInput: formatSubtitleTimeInput(base.end),
+    };
+    const next = { ...pendingTimingsRef.current, [index]: { ...pending, ...update } };
+    pendingTimingsRef.current = next; setPendingTimings(next); setTimingError(null);
+  }, []);
+  const useTimingCandidate = useCallback((index, base, session) => {
+    if (!reviewMountedRef.current || reviewSessionRef.current !== session || editedSegmentsRef.current[index] !== base) return;
+    const candidate = getSubtitleTimingCandidate(base);
+    if (candidate) changeTiming(index, base, { startInput: formatSubtitleTimeInput(candidate.start, { isStart: true }), endInput: formatSubtitleTimeInput(candidate.end) }, session);
+  }, [changeTiming]);
+  const confirmTiming = useCallback((index, base, startInput, endInput, session) => {
+    if (!reviewMountedRef.current || reviewSessionRef.current !== session || editedSegmentsRef.current[index] !== base
+      || lineCountMismatchRef.current || !timingEnabled) return;
+    const pending = pendingTimingsRef.current[index];
+    const current = pending?.base === base && pending.session === session ? pending : {
+      startInput: formatSubtitleTimeInput(base.start, { isStart: true }), endInput: formatSubtitleTimeInput(base.end),
+    };
+    if (startInput !== current.startInput || endInput !== current.endInput) return;
+    const source = sourceAudioRef.current, media = sourceAudioElementRef.current;
+    const scope = reviewScopeRef.current;
+    if (!isCurrentSource(source) || !source.ready || !media || !Number.isFinite(media.duration) || media.duration <= 0) {
+      setTimingError({ scope, index, message: '이 파일의 원본을 연결해 재생 길이를 확인한 뒤 시간을 적용해 주세요.' }); return;
+    }
+    const start = parseSubtitleTimeInput(startInput), end = parseSubtitleTimeInput(endInput);
+    const error = validateSubtitleTiming(editedSegmentsRef.current, index, start, end, { durationSeconds: media.duration });
+    if (error) { setTimingError({ scope, index, message: error }); return; }
+    playRequestRef.current += 1; stopRangeTimer(); media.pause();
+    const next = editedSegmentsRef.current.map((segment, position) => position === index ? confirmSubtitleTiming(segment, start, end) : segment);
+    editedSegmentsRef.current = next; setEditedSegments(next);
+    setFullTextDraft(joinSegmentLines(next)); setTimingError(null);
+  }, [isCurrentSource, stopRangeTimer, timingEnabled]);
 
   // 사용자와 기록별로 초안을 분리한다. 묶음의 다른 파일이나 계정에 편집본이 섞이지 않는다.
   useEffect(() => {
@@ -793,9 +872,12 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
 
   function updateFullText(nextText) {
     setFullTextDraft(nextText);
+    lineCountMismatchRef.current = editedSegmentsRef.current.length > 0 && splitTextLines(nextText).length !== editedSegmentsRef.current.length;
     // 줄 수가 맞을 때만 자막에 반영한다. 어긋난 상태는 경고로 알리고 보류한다.
     if (canApplyFullText(editedSegments, nextText)) {
-      setEditedSegments(buildEditedSegments(editedSegments, nextText));
+      const next = buildEditedSegments(editedSegmentsRef.current, nextText);
+      editedSegmentsRef.current = next;
+      setEditedSegments(next);
     }
   }
 
@@ -1093,7 +1175,7 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
                     ideaResultPrevious={isIdeaOpen && visibleIdeaResults.length > 0 && ideaResultInfo?.snapshotKey !== ideaSnapshotKey}
                     index={index}
                     isIdeaOpen={isIdeaOpen}
-                    key={`${segment.start}-${segment.end}-${index}`}
+                    key={index}
                     onCopyIdea={isIdeaOpen ? copyIdea : null}
                     onGenerateIdeas={isIdeaOpen ? generateIdeas : null}
                     onIdeaModeChange={isIdeaOpen ? changeIdeaMode : null}
@@ -1114,6 +1196,13 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
                     onConfirmCurrentReview={confirmCurrentReview}
                     onUseRememberedReview={useRememberedReview}
                     onPlayReviewRange={playReviewRange}
+                    timingEnabled={timingEnabled}
+                    displayHoldEnabled={holdShortGaps !== false}
+                    pendingTiming={pendingTimings[index]?.session === reviewSession ? pendingTimings[index] : undefined}
+                    timingError={timingError?.scope === reviewScope && timingError.index === index ? timingError.message : ''}
+                    onTimingChange={changeTiming}
+                    onUseTimingCandidate={useTimingCandidate}
+                    onConfirmTiming={confirmTiming}
                   />
                 );
               })}

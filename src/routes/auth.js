@@ -10,6 +10,7 @@ import {
 import { getWelcomeCreditMode, getWelcomeIdentityHashes, welcomeCreditStore } from '../services/welcome-credits.js';
 import { hashWelcomeIpRequest } from '../services/welcome-ip.js';
 import { holdShortGapsForLog } from '../services/log-subtitle-timing.js';
+import { validateSubtitleSegments } from '../services/subtitle-payload.js';
 
 const router = Router();
 const OAUTH_RETURN_PATHS = new Set(['/transcribe', '/settings', '/caption-ideas']);
@@ -360,6 +361,9 @@ router.put('/transcription/:id/segments', authMiddleware, async (req, res) => {
   if (!Array.isArray(segments) || segments.length === 0) {
     return res.status(400).json({ error: '저장할 자막이 없습니다.' });
   }
+
+  const segmentError = validateSubtitleSegments(segments);
+  if (segmentError) return res.status(400).json({ error: segmentError });
 
   const { data, error } = await supabaseAdmin.rpc('save_transcription_edits', {
     p_log_id: logId,

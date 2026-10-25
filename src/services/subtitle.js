@@ -1,6 +1,6 @@
 import { isKoreanDependentPredicateTail, splitKoreanSubtitleText } from './korean-subtitle.js';
 import { alignKoreanSegmentWithWordTimings } from './korean-word-timing.js';
-import { annotateSubtitleReviews, mergeSubtitleReviews, overlapTrimReview } from './subtitle-review.js';
+import { annotateSubtitleReviews, mergeSubtitleReviews, overlapTrimReview, retainManualSubtitleRange } from './subtitle-review.js';
 
 export const DEFAULT_SPEAKER_COLORS = [
   '#FFFFFF', // 0: 흰색
@@ -205,7 +205,8 @@ function prepareOrdinarySources(segments) {
       text: group.map((segment) => String(segment.text).replace(/\s+/g, ' ').trim()).join(' '),
       // Do not repair provider word-aligned text with a character-based estimate.
       sourceWords: group.some((segment) => Array.isArray(segment.sourceWords)) ? [] : undefined,
-      timingSource: group.some((segment) => segment.timingSource === 'word') ? 'word' : undefined,
+      timingSource: group.some((segment) => segment.timingSource === 'word') ? 'word'
+        : group.some((segment) => segment.timingSource === 'manual') ? 'manual' : undefined,
     });
     index = groupEnd;
   }
@@ -218,6 +219,7 @@ function prepareOrdinarySources(segments) {
     if (previous && gap >= 0 && gap <= 0.3 + 1e-9
       && !Array.isArray(previous.sourceWords) && !Array.isArray(segment.sourceWords)
       && previous.timingSource !== 'word' && segment.timingSource !== 'word'
+      && previous.timingSource !== 'manual' && segment.timingSource !== 'manual'
       && isKoreanDependentPredicateTail(previous.text, segment.text)) {
       previous.text = `${previous.text} ${segment.text}`;
       previous.end = segment.end;
@@ -237,7 +239,8 @@ function prepareOrdinarySources(segments) {
 
 export function buildSubtitleCues(segments, options = {}) {
   // Invalid sources must not clip valid speech, even before long-text splitting.
-  const usable = segments.filter((segment) => cleanText(segment.text) !== '' && segment.end > segment.start);
+  const usable = segments.map(retainManualSubtitleRange)
+    .filter((segment) => cleanText(segment.text) !== '' && segment.end > segment.start);
   const ordinary = usable.every(({ speaker }) => speaker === undefined || speaker === null || speaker === '');
   if (ordinary) {
     const cues = annotateSubtitleReviews(
