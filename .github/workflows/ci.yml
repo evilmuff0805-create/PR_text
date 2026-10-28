@@ -80,3 +80,4 @@ jobs:
           node scripts/validation/db-welcome-credit.cjs
           node scripts/validation/db-batches.cjs
           node scripts/validation/db-batches-backend.cjs
+          node scripts/validation/db-grammar-polish.cjs

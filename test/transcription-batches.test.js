@@ -6,7 +6,7 @@ import { createTranscriptionBatches, validateTranscriptionBatch } from '../src/s
 const checksum = (value) => createHash('sha256').update(value).digest('hex');
 function fixture(options = {}) {
   const owner = randomUUID(), id = randomUUID(), itemId = randomUUID(), opId = randomUUID();
-  const batch = { id, batchKey: randomUUID(), language: 'ko', status: 'uploading', items: [{ id: itemId, label: 'Track', status: 'awaiting_upload', operationId: opId }] };
+  const batch = { id, batchKey: randomUUID(), language: 'ko', polishMode: 'preserve', status: 'uploading', items: [{ id: itemId, label: 'Track', status: 'awaiting_upload', operationId: opId }] };
   const operation = { id: opId, status: 'staged', batch_id: id, batch_item_id: itemId, storage_manifest: [] };
   const calls = [], uploads = [], removals = [], aborted = [];
   let probeCalls = 0, enabled = options.enabled ?? true;
@@ -34,7 +34,7 @@ function fixture(options = {}) {
       if (options.rpcError === name) return { error: { code: options.errorCode, message: 'private database detail' } };
       if (name === 'get_transcription_batch') return { data: params.p_user_id === owner ? batch : null };
       if (name === 'list_transcription_batches') return { data: [batch] };
-      if (name === 'create_transcription_batch') return { data: id };
+      if (name === 'create_transcription_batch') { batch.polishMode = params.p_polish_mode || 'preserve'; return { data: id }; }
       if (name === 'stage_transcription_batch_item') {
         operation.payload_hash = params.p_payload_hash;
         return { data: [{ operation_id: opId, status: options.stageStatus || 'staged', already_staged: options.alreadyStaged || false }] };
@@ -90,6 +90,23 @@ test('batch fingerprint binds original order, label and language without modifyi
   const parameters = f.calls.find(call => call.name === 'create_transcription_batch').params;
   assert.equal(parameters.p_payload_hash, checksum(JSON.stringify({ language: f.payload.language, files: f.payload.files })));
   assert.deepEqual(parameters.p_items, f.payload.files);
+});
+
+test('grammar batch mode binds both the batch fingerprint and stored-source audio hash', async () => {
+  const legacy = fixture();
+  await legacy.service.create(legacy.payload);
+  const legacyRequest = legacy.calls.find(call => call.name === 'create_transcription_batch').params;
+  assert.equal(legacyRequest.p_payload_hash, checksum(JSON.stringify({ language: legacy.payload.language, files: legacy.payload.files })));
+  assert.equal(Object.hasOwn(legacyRequest, 'p_polish_mode'), false);
+
+  const f = fixture(); f.payload.polishMode = 'grammar';
+  await f.service.create(f.payload);
+  const create = f.calls.find(call => call.name === 'create_transcription_batch').params;
+  assert.equal(create.p_polish_mode, 'grammar');
+  assert.equal(create.p_payload_hash, checksum(JSON.stringify({ language: f.payload.language, polishMode: 'grammar', files: f.payload.files })));
+  await f.service.upload(f.audio);
+  const stage = f.calls.find(call => call.name === 'stage_transcription_batch_item').params;
+  assert.equal(stage.p_payload_hash, checksum(Buffer.concat([f.audio.buffer, Buffer.from('\nko\nordinary\ngrammar')])));
 });
 
 test('uploads retain every source byte including leading silence and bounded storage parts', async () => {

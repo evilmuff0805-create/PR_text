@@ -94,6 +94,16 @@ function summarizeCorrection(timings) {
   };
 }
 
+function summarizeGrammarPolish(timings) {
+  if (!timings) return undefined;
+  return {
+    calls: timings.calls,
+    model: timings.model,
+    usage: timings.usage,
+    wallMs: Number.isFinite(timings.wallMs) ? roundTiming(timings.wallMs) : undefined,
+  };
+}
+
 function completeTiming(req, res, outcome) {
   const timing = req.transcriptionTiming;
   if (!timing) return;
@@ -144,6 +154,7 @@ function completeTiming(req, res, outcome) {
     preconvertedM4a: timing.preconvertedM4a,
     parallelChunks: summarizeParallelChunks(timing.parallelChunkTimings),
     correction: summarizeCorrection(timing.correctionTimings),
+    grammarPolish: summarizeGrammarPolish(timing.grammarPolishTimings),
     timingMismatch: {
       detected: monotonicWallDeltaMs > 1_000 || stageNamesExceedingTotal.length > 0,
       monotonicWallDeltaMs: roundTiming(monotonicWallDeltaMs),
@@ -169,6 +180,8 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
 
     const { buffer, originalname } = req.file;
     const language = req.body.language || null;
+    const polishMode = req.body.polishMode === undefined ? 'preserve' : req.body.polishMode;
+    if (!['preserve', 'grammar'].includes(polishMode)) return res.status(400).json({ error: '문법 다듬기 옵션을 확인해 주세요.' });
     const diarize = req.body.diarize === 'true' || req.body.diarize === true;
     const probeStartedAt = performance.now();
     let durationSeconds = null;
@@ -226,6 +239,7 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
         buffer: queuedAudio.buffer,
         contentType: queuedAudio.contentType,
         language,
+        polishMode,
         durationSeconds,
         creditsNeeded,
       });
@@ -303,10 +317,13 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
     console.log(`[transcribe] 유저 ${req.user.email}: ${creditsNeeded}크레딧 차감 (${newCredits} 남음)`);
 
     // 한국어 맞춤법·띄어쓰기 교정 적용
-    const processedResult = await processTranscriptionSegments(result.segments, result.language);
+    const processedResult = polishMode === 'grammar'
+      ? await processTranscriptionSegments(result.segments, result.language, { polishMode: 'grammar' })
+      : await processTranscriptionSegments(result.segments, result.language);
     const processedSegments = processedResult.segments;
     req.transcriptionTiming.correctionTimings = processedResult.correctionTimings;
     req.transcriptionTiming.correctionMs = processedResult.correctionMs;
+    req.transcriptionTiming.grammarPolishTimings = processedResult.grammarPolish?.metrics;
 
     const processedText = joinSegmentText(processedSegments);
 
@@ -339,6 +356,7 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
       creditsUsed: creditsNeeded,
       creditsRemaining: newCredits,
       diarize,
+      ...(processedResult.grammarPolish ? { grammarPolish: processedResult.grammarPolish } : {}),
     });
   } catch (err) {
     console.error('[transcribe]', err.message);

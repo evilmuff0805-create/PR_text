@@ -140,6 +140,10 @@ test('summarizes diarization timings without treating nested persistence stages 
       wallMs: 100,
       chunks: [],
     },
+    grammarPolishTimings: {
+      model: 'gpt-6-luna', calls: 2, wallMs: 1_234,
+      usage: { promptTokens: 100, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 20, totalTokens: 120 },
+    },
     segmentCount: 12,
     language: 'ko',
     creditsRefunded: false,
@@ -148,6 +152,8 @@ test('summarizes diarization timings without treating nested persistence stages 
   assert.equal(timing.jobId, jobId);
   assert.equal(timing.attempt, 2);
   assert.equal(timing.storageDownloadMs, 80);
+  assert.equal(timing.grammarPolish.calls, 2);
+  assert.equal(timing.grammarPolish.usage.totalTokens, 120);
   assert.equal(timing.openaiMs, 500);
   assert.equal(timing.correction.estimatedCostUsd, 0.01234568);
   assert.equal(timing.timingMismatch.detected, false);

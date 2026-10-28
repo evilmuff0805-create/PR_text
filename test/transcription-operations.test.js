@@ -10,7 +10,7 @@ const { classifyOperationResponse, canSubmitOperation, readPendingOperation, pen
 const user='a8b1dc79-6f44-4a9d-9e7e-0c0f0f6a9de1', id='b8b1dc79-6f44-4a9d-9e7e-0c0f0f6a9de1';
 function fixture(options={}) {
   const buffer=Buffer.from('synthetic-audio');
-  const operation={id,user_id:user,status:'queued',filename:'fixture.wav',requested_language:'ko',byte_size:buffer.length,payload_hash:operationPayloadHash(buffer,'ko'),duration_seconds:120,credits_reserved:2,attempt_count:0,
+  const operation={id,user_id:user,status:'queued',filename:'fixture.wav',requested_language:'ko',polish_mode:options.polishMode||'preserve',byte_size:buffer.length,payload_hash:operationPayloadHash(buffer,'ko',options.polishMode||'preserve'),duration_seconds:120,credits_reserved:2,attempt_count:0,
     storage_manifest:[{path:`${user}/${id}/0000`,bytes:buffer.length,sha256:sha256(buffer)}]};
   const calls=[],removed=[],uploads=[],diagnosticUpdates=[];let providerCalls=0,finalizations=0,checkpointCalls=0;
   const bucket={upload:async(path,data)=>{uploads.push({path,data});return {}},download:async()=>({data:new Blob([buffer])}),list:async()=>({data:[{id:'object',name:'0000'}]}),remove:async paths=>{removed.push(...paths);return options.removeError?{error:Error('storage unavailable')}:{}}};
@@ -235,6 +235,12 @@ test('failure diagnostics are bounded even when provider arrays are unexpectedly
 });
 test('queue response loss retains deterministic audio parts for the successful request',async()=>{const f=fixture({queueResponseLost:true});await assert.rejects(()=>f.service.enqueue({userId:user,operationKey:id,buffer:f.buffer,filename:'fixture.wav',language:'ko'}));assert.equal(f.operation.status,'queued');assert.deepEqual(f.removed,[])});
 test('same accepted operation returns without uploading source again',async()=>{const f=fixture({enqueueExisting:true});await f.service.enqueue({userId:user,operationKey:id,buffer:f.buffer,filename:'fixture.wav',language:'ko'});assert.equal(f.uploads.length,0)});
+test('preserve operation hash remains byte-identical and grammar mode binds a distinct hash',()=>{
+  const buffer=Buffer.from('fixture');
+  assert.equal(operationPayloadHash(buffer,'ko'),sha256(Buffer.concat([buffer,Buffer.from('\nko\nordinary')])));
+  assert.equal(operationPayloadHash(buffer,'ko','preserve'),operationPayloadHash(buffer,'ko'));
+  assert.notEqual(operationPayloadHash(buffer,'ko','grammar'),operationPayloadHash(buffer,'ko'));
+});
 test('large source splits into bounded original-byte parts without reencoding',async()=>{const f=fixture();const buffer=Buffer.alloc(41*1024*1024,7);await f.service.enqueue({userId:user,operationKey:id,buffer,filename:'fixture.wav',language:'ko'});assert.equal(f.uploads.length,2);assert.equal(f.uploads[0].data.length,40*1024*1024);assert.deepEqual(Buffer.concat(f.uploads.map(p=>p.data)),buffer)});
 test('active cancellation aborts provider and cannot checkpoint or charge',async()=>{let entered;const ready=new Promise(r=>entered=r);const f=fixture({transcribe:async(b,n,l,{signal})=>{entered();return new Promise((r,reject)=>signal.addEventListener('abort',()=>reject(Error('aborted')),{once:true}))}});const work=f.service.processNext();await ready;await f.service.cancel(id,user);await work;assert.equal(f.operation.status,'cancelled');assert.equal(f.finalizations(),0);assert.ok(!f.calls.includes('checkpoint_transcription_operation'))});
 test('failed audio cleanup is not marked deleted and can be retried',async()=>{const f=fixture({removeError:true});f.operation.status='completed';await assert.rejects(()=>f.service.cleanAudio(f.operation));assert.equal(f.operation.audio_deleted_at,undefined);f.options.removeError=false;await f.service.cleanAudio(f.operation);assert.ok(f.operation.audio_deleted_at)});

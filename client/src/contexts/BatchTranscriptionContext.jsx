@@ -13,6 +13,7 @@ export function BatchTranscriptionProvider({ children }) {
   const [batches, setBatches] = useState([]);
   const [rows, setRows] = useState([]);
   const [language, setLanguage] = useState('');
+  const [polishMode, setPolishMode] = useState('preserve');
   const [localStates, setLocalStates] = useState({});
   const [loading, setLoading] = useState(false);
   const [creationPending, setCreationPending] = useState(false);
@@ -51,7 +52,8 @@ export function BatchTranscriptionProvider({ children }) {
     batchRef.current = next; setBatch(next); setRows(next.items || []); setCreationPending(false);
     setBatches((current) => [next, ...current.filter((item) => item.id !== next.id)]);
     const pending = readPendingBatch(localStorage, owner);
-    writePendingBatch(localStorage, owner, { ...(pending?.batchKey === next.batchKey ? pending : {}), id: next.id, batchKey: next.batchKey, language: next.language,
+    setPolishMode(next.polishMode || 'preserve');
+    writePendingBatch(localStorage, owner, { ...(pending?.batchKey === next.batchKey ? pending : {}), id: next.id, batchKey: next.batchKey, language: next.language, polishMode: next.polishMode || 'preserve',
       files: (next.items || []).map(({ clientId, filename, label }) => ({ clientId, filename, label })) });
     if (Number.isFinite(next.creditsRemaining)) updateCredits(next.creditsRemaining);
     return next;
@@ -82,7 +84,7 @@ export function BatchTranscriptionProvider({ children }) {
         const detail = await api(`/api/transcribe/batches/${restored}`, { signal: controller.signal });
         if (!controller.signal.aborted) applyBatch(detail.batch, owner);
       } else if (pending) {
-        setRows(pending.files); setLanguage(pending.language || ''); setCreationPending(true);
+        setRows(pending.files); setLanguage(pending.language || ''); setPolishMode(pending.polishMode || 'preserve'); setCreationPending(true);
         setNotice('접수 상태를 다시 확인해 주세요. 업로드하지 못한 파일만 다시 선택하면 됩니다.');
       }
     }).catch((requestError) => { if (!controller.signal.aborted && ownerRef.current === owner) setError(requestError.message); })
@@ -179,8 +181,8 @@ export function BatchTranscriptionProvider({ children }) {
       if (admissionsEnabled !== true && !creationPending) throw new Error('사람별 묶음 변환을 준비 중입니다. 기존 작업의 상태 확인과 다운로드는 계속 사용할 수 있습니다.');
       const validationError = validateBatchRows(rowsRef.current); if (validationError) throw new Error(validationError);
       const saved = readPendingBatch(localStorage, owner);
-      const payload = saved && !saved.id ? { batchKey: saved.batchKey, language: saved.language, files: saved.files }
-        : { batchKey: crypto.randomUUID(), language: language || null, files: rowsRef.current.map(({ clientId, filename, label }) => ({ clientId, filename, label: label.trim() })) };
+      const payload = saved && !saved.id ? { batchKey: saved.batchKey, language: saved.language, polishMode: saved.polishMode || 'preserve', files: saved.files }
+        : { batchKey: crypto.randomUUID(), language: language || null, polishMode, files: rowsRef.current.map(({ clientId, filename, label }) => ({ clientId, filename, label: label.trim() })) };
       writePendingBatch(localStorage, owner, payload);
       setCreationPending(true);
       try { const data = await api('/api/transcribe/batches', { method: 'POST', body: payload }); current = applyBatch(data.batch, owner); }
@@ -226,6 +228,7 @@ export function BatchTranscriptionProvider({ children }) {
     if (creationPending) { setError('먼저 접수 상태를 다시 확인해 주세요. 같은 접수 요청을 확인하여 중복 묶음을 만들지 않습니다.'); return; }
     if (batchRef.current && !BATCH_TERMINAL_STATUSES.has(batchRef.current.status)) { setError('접수된 묶음을 먼저 완료하거나 취소해 주세요.'); return; }
     batchRef.current = null; rowsRef.current = []; filesRef.current.clear(); setBatch(null); setRows([]); setLocalStates({}); setError(''); setNotice('');
+    setPolishMode('preserve');
     if (user?.id) { try { localStorage.removeItem(pendingBatchKey(user.id)); } catch { /* History is stored on the server. */ } }
   };
   const registerEditor = useCallback((logId, flush) => { if (flush) editorFlushesRef.current.set(logId, flush); else editorFlushesRef.current.delete(logId); }, []);
@@ -248,7 +251,7 @@ export function BatchTranscriptionProvider({ children }) {
     setNotice(`완료된 ${counts.completed}개 파일의 최신 편집본을 ZIP으로 내려받았습니다. 나머지 파일은 포함되지 않습니다.`);
   });
 
-  return <BatchContext.Provider value={{ batch, batches, rows, language, setLanguage, localStates, loading, creationPending, admissionsEnabled, busy, error, notice, api,
+  return <BatchContext.Provider value={{ batch, batches, rows, language, setLanguage, polishMode, setPolishMode, localStates, loading, creationPending, admissionsEnabled, busy, error, notice, api,
     addFiles, changeLabel, moveRow, removeRow, selectReplacement, stageFiles, start, retryItem, cancel, refresh, beginNew, loadBatch,
     registerEditor, flushEditors, downloadZip, clearError, hasFile: (clientId) => filesRef.current.has(clientId) }}>{children}</BatchContext.Provider>;
 }

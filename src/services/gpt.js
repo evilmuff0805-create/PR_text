@@ -108,6 +108,30 @@ export async function correctTextWithUsage(text, language, options = {}) {
   }
 }
 
+export async function polishKoreanGrammarLines(lines, { signal } = {}) {
+  const model = getCorrectionModel();
+  const request = {
+    model,
+    ...(LUNA_CORRECTION_MODELS.has(model) ? { reasoning_effort: 'medium' } : { temperature: 0.3 }),
+    response_format: { type: 'json_object' },
+    messages: [
+      {
+        role: 'system',
+        content: '입력은 맞춤법 교정이 끝난 한국어 자막 줄의 JSON 배열입니다. 각 줄을 문법상 꼭 필요한 조사만 최소한으로 다듬으세요. 의미, 부정, 숫자, 고유명사, 반복, 구어체와 말투를 보존하고 문장을 재작성하지 마세요. 바꿀 이유가 분명하지 않으면 원문 그대로 두세요. 배열의 길이와 순서를 유지하고 JSON 객체 {"lines":[문자열,...]}만 출력하세요.',
+      },
+      { role: 'user', content: JSON.stringify({ lines }) },
+    ],
+  };
+  const response = await openai.chat.completions.create({
+    ...request,
+  }, { signal, maxRetries: 0 });
+  const content = response.choices?.[0]?.message?.content;
+  if (typeof content !== 'string' || !content.trim()) throw new Error('문법 다듬기 결과가 비어 있습니다.');
+  const parsed = JSON.parse(content);
+  if (!Array.isArray(parsed?.lines)) throw new Error('문법 다듬기 결과 형식이 올바르지 않습니다.');
+  return { lines: parsed.lines, model, usage: normalizeTokenUsage(response.usage) };
+}
+
 export async function translateToEnglish(text) {
   try {
     const response = await withRetry(() => openai.chat.completions.create({

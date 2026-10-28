@@ -10,7 +10,7 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 export const isTranscriptionOperationId = (value) => typeof value === 'string' && UUID.test(value);
 export const isOperationKey = isTranscriptionOperationId;
 export const sha256 = (value) => createHash('sha256').update(value).digest('hex');
-export const operationPayloadHash = (buffer, language) => createHash('sha256').update(buffer).update(`\n${language || ''}\nordinary`).digest('hex');
+export const operationPayloadHash = (buffer, language, polishMode = 'preserve') => createHash('sha256').update(buffer).update(polishMode === 'grammar' ? `\n${language || ''}\nordinary\ngrammar` : `\n${language || ''}\nordinary`).digest('hex');
 const terminal = (status) => ['completed', 'failed', 'cancelled'].includes(status);
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const MAX_FAILURE_DIAGNOSTIC_BYTES = 32 * 1024;
@@ -186,6 +186,7 @@ export function createTranscriptionOperations({
     if (!operation) return null;
     return {
       id: operation.id, status: operation.status, createdAt: operation.created_at,
+      polishMode: operation.polish_mode || 'preserve',
       creditsUsed: operation.credits_reserved, creditsRemaining: await credits(userId), creditsRestored: operation.credits_restored,
       error: terminal(operation.status) ? operation.error_message : undefined,
       ...(operation.status === 'completed' ? { text: operation.result_text, segments: operation.result_segments,
@@ -197,7 +198,8 @@ export function createTranscriptionOperations({
     if (error) throw error;
     return data ? getForUser(data.id, userId) : null;
   }
-  async function enqueue({ userId, operationKey, buffer, filename, contentType, language }) {
+  async function enqueue({ userId, operationKey, buffer, filename, contentType, language, polishMode = 'preserve' }) {
+    if (!['preserve', 'grammar'].includes(polishMode)) throw Object.assign(new Error('문법 다듬기 옵션을 확인해주세요.'), { status: 400 });
     if (!isOperationKey(operationKey)) throw Object.assign(new Error('유효하지 않은 작업 키입니다.'), { status: 400 });
     if (process.env.TRANSCRIPTION_OPERATIONS_ENABLED !== 'true' && !await getByKey(operationKey, userId)) {
       throw Object.assign(new Error('기존 변환 방식으로 진행합니다.'), { code: 'LEGACY_MODE' });
@@ -205,11 +207,13 @@ export function createTranscriptionOperations({
     let duration;
     try { duration = await probe(buffer, filename); } catch { /* Keep existing unsupported-probe format handling. */ }
     if (!Number.isFinite(duration) || duration <= 0) throw Object.assign(new Error('파일 길이를 확인하지 못했습니다.'), { code: 'DURATION_UNKNOWN' });
-    const created = (await rpc('create_transcription_operation', {
-      p_user_id: userId, p_operation_key: operationKey, p_payload_hash: operationPayloadHash(buffer, language),
+    const createParams = {
+      p_user_id: userId, p_operation_key: operationKey, p_payload_hash: operationPayloadHash(buffer, language, polishMode),
       p_filename: filename, p_content_type: contentType || null, p_byte_size: buffer.length,
       p_requested_language: language || null, p_duration_seconds: duration,
-    }))?.[0];
+    };
+    if (polishMode === 'grammar') createParams.p_polish_mode = polishMode;
+    const created = (await rpc('create_transcription_operation', createParams))?.[0];
     if (!created) throw new Error('변환 접수 결과를 확인하지 못했습니다.');
     if (created.status !== 'staged') return { operationId: created.operation_id, status: created.status, creditsRemaining: created.credits_remaining, existing: true };
     const manifest = [];
@@ -259,7 +263,7 @@ export function createTranscriptionOperations({
       partBuffer.copy(buffer, offset);
       offset += partBuffer.length;
     }
-    if (offset !== buffer.length || buffer.length !== Number(operation.byte_size) || operationPayloadHash(buffer, operation.requested_language) !== operation.payload_hash) throw new Error('원본 전체 검증에 실패했습니다.');
+    if (offset !== buffer.length || buffer.length !== Number(operation.byte_size) || operationPayloadHash(buffer, operation.requested_language, operation.polish_mode || 'preserve') !== operation.payload_hash) throw new Error('원본 전체 검증에 실패했습니다.');
     return buffer;
   }
   async function release(context, delaySeconds = 0) {
@@ -313,14 +317,18 @@ export function createTranscriptionOperations({
         context.controller.signal.throwIfAborted();
         const raw = await transcribeAudio(buffer, operation.filename, operation.requested_language, { durationSeconds: Number(operation.duration_seconds), signal: context.controller.signal });
         context.controller.signal.throwIfAborted();
-        const processed = await processSegments(raw.segments, raw.language);
+        const processed = operation.polish_mode === 'grammar'
+          ? await processSegments(raw.segments, raw.language, { polishMode: 'grammar', signal: context.controller.signal })
+          : await processSegments(raw.segments, raw.language);
         context.controller.signal.throwIfAborted();
         providerFinished = true;
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
             checkpoint = await rpc('checkpoint_transcription_operation', { p_operation_id: operation.id, p_worker_token: context.workerToken,
               p_text: joinSegmentText(processed.segments), p_segments: processed.segments, p_language: normalizeLanguage(raw.language),
-              p_timings: { provider: raw.timings, correction: processed.correctionTimings, elapsedMs: Date.now() - started } });
+              p_timings: { provider: raw.timings, correction: processed.correctionTimings,
+                ...(processed.grammarPolish?.metrics ? { grammarPolish: processed.grammarPolish.metrics } : {}),
+                elapsedMs: Date.now() - started } });
             if (checkpoint) break;
             const current = await row(operation.id);
             if (current?.worker_token !== context.workerToken || terminal(current?.status)) return;

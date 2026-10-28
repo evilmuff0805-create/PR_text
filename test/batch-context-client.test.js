@@ -35,6 +35,7 @@ async function hookFixture({ file = 'client/src/contexts/BatchTranscriptionConte
   const element = (type, props) => ({ type, props: props || {} });
   const deps = { react, 'react/jsx-runtime': { jsx: element, jsxs: element, Fragment: 'Fragment' }, './AuthContext.jsx': { useAuth: () => auth }, '../contexts/AuthContext.jsx': { useAuth: () => auth },
     'react-router-dom': { useLocation: () => ({ search: '', state: null }), useNavigate: () => () => {} },
+    '../utils/transcription-operation.js': { readPendingOperation: () => null },
     '../utils/batch-transcription.js': { ...batchUtils, createBatchApi: (options) => batchUtils.createBatchApi({ ...options, fetchImpl }) },
     '../utils/result-drafts.js': drafts, '../utils/subtitle-review.js': subtitleReview, '../utils/upload-validation.js': uploadValidation, '../utils/wav-optimization.js': { optimizeLargeWavForUpload: async (file) => ({ file }) },
     '../utils/caption-ideas.js': captionIdeas, '../utils/format-segment-time.js': { formatSegmentTime }, ...dependencies };
@@ -93,6 +94,17 @@ test('batch admission preserves the single flow on a missing API and prevents ne
     assert.ok(home.nodes().some(({ type, props }) => type === 'input' && props.type === 'file'));
     assert.ok(home.nodes().some(({ type, props }) => type === 'h1' && props.children === '새 자막 만들기'));
   }
+});
+
+test('starting a new batch resets grammar polish to the default preserve mode', async () => {
+  const page = await hookFixture({ fetchImpl: batchServer().fetchImpl });
+  page.state.setPolishMode('grammar');
+  await page.settle();
+  assert.equal(page.state.polishMode, 'grammar');
+
+  page.state.beginNew();
+  await page.settle();
+  assert.equal(page.state.polishMode, 'preserve');
 });
 
 test('five files preserve explicit order and labels, stage sequentially, and never start without a second click', async () => {

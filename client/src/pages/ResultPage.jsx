@@ -411,7 +411,14 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
     diarize = false,
     transcriptionLogId = null,
     holdShortGaps = true,
+    grammarPolish = null,
   } = resolved || {};
+  const polishRows = Array.isArray(segments) ? segments.filter((segment) => segment.grammarPolish) : [];
+  const grammarPolishSummary = grammarPolish || (polishRows.length ? {
+    applied: polishRows.filter((segment) => segment.grammarPolish.status === 'applied').length,
+    unavailable: polishRows.some((segment) => ['timeout', 'invalid_response', 'timeline_fallback'].includes(segment.grammarPolish.status)),
+    limited: polishRows.some((segment) => segment.grammarPolish.status === 'limit'),
+  } : null);
   const resultSourceRef = useRef(null);
   resultSourceRef.current = { ownerId: user?.id, logId: transcriptionLogId, resolved, resultOverride, path: `${pathname}${search}${hash}` };
 
@@ -1036,6 +1043,7 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
           <dd>{hasSpeakers ? `${speakerIds.length}명` : diarize ? '분석됨' : '단일'}</dd>
         </div>
       </dl>
+      {grammarPolishSummary && <p className="batch-note" role="status">문법 다듬기: {grammarPolishSummary.applied || 0}개 줄에 적용했습니다. 나머지는 원래 맞춤법 교정 결과를 유지했습니다. {grammarPolishSummary.limited ? '파일당 120개 줄·3,360자·60초 한도를 넘은 줄은 건너뛰었습니다. ' : ''}지원하는 범위는 받침 규칙에 맞는 한국어 조사 형태 수정이며 문장 전체 재작성을 보장하지 않습니다. 모든 의미를 자동 판별하지 않고 단어별 타임코드 정렬도 보장하지 않습니다.{grammarPolishSummary.unavailable ? ' 처리 오류 또는 내보내기 구간 검증 실패로 일부 결과를 적용하지 않았습니다.' : ''}</p>}
 
       {hasSpeakers && (
         <section className="speaker-palette" aria-labelledby="speaker-palette-title">
