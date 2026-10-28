@@ -916,7 +916,10 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
         },
         body: JSON.stringify(body),
       });
-      if (!res.ok) throw new Error('다운로드 실패');
+      if (!res.ok) {
+        const data = await res.json().catch(() => null);
+        throw new Error(data?.error || '다운로드 실패');
+      }
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -1221,7 +1224,7 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
               {DOWNLOAD_FORMATS.map((format) => (
                 <button
                   className={format.id === 'ass' && showAssPanel ? 'export-option is-active' : 'export-option'}
-                  disabled={downloading || lineCountMismatch}
+                  disabled={downloading || lineCountMismatch || (format.id === 'srt' && !editedSegments.some(segment => segment.text?.replace(/\./g, '').trim() && segment.end > segment.start))}
                   key={format.id}
                   onClick={() => handleDownload(format.id)}
                   type="button"
@@ -1238,7 +1241,8 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
               ))}
             </div>
 
-            <p className="result-tool-note">SRT에는 첫 0~2초 시작 안내 자막이 포함됩니다. 글자 크기는 편집 프로그램에 따라 달라질 수 있습니다.</p>
+            <p className="result-tool-note">SRT에는 인식된 대사만 포함되며 첫 대사의 타임코드와 원문을 유지합니다. 글자 크기는 편집 프로그램에 따라 달라질 수 있습니다.</p>
+            {!editedSegments.some(segment => segment.text?.replace(/\./g, '').trim() && segment.end > segment.start) && <p className="result-tool-note" role="status">인식된 대사가 없어 SRT를 만들 수 없습니다. 원본을 확인해 주세요.</p>}
             <p className="result-tool-note">SRT는 밀리초 타임코드로 저장됩니다. 프리미어 시퀀스의 프레임레이트를 원본 영상과 맞춰 주세요.</p>
             {hasSpeakers && (
               <p className="result-tool-note">화자 색상은 SRT와 ASS에 포함됩니다.</p>

@@ -41,7 +41,7 @@ function validateAssOptions(assOptions) {
 }
 
 export function validateDownloadPayload({ segments, format, assOptions, speakerColors, holdShortGaps }) {
-  const segmentError = validateSubtitleSegments(segments);
+  const segmentError = validateSubtitleSegments(segments, { allowEmpty: format === 'srt' });
   if (segmentError) return segmentError;
 
   const supportedFormats = ['srt', 'txt', 'ass'];
@@ -86,6 +86,7 @@ router.post('/', authMiddleware, (req, res) => {
     let content;
     if (format === 'srt') {
       content = generateSRT(segments, colors, { holdShortGaps });
+      if (!content) return res.status(422).json({ error: '인식된 대사가 없어 SRT를 만들 수 없습니다. 원본을 확인해 주세요.' });
     } else if (format === 'txt') {
       content = generateTXT(segments);
     } else if (format === 'ass') {

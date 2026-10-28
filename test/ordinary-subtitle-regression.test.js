@@ -9,7 +9,7 @@ function seconds(value) {
 
 function readCues(format, segments, options = {}) {
   if (format === 'srt') {
-    return generateSRT(segments, null, options).split('\n\n').slice(1).filter(Boolean).map((block) => {
+    return generateSRT(segments, null, options).split('\n\n').filter(Boolean).map((block) => {
       const [, range, text] = block.split('\n');
       const [start, end] = range.split(' --> ').map(seconds);
       return { start, end, text };
@@ -293,11 +293,11 @@ test('unsorted and equal-start sources use existing normalization before display
   assert.deepEqual(input, before);
 });
 
-test('the two-second start marker stays separate from ordinary dialogue continuity', () => {
+test('first dialogue is preserved without a synthetic start marker', () => {
   const input = [{ start: 0, end: 0.2, text: '첫 응답' }, { start: 1, end: 1.5, text: '다음 응답' }];
   const srt = generateSRT(input);
-  assert.match(srt, /^1\n00:00:00,000 --> 00:00:02,000\n/);
-  assert.equal(srt.split('0~2초 자막 시작 구간입니다!').length - 1, 1);
+  assert.match(srt, /^1\n00:00:00,000 --> 00:00:01,000\n첫 응답/);
+  assert.doesNotMatch(srt, /0~2초 자막 시작 구간입니다!/);
   assert.deepEqual(readCues('srt', input), [{ start: 0, end: 1, text: '첫 응답' }, { start: 1, end: 1.5, text: '다음 응답' }]);
   assert.deepEqual(readCues('ass', input), readCues('srt', input));
   assert.doesNotMatch(generateASS(input), /0~2초 자막 시작 구간입니다!/);

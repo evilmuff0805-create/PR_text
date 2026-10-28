@@ -69,7 +69,12 @@ export default function RedownloadPage() {
       const data = await response.json();
       const segments = data.segments;
       if (!segments || segments.length === 0) {
-        throw new Error('저장된 세그먼트 데이터가 없습니다.');
+        throw new Error(format === 'srt'
+          ? '인식된 대사가 없어 자막 파일을 만들 수 없습니다. 원본을 확인해 주세요.'
+          : '저장된 세그먼트 데이터가 없습니다.');
+      }
+      if (format === 'srt' && !segments.some(segment => segment.text?.replace(/\./g, '').trim() && segment.end > segment.start)) {
+        throw new Error('인식된 대사가 없어 자막 파일을 만들 수 없습니다. 원본을 확인해 주세요.');
       }
 
       const downloadResponse = await fetch('/api/download', {
@@ -80,7 +85,10 @@ export default function RedownloadPage() {
         },
         body: JSON.stringify({ segments, format, holdShortGaps: data.holdShortGaps !== false }),
       });
-      if (!downloadResponse.ok) throw new Error('다운로드 실패');
+      if (!downloadResponse.ok) {
+        const error = await downloadResponse.json().catch(() => null);
+        throw new Error(error?.error || '다운로드 실패');
+      }
       const blob = await downloadResponse.blob();
       const url = URL.createObjectURL(blob);
       const anchor = document.createElement('a');
@@ -104,7 +112,7 @@ export default function RedownloadPage() {
         <p className="workspace-kicker">TRANSCRIPTION ARCHIVE</p>
         <h1 className="workspace-title">변환_재다운로드</h1>
         <p className="workspace-description">
-          완료된 변환 기록을 확인하고 자막 파일을 다시 다운로드합니다. SRT에는 첫 0~2초 시작 안내 자막이 포함됩니다.
+          완료된 변환 기록을 확인하고 자막 파일을 다시 다운로드합니다. SRT는 실제 인식된 대사로 시작하며 타임코드와 원문을 유지합니다.
         </p>
         <p className="result-tool-note">SRT는 밀리초 타임코드로 저장됩니다. 프리미어 시퀀스의 프레임레이트를 원본 영상과 맞춰 주세요.</p>
       </header>

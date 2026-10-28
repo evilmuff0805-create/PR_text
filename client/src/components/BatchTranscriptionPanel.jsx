@@ -8,7 +8,7 @@ import { formatSegmentTime } from '../utils/format-segment-time.js';
 const STATUS_LABELS = { awaiting_upload: '파일 접수 필요', ready: '접수 완료', queued: '변환 대기', running: '변환 중', finalizing: '결과 저장 중', completed: '완료', failed: '실패', cancelled: '취소됨' };
 
 export function BatchImportNotice() {
-  return <p className="batch-note">모든 SRT를 Premiere Pro의 서로 다른 자막 트랙에 같은 0초 위치로 직접 가져오세요. 각 파일의 첫 0~2초 시작 안내가 겹쳐 보일 수 있습니다. 편집 시 안내 자막만 삭제하고, 실제 첫 0~2초 대사는 유지해 주세요.</p>;
+  return <p className="batch-note">ZIP에는 인식된 대사가 있는 변환의 SRT만 포함됩니다. 대사가 없는 완료 건은 전사 완료 건수에는 포함되지만 SRT 파일은 제외되며, ZIP 사용안내에서 건수를 확인할 수 있습니다.</p>;
 }
 
 export default function BatchTranscriptionPanel({ onLogin }) {
@@ -52,7 +52,7 @@ export default function BatchTranscriptionPanel({ onLogin }) {
             {row.status === 'completed' && row.transcriptionLogId && <button type="button" className="button button--secondary" disabled={Boolean(state.busy)} onClick={() => navigate(`/result?batch=${state.batch.id}&track=${row.id}`)}>결과 편집</button>}
           </div>
           {(row.error || (local?.message && row.status === 'awaiting_upload')) && <p className="batch-alert batch-alert--error" role="alert">{row.error || local.message}</p>}
-          {(row.recognitionStatus === 'no_speech' || row.needsReview) && <p className="batch-alert" role="status">인식된 대사 없음 · 검토 필요. 작은 목소리가 없었다는 뜻은 아닙니다. ZIP에는 첫 0~2초 시작 안내만 있는 SRT가 포함됩니다.</p>}
+          {(row.recognitionStatus === 'no_speech' || row.needsReview) && <p className="batch-alert" role="status">인식된 대사 없음 · 검토 필요. 작은 목소리가 없었다는 뜻은 아닙니다. 이 완료 건의 SRT는 ZIP에서 제외됩니다.</p>}
         </li>;
       })}</ol>
       <div className="card batch-card">
@@ -66,7 +66,7 @@ export default function BatchTranscriptionPanel({ onLogin }) {
           {state.batch?.canStart && <button type="button" className="button button--primary" disabled={Boolean(state.busy) || insufficient} onClick={state.start}>총 {state.batch.totalCredits}분 확인 · 변환 시작</button>}
           {state.batch && <button type="button" className="button button--secondary" disabled={Boolean(state.busy)} onClick={() => state.refresh()}>작업 상태 다시 확인</button>}
           {state.batch && !BATCH_TERMINAL_STATUSES.has(state.batch.status) && <button type="button" className="button button--secondary" disabled={Boolean(state.busy)} onClick={() => { if (window.confirm('미완료 파일의 작업을 취소할까요? 완료된 결과는 유지됩니다.')) state.cancel(); }}>미완료 작업 취소</button>}
-          {counts.completed > 0 && <button type="button" className="button button--primary" disabled={Boolean(state.busy)} onClick={() => state.downloadZip()}>{state.busy === 'archive' ? '편집 저장 · ZIP 생성 중…' : `완료된 ${counts.completed}개 SRT ZIP 다운로드`}</button>}
+          {counts.completed > 0 && <button type="button" className="button button--primary" disabled={Boolean(state.busy)} onClick={() => state.downloadZip()}>{state.busy === 'archive' ? '편집 저장 · ZIP 생성 중…' : `전사 완료 ${counts.completed}개 ZIP 다운로드`}</button>}
           {(!state.batch || BATCH_TERMINAL_STATUSES.has(state.batch.status)) && state.rows.length > 0 && <button type="button" className="button button--secondary" disabled={Boolean(state.busy)} onClick={() => { state.beginNew(); navigate('/transcribe?mode=batch', { replace: true }); }}>새 묶음 만들기</button>}
         </div>
         {insufficient && <p role="alert">변환 가능 시간이 부족합니다. 접수된 파일은 유지됩니다. <Link to="/payment">변환 시간 충전</Link></p>}

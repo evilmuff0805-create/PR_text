@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createBatchSrtArchive, batchSrtFilename } from '../src/services/batch-archive.js';
 import { validateSubtitleSegments } from '../src/services/subtitle-payload.js';
-import { SRT_START_MARKER_TEXT, generateSRT } from '../src/services/subtitle.js';
+import { generateSRT } from '../src/services/subtitle.js';
 
 // Inspect the central directory, then follow each independent local offset.
 // QA also opens the resulting archives with Python's standard zipfile reader.
@@ -55,17 +55,16 @@ test('batch ZIP keeps independent millisecond timelines, silence and simultaneou
   const files = unzipStored(archive.buffer);
   assert.deepEqual(archive.entries, ['01_첫 번째 인물.srt', '02_두 번째 인물.srt', '사용안내.txt']);
   assert.equal(archive.completedCount, 2);
+  assert.equal(archive.includedSrtCount, 2);
   assert.equal(files.get(archive.entries[0]), generateSRT(first.segments));
   assert.equal(files.get(archive.entries[1]), generateSRT(second.segments));
   assert.match(files.get(archive.entries[0]), /00:00:00,250 --> 00:00:00,400/);
   assert.match(files.get(archive.entries[0]), /00:02:03,456 --> 00:02:03,678/);
   assert.match(files.get(archive.entries[0]), /02:00:01,013 --> 02:00:01,191/);
   assert.match(files.get(archive.entries[1]), /00:02:03,457 --> 00:02:04,012/);
-  for (const name of archive.entries.slice(0, -1)) {
-    assert.equal(files.get(name).split(SRT_START_MARKER_TEXT).length - 1, 1);
-    assert.match(files.get(name), /^1\n00:00:00,000 --> 00:00:02,000\n<font size="48"><b>/);
-  }
-  assert.match(files.get('사용안내.txt'), /시작 안내 클립만 삭제/);
+  for (const name of archive.entries.slice(0, -1)) assert.match(files.get(name), /^1\n/);
+  assert.doesNotMatch(files.get('사용안내.txt'), /시작 안내 클립/);
+  assert.match(files.get('사용안내.txt'), /대사가 있는 SRT 2개/);
   assert.match(files.get('사용안내.txt'), /동시 발화/);
   assert.deepEqual([first, second], original);
 });
@@ -76,18 +75,33 @@ test('partial export requires explicit confirmation and names retain original or
   const archive = createBatchSrtArchive({ items, allowPartial: true });
   const files = unzipStored(archive.buffer);
   assert.deepEqual(archive.entries, ['01_가.srt', '03_다.srt', '사용안내.txt']);
-  assert.match(files.get('사용안내.txt'), /전체 3개 중 완료된 2개/);
+  assert.match(files.get('사용안내.txt'), /전사 완료 2건 중 대사가 있는 SRT 2개/);
   assert.match(files.get('사용안내.txt'), /02\. 실패 인물: 실패/);
   assert.equal(archive.completedCount, 2);
 });
 
-test('empty recognition remains a marker-only SRT with an explicit review warning', () => {
-  const files = unzipStored(createBatchSrtArchive({ items: [item('조용한 인물', [])] }).buffer);
-  assert.equal(files.get('01_조용한 인물.srt'), generateSRT([]));
+test('empty recognition is omitted from ZIP SRT files and clearly counted', () => {
+  const archive = createBatchSrtArchive({ items: [item('조용한 인물', [])] });
+  const files = unzipStored(archive.buffer);
+  assert.deepEqual(archive.entries, ['사용안내.txt']);
+  assert.equal(archive.completedCount, 1);
+  assert.equal(archive.includedSrtCount, 0);
+  assert.equal(generateSRT([]), '');
+  assert.match(files.get('사용안내.txt'), /전사 완료 1건 중 대사가 있는 SRT 0개/);
   assert.match(files.get('사용안내.txt'), /인식된 대사 없음 · 검토 필요/);
   assert.match(files.get('사용안내.txt'), /실제 무음을 뜻하지 않습니다/);
   assert.match(validateSubtitleSegments([]), /segments/);
   assert.equal(validateSubtitleSegments([], { allowEmpty: true }), null);
+});
+
+test('mixed batch ZIP counts completed transcriptions separately from actual SRT files', () => {
+  const archive = createBatchSrtArchive({ items: [item('말한 인물'), item('조용한 인물', [])] });
+  const files = unzipStored(archive.buffer);
+  assert.deepEqual(archive.entries, ['01_말한 인물.srt', '사용안내.txt']);
+  assert.equal(archive.completedCount, 2);
+  assert.equal(archive.includedSrtCount, 1);
+  assert.match(files.get('사용안내.txt'), /전사 완료 2건 중 대사가 있는 SRT 1개/);
+  assert.match(files.get('사용안내.txt'), /02\. 조용한 인물: 인식된 대사 없음 · 검토 필요 \(SRT 제외\)/);
 });
 
 test('unsafe labels cannot escape the ZIP or collide and UTF-8 names remain bounded', () => {

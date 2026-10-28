@@ -12,7 +12,6 @@ export const DEFAULT_SPEAKER_COLORS = [
 ];
 
 export const SUBTITLE_MAX_CHARS = 28;
-export const SRT_START_MARKER_TEXT = '0~2초 자막 시작 구간입니다!';
 
 // ASS 기준 해상도. Fontsize와 여백은 이 좌표계의 픽셀로 해석된다.
 export const ASS_PLAY_RES_X = 1920;
@@ -249,7 +248,7 @@ export function buildSubtitleCues(segments, options = {}) {
     if (options?.holdShortGaps === false) return cues;
     // Export-only display continuity: preserve source/word times and splitting,
     // then hold the preceding dialogue through at most one second of silence.
-    // The SRT start marker is added separately and never enters this policy.
+    // Keep export-only display continuity limited to recognized dialogue cues.
     return cues.map((cue, index) => {
       const next = cues[index + 1];
       const gap = next ? next.start - cue.end : Infinity;
@@ -297,19 +296,17 @@ function formatASS(seconds, isStart = false, minimumStart = null) {
 }
 
 export function generateSRT(segments, speakerColors = null, options = {}) {
-  // Keep the marker outside dialogue normalization: trimming overlaps would erase
-  // either the two-second marker or speech at the start of the original audio.
-  const marker = `1\n${formatSRT(0)} --> ${formatSRT(2)}\n<font size="48"><b>${SRT_START_MARKER_TEXT}</b></font>`;
   const split = buildSubtitleCues(segments ?? [], options);
+  if (split.length === 0) return '';
   const dialogue = split.map((seg, i) => {
     let line = seg.text;
     if (speakerColors && seg.speaker !== undefined) {
       const color = speakerColors[String(seg.speaker)] ?? '#FFFFFF';
       line = `<font color="${color}">${line}</font>`;
     }
-    return `${i + 2}\n${formatSRT(seg.start, true)} --> ${formatSRT(seg.end, seg.holdEndAtNextStart === true, seg.start)}\n${line}`;
+    return `${i + 1}\n${formatSRT(seg.start, true)} --> ${formatSRT(seg.end, seg.holdEndAtNextStart === true, seg.start)}\n${line}`;
   });
-  return [marker, ...dialogue].join('\n\n');
+  return dialogue.join('\n\n');
 }
 
 export function generateTXT(segments) {

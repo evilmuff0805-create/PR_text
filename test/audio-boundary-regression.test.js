@@ -353,7 +353,7 @@ function timestamp(text) {
   ), 0);
 }
 function srtCues(text) {
-  return text.trim().split(/\n\n/).slice(1).map(block => {
+  return text.trim().split(/\n\n/).filter(Boolean).map(block => {
     const lines = block.split('\n'), [start, end] = lines[1].split(' --> ');
     return { start: timestamp(start), end: timestamp(end), text: lines.slice(2).join(' ') };
   });
