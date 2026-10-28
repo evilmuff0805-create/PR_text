@@ -70,6 +70,7 @@ test('QA ZIP native CRC and UTF-8 directory roundtrip includes a surrogate cutof
   const archive = createBatchSrtArchive({ items: labels.map(label => completed(label, [])) });
   const contents = readArchive(archive.buffer);
   assert.deepEqual([...contents.keys()], archive.entries);
+  assert.deepEqual(archive.entries, ['사용안내.txt']);
   for (const name of contents.keys()) {
     assert.equal(name, name.normalize('NFC'));
     assert.ok(!/[\\/:*?"<>|\u0000-\u001f\u007f-\u009f\u202a-\u202e\u2066-\u2069]/.test(name));
@@ -94,22 +95,19 @@ test('QA independent SRT clocks ceil starts and preserve cross-file overlap, pau
   const contents = readArchive(archive.buffer);
   for (const [index, segments] of [first, second].entries()) {
     const cues = readSrt(contents.get(archive.entries[index]));
-    assert.equal(cues[0].start, 0);
-    assert.equal(cues[0].end, 2000);
-    assert.equal(cues.filter(cue => cue.text.includes('0~2초 자막 시작 구간입니다!')).length, 1);
-    assert.deepEqual(cues.slice(1), segments.map(segment => ({
+    assert.deepEqual(cues, segments.map(segment => ({
       start: Math.ceil(segment.start * 1000), end: Math.round(segment.end * 1000), text: segment.text,
     })));
     for (const [cueIndex, segment] of segments.entries()) {
-      const cue = cues[cueIndex + 1];
+      const cue = cues[cueIndex];
       const rawStartMs = segment.start * 1000;
       assert.ok(cue.start >= rawStartMs, 'serialized start must never precede its raw start');
       assert.ok(cue.start - rawStartMs < 1, 'start ceiling may delay less than one millisecond');
       assert.equal(cue.end, Math.round(segment.end * 1000), 'end keeps nearest-millisecond precision');
     }
   }
-  const firstDialogue = readSrt(contents.get(archive.entries[0]))[2];
-  const secondDialogue = readSrt(contents.get(archive.entries[1]))[1];
+  const firstDialogue = readSrt(contents.get(archive.entries[0]))[1];
+  const secondDialogue = readSrt(contents.get(archive.entries[1]))[0];
   assert.ok(Math.max(firstDialogue.start, secondDialogue.start) < Math.min(firstDialogue.end, secondDialogue.end),
     'simultaneous speech must remain overlapping across separate files');
   assert.deepEqual([first, second], before);
@@ -126,8 +124,8 @@ test('QA per-file 5000-row compact alignment expands without a shared bundle row
   const contents = readArchive(archive.buffer);
   for (const name of archive.entries.filter(name => name.endsWith('.srt'))) {
     const cues = readSrt(contents.get(name));
-    assert.equal(cues.length, 10001);
-    assert.deepEqual(cues[1], { start: 30000, end: 30200, text: '네' });
+    assert.equal(cues.length, 10000);
+    assert.deepEqual(cues[0], { start: 30000, end: 30200, text: '네' });
     assert.deepEqual(cues.at(-1), { start: 10029100, end: 10029300, text: '다음' });
   }
 });
@@ -139,11 +137,11 @@ test('QA edited snapshots and partial states stay explicit without mutating save
   assert.throws(() => createBatchSrtArchive({ items }), { code: 'PARTIAL_BATCH_CONFIRMATION_REQUIRED' });
   const archive = createBatchSrtArchive({ items, allowPartial: true });
   const contents = readArchive(archive.buffer);
-  assert.deepEqual(archive.entries, ['01_A.srt', '03_C.srt', '사용안내.txt']);
-  assert.equal(readSrt(contents.get('01_A.srt'))[1].text, '수정 문안');
-  assert.equal(readSrt(contents.get('03_C.srt')).length, 1);
+  assert.deepEqual(archive.entries, ['01_A.srt', '사용안내.txt']);
+  assert.equal(readSrt(contents.get('01_A.srt'))[0].text, '수정 문안');
   assert.match(contents.get('사용안내.txt'), /02\. B: 실패/);
-  assert.match(contents.get('사용안내.txt'), /인식된 대사 없음 · 검토 필요/);
+  assert.match(contents.get('사용안내.txt'), /인식된 대사 없음 · 검토 필요 \(SRT 제외\)/);
+  assert.match(contents.get('사용안내.txt'), /전사 완료 2건 중 대사가 있는 SRT 1개/);
   assert.ok(createBatchSrtArchive({ items, allowPartial: true }).buffer.equals(archive.buffer));
   assert.equal(original[0].text, '이전 문안');
 });

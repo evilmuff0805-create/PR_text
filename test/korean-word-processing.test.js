@@ -185,7 +185,7 @@ test('corrected compact rows expand with latest text and keep validated internal
   const prepared = prepareDownloadPayload({ segments: JSON.parse(JSON.stringify(result.segments)), format: 'srt' });
   assert.equal(prepared.error, null);
   const srt = generateSRT(prepared.segments, null, { holdShortGaps: false });
-  assert.equal(srt.split('\n\n').length, 5401);
+  assert.equal(srt.split('\n\n').length, 5400);
   assert.match(srt, /00:00:01,100 --> 00:00:01,200\n돼요/);
   assert.match(srt, /01:29:58,100 --> 01:29:58,200\n돼요/);
   assert.ok(sources.every((source) => source.sourceWords.at(-1).word === '되요'));
@@ -269,7 +269,7 @@ test('word cue boundaries survive JSON, short text editing, and re-download prep
   const srt = generateSRT(prepared.segments);
   assert.match(srt, /00:00:10,100 --> 00:00:12,000\n장면을 떠올리면/);
   assert.match(srt, /00:00:12,000 --> 00:00:12,200\n됩니다/);
-  assert.equal(srt.split('\n\n').length, 3);
+  assert.equal(srt.split('\n\n').length, 2);
 });
 
 test('long Korean jobs retain stored word times and apply display continuity after compact expansion', async () => {
@@ -291,7 +291,7 @@ test('long Korean jobs retain stored word times and apply display continuity aft
   const prepared = prepareDownloadPayload({ segments: stored, format: 'srt' });
   assert.equal(prepared.error, null);
   const srt = generateSRT(prepared.segments);
-  assert.equal(srt.split('\n\n').length, 6_001);
+  assert.equal(srt.split('\n\n').length, 6_000);
   assert.match(srt, /00:00:00,100 --> 00:00:00,600\n하나/);
   assert.match(srt, /00:00:00,600 --> 00:00:01,100\n둘/);
   assert.match(srt, /01:39:58,100 --> 01:39:58,200\n셋/);

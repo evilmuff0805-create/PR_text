@@ -5,7 +5,7 @@ import { filterSilentSegments, mergeShortSegments } from '../src/services/transc
 import { generateASS, generateSRT } from '../src/services/subtitle.js';
 
 function dialogue(srt) {
-  return srt.split('\n\n').slice(1).map((block) => block.split('\n'));
+  return srt.split('\n\n').map((block) => block.split('\n'));
 }
 
 function assDialogue(ass) {
@@ -90,7 +90,7 @@ test('an empty or zero-length cue cannot erase a simultaneous spoken response', 
     { start: 3, end: 3, text: '길이 없음', speaker: 1 },
     { start: 3.2, end: 4, text: ' ', speaker: 2 },
   ];
-  assert.deepEqual(dialogue(generateSRT(source)), [['2', '00:00:03,000 --> 00:00:04,000', '네']]);
+  assert.deepEqual(dialogue(generateSRT(source)), [['1', '00:00:03,000 --> 00:00:04,000', '네']]);
   assert.match(generateASS(source), /0:00:03\.00,0:00:04\.00.*,,네$/m);
 });
 

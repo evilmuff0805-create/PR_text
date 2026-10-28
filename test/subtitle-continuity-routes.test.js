@@ -71,6 +71,15 @@ test('ordinary authenticated SRT and ASS fill short gaps without changing suppli
   assert.deepEqual(dialogue, before);
 });
 
+test('SRT downloads with no recognized dialogue return a clear error instead of an empty file', async t => {
+  const route = await fixture(t);
+  for (const segments of [[], [{ start: 0, end: 1, text: ' ' }], [{ start: 2, end: 2, text: '길이 없는 구간' }]]) {
+    const response = await route.download({ segments, format: 'srt' });
+    assert.equal(response.status, 422);
+    assert.match((await response.json()).error, /인식된 대사가 없어 SRT를 만들 수 없습니다/);
+  }
+});
+
 test('owned batch history retains exact speech ends through individual SRT and ASS downloads', async t => {
   const route = await fixture(t, { mapping: { batch_id: '10000000-0000-4000-8000-000000000009' } });
   const response = await route.request('/api/auth/transcription/23');

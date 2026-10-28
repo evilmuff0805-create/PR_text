@@ -13,51 +13,51 @@ const segments = [
   { start: 1.25, end: 2.5, text: '반갑습니다', speaker: 1 },
 ];
 
-// Existing dialogue invariants still apply after the new standalone start cue.
 function dialogueBlocks(srt) {
-  return srt.split('\n\n').slice(1);
+  return srt ? srt.split('\n\n') : [];
 }
 
-test('SRT starts with one large two-second marker even when speech starts later', () => {
+test('SRT starts with the first actual dialogue and preserves its original time', () => {
   const input = [{ start: 8.5, end: 10, text: '무음 뒤 첫 대사', speaker: 1 }];
   const original = structuredClone(input);
   const blocks = generateSRT(input, { 1: '#39FF14' }).split('\n\n');
 
-  assert.equal(blocks[0], '1\n00:00:00,000 --> 00:00:02,000\n<font size="48"><b>0~2초 자막 시작 구간입니다!</b></font>');
-  assert.equal(blocks[1], '2\n00:00:08,500 --> 00:00:10,000\n<font color="#39FF14">무음 뒤 첫 대사</font>');
+  assert.equal(blocks[0], '1\n00:00:08,500 --> 00:00:10,000\n<font color="#39FF14">무음 뒤 첫 대사</font>');
   assert.deepEqual(input, original);
 });
 
-test('SRT marker preserves speech before and across the two-second boundary', () => {
+test('SRT preserves speech before and across the two-second boundary without adding a cue', () => {
   const blocks = generateSRT([
     { start: 0, end: 0.5, text: '첫 대사' },
     { start: 1, end: 3, text: '2초에 걸친 대사' },
     { start: 5, end: 6, text: '다음 대사' },
   ]).split('\n\n');
 
-  assert.equal(blocks.length, 4);
-  assert.match(blocks[0], /00:00:00,000 --> 00:00:02,000/);
-  assert.equal(blocks[1], '2\n00:00:00,000 --> 00:00:01,000\n첫 대사');
-  assert.equal(blocks[2], '3\n00:00:01,000 --> 00:00:03,000\n2초에 걸친 대사');
-  assert.equal(blocks[3], '4\n00:00:05,000 --> 00:00:06,000\n다음 대사');
+  assert.equal(blocks.length, 3);
+  assert.equal(blocks[0], '1\n00:00:00,000 --> 00:00:01,000\n첫 대사');
+  assert.equal(blocks[1], '2\n00:00:01,000 --> 00:00:03,000\n2초에 걸친 대사');
+  assert.equal(blocks[2], '3\n00:00:05,000 --> 00:00:06,000\n다음 대사');
 });
 
-test('SRT emits its start marker even without usable dialogue', () => {
+test('SRT is empty when there are no usable dialogue cues', () => {
   for (const input of [undefined, null, [], [{ start: 0, end: 1, text: ' ' }], [{ start: 0, end: 0, text: '길이 없음' }]]) {
-    const blocks = generateSRT(input).split('\n\n');
-    assert.equal(blocks.length, 1);
-    assert.match(blocks[0], /^1\n00:00:00,000 --> 00:00:02,000\n/);
-    assert.match(blocks[0], /0~2초 자막 시작 구간입니다!/);
+    assert.equal(generateSRT(input), '');
   }
   assert.equal(generateTXT([]), '');
   assert.equal(generateASS([]), '');
 });
 
-test('the SRT start marker is not added to TXT or ASS exports', () => {
+test('SRT, TXT and ASS contain only actual dialogue', () => {
   assert.equal(generateTXT(segments), '안녕하세요 반갑습니다');
   const ass = generateASS(segments);
+  assert.doesNotMatch(generateSRT(segments), /0~2초 자막 시작 구간입니다!/);
   assert.doesNotMatch(ass, /0~2초 자막 시작 구간입니다!/);
   assert.equal(ass.split('\n').filter((line) => line.startsWith('Dialogue:')).length, 2);
+});
+
+test('an actual spoken line matching the former marker text remains a numbered dialogue cue', () => {
+  const srt = generateSRT([{ start: 0, end: 0.7, text: '0~2초 자막 시작 구간입니다!' }]);
+  assert.equal(srt, '1\n00:00:00,000 --> 00:00:00,700\n0~2초 자막 시작 구간입니다!');
 });
 
 test('generates SRT and TXT with expected text handling', () => {

@@ -18,13 +18,13 @@ test('Korean diarized correction and export preserve pauses while keeping quoted
   assert.deepEqual(corrected.segments, original);
   const colors = { 0: '#39FF14', 1: '#FFE600' };
 
-  const blocks = generateSRT(corrected.segments, colors).split('\n\n').slice(1);
+  const blocks = generateSRT(corrected.segments, colors).split('\n\n');
   assert.equal(blocks.length, 4);
-  assert.equal(blocks[0], '2\n00:00:10,000 --> 00:00:10,300\n<font color="#39FF14">네</font>');
-  assert.match(blocks[1], /^3\n00:00:10,500 --> /);
+  assert.equal(blocks[0], '1\n00:00:10,000 --> 00:00:10,300\n<font color="#39FF14">네</font>');
+  assert.match(blocks[1], /^2\n00:00:10,500 --> /);
   assert.match(blocks[1], /<font color="#39FF14">아니 아빠한테도 전화는 드렸는데<\/font>$/);
   assert.match(blocks[2], / --> 00:00:16,200\n<font color="#39FF14">그냥 뭐라고 그러셨더라\?<\/font>$/);
-  assert.equal(blocks[3], '5\n00:00:18,000 --> 00:00:18,500\n<font color="#FFE600">그랬죠</font>');
+  assert.equal(blocks[3], '4\n00:00:18,000 --> 00:00:18,500\n<font color="#FFE600">그랬죠</font>');
 
   const ass = generateASS(corrected.segments, {}, colors);
   assert.match(ass, /Dialogue: 0,0:00:10\.00,0:00:10\.30,Speaker0/);

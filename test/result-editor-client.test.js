@@ -37,7 +37,7 @@ test('mismatched line counts warn the user and block every download path', async
   assert.match(page, /const lineCountMismatch = /);
   assert.match(page, /role="alert"/);
   assert.match(page, /줄 수가 자막 수와 다릅니다/);
-  assert.match(page, /disabled=\{downloading \|\| lineCountMismatch\}/);
+  assert.match(page, /disabled=\{downloading \|\| lineCountMismatch \|\|/);
   // 버튼 외의 경로로도 파일이 나가지 않아야 한다.
   assert.match(page, /if \(lineCountMismatch\) return;/);
 });

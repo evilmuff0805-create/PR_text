@@ -27,6 +27,12 @@ test('accepts a valid authenticated download payload shape', () => {
   assert.equal(validateDownloadPayload(validPayload), null);
 });
 
+test('empty SRT payloads reach the explicit no-dialogue response while other formats stay invalid', () => {
+  assert.equal(validateDownloadPayload({ segments: [], format: 'srt' }), null);
+  assert.match(validateDownloadPayload({ segments: [], format: 'txt' }), /segments가 필요합니다/);
+  assert.match(validateDownloadPayload({ segments: [], format: 'ass' }), /segments가 필요합니다/);
+});
+
 test('rejects unsafe subtitle download payload fields', () => {
   assert.match(validateDownloadPayload({ ...validPayload, segments: [{ ...validPayload.segments[0], start: 2, end: 1 }] }), /시간 정보/);
   assert.match(validateDownloadPayload({ ...validPayload, assOptions: { ...validPayload.assOptions, fontFamily: 'bad\nfont' } }), /폰트명/);
