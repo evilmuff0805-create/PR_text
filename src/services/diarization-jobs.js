@@ -118,6 +118,7 @@ export function createDiarizationJobTimingLog({
   timings,
   rawTimings,
   correctionTimings,
+  grammarPolishTimings,
   segmentCount,
   language,
   error,
@@ -159,6 +160,12 @@ export function createDiarizationJobTimingLog({
       durationMs: roundTiming(attempt.durationMs),
     })),
     correction: summarizeCorrection(correctionTimings),
+    grammarPolish: grammarPolishTimings ? {
+      model: grammarPolishTimings.model,
+      calls: grammarPolishTimings.calls,
+      usage: grammarPolishTimings.usage,
+      wallMs: Number.isFinite(grammarPolishTimings.wallMs) ? roundTiming(grammarPolishTimings.wallMs) : undefined,
+    } : undefined,
     creditsRefunded,
     error: error?.message,
     timingMismatch: {
@@ -227,6 +234,7 @@ export async function enqueueDiarizationJob({
   language,
   durationSeconds,
   creditsNeeded,
+  polishMode = 'preserve',
 }) {
   const storagePath = storagePathFor(userId, storageFilename);
   const { error: uploadError } = await supabaseAdmin.storage
@@ -252,6 +260,7 @@ export async function enqueueDiarizationJob({
       p_requested_language: language || null,
       p_duration_seconds: durationSeconds,
       p_credits: creditsNeeded,
+      ...(polishMode === 'grammar' ? { p_polish_mode: polishMode } : {}),
     });
 
     if (error) throw new Error(`다화자 작업 예약 실패: ${error.message}`);
@@ -490,7 +499,9 @@ async function processNextDiarizationJob() {
     );
     timings.transcriptionMs = performance.now() - transcriptionStartedAt;
     const processingStartedAt = performance.now();
-    processedResult = await processTranscriptionSegments(rawResult.segments, rawResult.language);
+    processedResult = job.polish_mode === 'grammar'
+      ? await processTranscriptionSegments(rawResult.segments, rawResult.language, { polishMode: 'grammar', signal: abortController.signal })
+      : await processTranscriptionSegments(rawResult.segments, rawResult.language);
     result = {
       text: joinSegmentText(processedResult.segments),
       segments: processedResult.segments,
@@ -513,6 +524,7 @@ async function processNextDiarizationJob() {
       timings,
       rawTimings: rawResult.timings,
       correctionTimings: processedResult.correctionTimings,
+      grammarPolishTimings: processedResult.grammarPolish?.metrics,
       segmentCount: result.segments.length,
       language: result.language,
       creditsRefunded: false,
@@ -549,6 +561,7 @@ async function processNextDiarizationJob() {
         // count and no request duration.
         rawTimings: rawResult?.timings ?? error?.timings,
         correctionTimings: processedResult?.correctionTimings,
+        grammarPolishTimings: processedResult?.grammarPolish?.metrics,
         segmentCount: result?.segments.length,
         language: result?.language,
         error,

@@ -11,7 +11,7 @@ const ERROR_STATUS = { TB400: 400, TB402: 402, TB404: 404, TB409: 409, TB429: 42
 export const isBatchId = (value) => typeof value === 'string' && UUID.test(value);
 const hash = (value) => createHash('sha256').update(value).digest('hex');
 // This is the existing ordinary operation protocol, including language binding.
-const audioHash = (buffer, language) => createHash('sha256').update(buffer).update(`\n${language || ''}\nordinary`).digest('hex');
+export const batchAudioHash = (buffer, language, polishMode = 'preserve') => createHash('sha256').update(buffer).update(polishMode === 'grammar' ? `\n${language || ''}\nordinary\ngrammar` : `\n${language || ''}\nordinary`).digest('hex');
 function invalid(message = '묶음 파일과 옵션을 확인해주세요.') {
   return Object.assign(new Error(message), { status: 400, code: 'TB400' });
 }
@@ -20,9 +20,10 @@ function fields(value, allowed) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || Object.keys(value).some((key) => !allowed.includes(key))) throw invalid();
 }
 
-export function validateTranscriptionBatch({ batchKey, language = null, files } = {}) {
+export function validateTranscriptionBatch({ batchKey, language = null, polishMode = 'preserve', files } = {}) {
   assertId(batchKey);
   if (language !== null && (typeof language !== 'string' || !/^[a-z]{2,3}$/.test(language))) throw invalid('변환 언어를 확인해주세요.');
+  if (!['preserve', 'grammar'].includes(polishMode)) throw invalid('문법 다듬기 옵션을 확인해주세요.');
   if (!Array.isArray(files) || files.length < 1 || files.length > 5) throw invalid('오디오 파일을 1~5개 선택해주세요.');
   const ids = new Set();
   const normalized = files.map((file) => {
@@ -35,7 +36,7 @@ export function validateTranscriptionBatch({ batchKey, language = null, files } 
     if (typeof label !== 'string' || !label.trim() || label.length > 80 || CONTROL.test(label)) throw invalid('표시 이름은 1~80자로 입력해주세요.');
     return { clientId: file.clientId.toLowerCase(), filename: file.filename, label: label.trim() };
   });
-  return { batchKey: batchKey.toLowerCase(), language, files: normalized };
+  return { batchKey: batchKey.toLowerCase(), language, polishMode, files: normalized };
 }
 
 /** No environment, client singleton or worker is imported here: fixtures can
@@ -69,14 +70,18 @@ export function createTranscriptionBatches({ database, probe, enabled = () => pr
     return { batches: await rpc('list_transcription_batches', { p_user_id: userId }), admissionsEnabled: Boolean(enabled()) };
   }
   async function create(input) {
-    fields(input, ['userId', 'batchKey', 'language', 'files']);
+    fields(input, ['userId', 'batchKey', 'language', 'polishMode', 'files']);
     const { userId } = input;
     const normalized = validateTranscriptionBatch(input);
-    const fingerprint = hash(JSON.stringify({ language: normalized.language, files: normalized.files }));
+    const fingerprint = hash(JSON.stringify(normalized.polishMode === 'preserve'
+      ? { language: normalized.language, files: normalized.files }
+      : { language: normalized.language, polishMode: normalized.polishMode, files: normalized.files }));
     const existingQuery = await database.from('transcription_batches').select('id').eq('user_id', userId).eq('batch_key', normalized.batchKey).maybeSingle();
     if (existingQuery.error) throw Object.assign(new Error('기존 묶음 작업을 확인하지 못했습니다.'), { status: 503 });
     if (!enabled() && !existingQuery.data) throw Object.assign(new Error('사람별 묶음 변환을 준비 중입니다.'), { status: 503, code: 'BATCH_ADMISSIONS_DISABLED' });
-    const id = await rpc('create_transcription_batch', { p_user_id: userId, p_batch_key: normalized.batchKey, p_payload_hash: fingerprint, p_requested_language: normalized.language, p_items: normalized.files });
+    const params = { p_user_id: userId, p_batch_key: normalized.batchKey, p_payload_hash: fingerprint, p_requested_language: normalized.language, p_items: normalized.files };
+    if (normalized.polishMode === 'grammar') params.p_polish_mode = normalized.polishMode;
+    const id = await rpc('create_transcription_batch', params);
     if (!isBatchId(id)) throw Object.assign(new Error('묶음 접수 결과를 확인하지 못했습니다.'), { status: 503 });
     return { batch: await required(id, userId), existing: Boolean(existingQuery.data) };
   }
@@ -88,7 +93,8 @@ export function createTranscriptionBatches({ database, probe, enabled = () => pr
     let duration;
     try { duration = await probe(buffer, filename); } catch { /* Unknown duration must never reserve guessed credits. */ }
     if (!Number.isFinite(duration) || duration <= 0 || Math.ceil(duration / 60) > 2_147_483_647) throw invalid('파일 길이를 확인하지 못했습니다. 다른 오디오 형식으로 다시 선택해주세요.');
-    const fingerprint = audioHash(buffer, batch.language);
+    const polishMode = batch.polishMode || 'preserve';
+    const fingerprint = batchAudioHash(buffer, batch.language, polishMode);
     const stage = (await rpc('stage_transcription_batch_item', { p_user_id: userId, p_batch_id: batchId, p_item_id: itemId, p_payload_hash: fingerprint,
       p_filename: filename, p_content_type: contentType, p_byte_size: buffer.length, p_duration_seconds: duration }))?.[0];
     if (!stage || !isBatchId(stage.operation_id)) throw Object.assign(new Error('파일 접수 결과를 확인하지 못했습니다.'), { status: 503 });

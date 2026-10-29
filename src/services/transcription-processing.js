@@ -4,6 +4,7 @@ import { normalizeLanguage } from './language.js';
 import { alignCorrectedKoreanSegmentWithWordTimings, alignKoreanSegmentWithWordTimings } from './korean-word-timing.js';
 import { isKoreanDependentPredicateTail } from './korean-subtitle.js';
 import { annotateSubtitleReviews, mergeSubtitleReviews } from './subtitle-review.js';
+import { POLISH_MODES, polishKoreanSegments } from './grammar-polish.js';
 
 // Provider hallucination loops are uniform, low-confidence repeats from one decode window.
 // These thresholds intentionally leave ordinary or weakly evidenced repetition untouched.
@@ -365,7 +366,7 @@ export function refineKoreanSegmentsWithWordTimings(segments, { originalSegments
   return needsCompact ? compact : refined;
 }
 
-export async function processTranscriptionSegments(segments, language, { correct } = {}) {
+export async function processTranscriptionSegments(segments, language, { correct, polishMode = 'preserve', signal, polishLines } = {}) {
   // 교정 전에 합친다. GPT가 잘린 조각이 아니라 온전한 문장을 보게 된다.
   const repetitionFilteredSegments = filterWhisperRepetitionLoops(segments);
   if (repetitionFilteredSegments.length !== segments.length) {
@@ -404,15 +405,37 @@ export async function processTranscriptionSegments(segments, language, { correct
     || correctionTimings?.languageDecision === 'inferred_from_hangul_segments'
     ? annotateSubtitleReviews(timedSegments) : timedSegments;
 
-  return {
-    segments: reviewedSegments.map(({ sourceWords: ignoredSourceWords, audioStartFloor, ...segment }) => ({
+  let finalSegments = reviewedSegments.map(({ sourceWords: ignoredSourceWords, audioStartFloor, ...segment }) => ({
       ...segment,
       ...((normalizeLanguage(language) === 'ko'
         || correctionTimings?.languageDecision === 'inferred_from_hangul_segments')
         && !hasSpeakerLabel(segment) && Number.isFinite(audioStartFloor) && audioStartFloor >= 0
         && audioStartFloor <= segment.start && audioStartFloor < segment.end ? { audioStartFloor } : {}),
       text: normalizeLanguage(language) === 'en' ? segment.text : removeCommas(segment.text),
-    })),
+    }));
+  let grammarPolish;
+  if (POLISH_MODES.has(polishMode) && polishMode === 'grammar') {
+    try {
+      const gpt = await import('./gpt.js');
+      const rewrite = polishLines || gpt.rewriteKoreanSentenceLines;
+      const polishLanguage = normalizeLanguage(language) === 'ko' || correctionTimings?.languageDecision === 'inferred_from_hangul_segments' ? 'ko' : language;
+      const result = await polishKoreanSegments(finalSegments, polishLanguage, {
+        rewriteLines: rewrite,
+        verifyLines: gpt.verifyKoreanSentenceLines,
+        signal,
+      });
+      finalSegments = result.segments;
+      grammarPolish = { requested: true, applied: result.applied, skipped: result.skipped,
+        unavailable: result.unavailable, limited: result.limited, summary: result.summary, metrics: result.metrics };
+    } catch {
+      grammarPolish = { requested: true, applied: 0, skipped: finalSegments.length, unavailable: true,
+        summary: { statuses: { api_error: finalSegments.length } },
+        metrics: { wallMs: 0, calls: 0, usage: { promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, totalTokens: 0 } } };
+    }
+  }
+  return {
+    segments: finalSegments,
+    ...(grammarPolish ? { grammarPolish } : {}),
     correctionTimings,
     correctionMs: performance.now() - correctionStartedAt,
   };

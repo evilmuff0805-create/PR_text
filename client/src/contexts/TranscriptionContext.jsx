@@ -61,6 +61,13 @@ function uploadTranscription({ formData, token, onProgress, onUploadComplete, op
 }
 
 function resultFromResponse(data, diarize) {
+  const polishRows = Array.isArray(data.segments) ? data.segments.filter((segment) => segment.grammarPolish) : [];
+  const grammarPolish = polishRows.length ? {
+    ...(data.grammarPolish || {}),
+    applied: polishRows.filter((segment) => segment.grammarPolish.status === 'applied').length,
+    unavailable: (data.grammarPolish?.unavailable === true) || polishRows.some((segment) => ['timeout', 'api_error', 'invalid_response', 'timeline_fallback', 'verifier_unavailable', 'meaning_or_timing_rejected', 'unsafe_candidate'].includes(segment.grammarPolish.status)),
+    limited: polishRows.some((segment) => segment.grammarPolish.status === 'limit'),
+  } : data.grammarPolish || (data.polishMode === 'grammar' ? { applied: 0, unavailable: false } : null);
   return {
     text: data.text,
     segments: data.segments,
@@ -68,6 +75,7 @@ function resultFromResponse(data, diarize) {
     // 편집기가 다듬은 자막을 되돌려 저장할 대상. 빠뜨리면 편집본이 서버에 남지 않는다.
     transcriptionLogId: data.transcriptionLogId ?? null,
     diarize,
+    ...(grammarPolish ? { grammarPolish } : {}),
   };
 }
 
@@ -298,7 +306,7 @@ export function TranscriptionProvider({ children }) {
     finally { setIsCancelling(false); }
   }, [user?.id, token, job.activeOperationKey, isCancelling, retryOperationStatus]);
 
-  const startTranscription = useCallback(async ({ file, language, diarize }) => {
+  const startTranscription = useCallback(async ({ file, language, diarize, polishMode = 'preserve' }) => {
     if (!user?.id || BUSY_STATUSES.has(job.status)) return;
     if (!canSubmitOperation(readPendingOperation(localStorage, user.id), diarize)) {
       setJob((current) => ({ ...current, status: 'recovery', error: '기존 일반 변환을 완료하거나 취소한 뒤 다화자 변환을 시작해주세요.' }));
@@ -320,16 +328,23 @@ export function TranscriptionProvider({ children }) {
     });
 
     let operationKey;
+    const pendingBeforeSubmit = readPendingOperation(localStorage, user.id);
+    const requestedPolishMode = pendingBeforeSubmit?.operationKey ? (pendingBeforeSubmit.polishMode || 'preserve') : polishMode;
+    if (!['preserve', 'grammar'].includes(requestedPolishMode)) {
+      failTranscription('문법 다듬기 옵션을 다시 선택해 주세요.');
+      return;
+    }
     const owner = user.id;
     try {
       if (!diarize) {
         localStorage.removeItem(pendingOperationStorageKey('completed:' + owner));
         operationKey = readPendingOperation(localStorage, owner)?.operationKey || crypto.randomUUID();
-        localStorage.setItem(pendingOperationStorageKey(owner), JSON.stringify({ operationKey }));
+        localStorage.setItem(pendingOperationStorageKey(owner), JSON.stringify({ operationKey, polishMode: requestedPolishMode }));
       }
       const formData = new FormData();
       formData.append('audio', file);
       if (language) formData.append('language', language);
+      if (requestedPolishMode === 'grammar') formData.append('polishMode', requestedPolishMode);
       if (diarize) formData.append('diarize', 'true');
 
       const currentToken = getToken();
@@ -370,7 +385,7 @@ export function TranscriptionProvider({ children }) {
         throw new Error('로그인이 필요합니다. 좌측 사이드바에서 로그인해주세요.');
       }
       if (status === 402) {
-        if (operationKey) localStorage.setItem(pendingOperationStorageKey(owner), JSON.stringify({ operationKey, lastError: '변환 가능 시간이 부족합니다. 충전 후 같은 작업으로 다시 시도해주세요.' }));
+        if (operationKey) localStorage.setItem(pendingOperationStorageKey(owner), JSON.stringify({ operationKey, polishMode: requestedPolishMode, lastError: '변환 가능 시간이 부족합니다. 충전 후 같은 작업으로 다시 시도해주세요.' }));
         throw new Error(`변환 가능 시간이 부족합니다. 필요: ${data.creditsNeeded}분, 보유: ${data.creditsHave}분. 결제 페이지에서 충전해주세요.`);
       }
       if (!ok) {

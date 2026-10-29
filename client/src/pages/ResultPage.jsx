@@ -411,7 +411,15 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
     diarize = false,
     transcriptionLogId = null,
     holdShortGaps = true,
+    grammarPolish = null,
   } = resolved || {};
+  const polishRows = Array.isArray(segments) ? segments.filter((segment) => segment.grammarPolish) : [];
+  const grammarPolishSummary = grammarPolish || (polishRows.length ? {
+    applied: polishRows.filter((segment) => segment.grammarPolish.status === 'applied').length,
+    unavailable: polishRows.some((segment) => ['timeout', 'api_error', 'invalid_response', 'timeline_fallback', 'verifier_unavailable', 'meaning_or_timing_rejected', 'unsafe_candidate'].includes(segment.grammarPolish.status)),
+    limited: polishRows.some((segment) => segment.grammarPolish.status === 'limit'),
+  } : null);
+  const grammarPolishStatusCounts = grammarPolishSummary?.summary?.statuses || {};
   const resultSourceRef = useRef(null);
   resultSourceRef.current = { ownerId: user?.id, logId: transcriptionLogId, resolved, resultOverride, path: `${pathname}${search}${hash}` };
 
@@ -420,6 +428,13 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
     if (restored) return restored.segments;
     return buildEditedSegments(segments, text);
   });
+  const remainingPolishedOriginals = editedSegments.filter((segment) => (
+    segment.grammarPolish?.status === 'applied' && typeof segment.grammarPolish.originalText === 'string'
+  )).length;
+  const sourceAppliedPolishCount = polishRows.filter((segment) => segment.grammarPolish.status === 'applied').length
+    || grammarPolishSummary?.applied || 0;
+  const restoredPolishCount = Math.max(0, sourceAppliedPolishCount - remainingPolishedOriginals);
+  const polishRestored = restoredPolishCount > 0 && remainingPolishedOriginals === 0;
   // 사용자가 입력한 원문 그대로. 줄 수가 맞지 않아 아직 반영하지 못한 상태도 담는다.
   const [fullTextDraft, setFullTextDraft] = useState(() => {
     const restored = readStoredEdits(transcriptionLogId, segments, user?.id);
@@ -870,6 +885,21 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
     }
   }, []);
 
+  const restorePolishedOriginals = useCallback(() => {
+    const next = editedSegmentsRef.current.map((segment) => {
+      if (!segment.grammarPolish || typeof segment.grammarPolish.originalText !== 'string') return segment;
+      const restored = { ...segment, text: segment.grammarPolish.originalText };
+      if (segment.grammarPolish.originalTimingSource === undefined) delete restored.timingSource;
+      else restored.timingSource = segment.grammarPolish.originalTimingSource;
+      delete restored.grammarPolish;
+      return restored;
+    });
+    editedSegmentsRef.current = next;
+    setEditedSegments(next);
+    setFullTextDraft(joinSegmentLines(next));
+    lineCountMismatchRef.current = false;
+  }, []);
+
   function updateFullText(nextText) {
     setFullTextDraft(nextText);
     lineCountMismatchRef.current = editedSegmentsRef.current.length > 0 && splitTextLines(nextText).length !== editedSegmentsRef.current.length;
@@ -1036,6 +1066,20 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
           <dd>{hasSpeakers ? `${speakerIds.length}명` : diarize ? '분석됨' : '단일'}</dd>
         </div>
       </dl>
+      {grammarPolishSummary && <div className="batch-note" role="status">
+        {polishRestored
+          ? `문장 다듬기 전 문장으로 ${restoredPolishCount}개 자막 구간을 복원했습니다.`
+          : `문장 다듬기: ${grammarPolishSummary.applied || 0}개 자막 구간에 적용했습니다. 문맥이 모호하거나 검수되지 않은 구간은 원래 맞춤법 교정 결과를 유지합니다.`}
+        {grammarPolishSummary.limited ? ' 파일당 최대 120개 구간·3,360자·60초 한도를 넘긴 내용은 건너뛰었습니다.' : ''}
+        {' '}적용된 구간의 타임코드는 원래 음성 구간을 따르며, 새 문장에 맞춘 단어 단위 싱크를 보장하지 않습니다.
+        {(grammarPolishStatusCounts.meaning_or_timing_rejected || grammarPolishStatusCounts.unsafe_candidate) ? ` 검수에서 보류한 구간 ${((grammarPolishStatusCounts.meaning_or_timing_rejected || 0) + (grammarPolishStatusCounts.unsafe_candidate || 0))}개.` : ''}
+        {grammarPolishStatusCounts.review_pending ? ` 기존 자막 검토가 진행 중인 구간 ${grammarPolishStatusCounts.review_pending}개.` : ''}
+        {grammarPolishStatusCounts.limit ? ` 설정 한도로 건너뛴 구간 ${grammarPolishStatusCounts.limit}개.` : ''}
+        {grammarPolishStatusCounts.unsupported_cue ? ` 문장 다듬기를 적용할 수 없는 형식의 구간 ${grammarPolishStatusCounts.unsupported_cue}개.` : ''}
+        {(grammarPolishStatusCounts.timeout || grammarPolishStatusCounts.api_error || grammarPolishStatusCounts.verifier_unavailable) ? ' 일부 구간은 시간 초과나 API·검수기 오류로 원래 결과를 유지했습니다.' : ''}
+        {grammarPolishSummary.unavailable ? ' 일부 처리는 시간 초과, 검증 실패 또는 처리 오류로 적용하지 않았습니다.' : ''}
+        {editedSegments.some((segment) => segment.grammarPolish?.originalText !== undefined) && <button className="result-editor-tip__link" onClick={restorePolishedOriginals} type="button">다듬기 전 문장으로 복원</button>}
+      </div>}
 
       {hasSpeakers && (
         <section className="speaker-palette" aria-labelledby="speaker-palette-title">

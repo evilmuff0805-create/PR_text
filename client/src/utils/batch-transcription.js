@@ -48,6 +48,7 @@ export function readPendingBatch(storage, ownerId) {
   try {
     const value = JSON.parse(storage.getItem(pendingBatchKey(ownerId)) || 'null');
     return value?.ownerId === ownerId && isBatchId(value.batchKey) && (!value.id || isBatchId(value.id))
+      && (value.polishMode === undefined || ['preserve', 'grammar'].includes(value.polishMode))
       && Array.isArray(value.files) && !validateBatchRows(value.files) ? value : null;
   } catch { return null; }
 }

@@ -5,6 +5,7 @@ import { useTranscription } from '../contexts/TranscriptionContext.jsx';
 import AuthModal from '../components/AuthModal.jsx';
 import BatchTranscriptionPanel from '../components/BatchTranscriptionPanel.jsx';
 import { useBatchTranscription } from '../contexts/BatchTranscriptionContext.jsx';
+import { readPendingOperation } from '../utils/transcription-operation.js';
 import {
   DIARIZATION_MAX_MINUTES,
   UPLOAD_ACCEPT,
@@ -71,6 +72,7 @@ export default function HomePage() {
   const [file, setFile] = useState(null);
   const [sourceFile, setSourceFile] = useState(null);
   const [language, setLanguage] = useState('');
+  const [polishMode, setPolishMode] = useState('preserve');
   const [formError, setFormError] = useState('');
   const [isDragOver, setIsDragOver] = useState(false);
   const [diarize, setDiarize] = useState(false);
@@ -89,6 +91,11 @@ export default function HomePage() {
   const batchState = useBatchTranscription();
   const requestedMode = new URLSearchParams(location.search).get('mode');
   const mode = requestedMode === 'batch' || (!requestedMode && Boolean(batchState?.batch)) ? 'batch' : 'single';
+  useEffect(() => {
+    if (!user?.id) return;
+    const pending = readPendingOperation(localStorage, user.id);
+    setPolishMode(pending?.polishMode === 'grammar' ? 'grammar' : 'preserve');
+  }, [user?.id, activeOperationKey]);
   const modeButtons = <div className="transcription-modes" aria-label="변환 방식"><button type="button" className={`button button--${mode === 'single' ? 'primary' : 'secondary'}`} aria-pressed={mode === 'single'} onClick={() => navigate('/transcribe?mode=single', { replace: true })}>파일 하나 변환</button><button type="button" className={`button button--${mode === 'batch' ? 'primary' : 'secondary'}`} aria-pressed={mode === 'batch'} onClick={() => navigate('/transcribe?mode=batch', { replace: true })}>사람별 오디오 묶음</button></div>;
 
   useEffect(() => {
@@ -243,7 +250,7 @@ export default function HomePage() {
 
     setFormError('');
     clearError();
-    await startTranscription({ file, language, diarize });
+    await startTranscription({ file, language, diarize, polishMode });
   }
 
   async function handleCancelDiarizationJob() {
@@ -389,6 +396,13 @@ export default function HomePage() {
           <option value="zh">중국어</option>
         </select>
       </div>
+
+      <fieldset className="conversion-options__field" style={{ border: 0, padding: 0, margin: 0 }}>
+        <legend>한국어 자막</legend>
+        <label><input type="radio" name="polish-mode" value="preserve" checked={polishMode === 'preserve'} disabled={Boolean(activeOperationKey)} onChange={() => setPolishMode('preserve')} /> 변환 전 원문 보존 (기존 맞춤법 교정)</label>
+        <label><input type="radio" name="polish-mode" value="grammar" checked={polishMode === 'grammar'} disabled={Boolean(activeOperationKey)} onChange={() => setPolishMode('grammar')} /> 문장 다듬기</label>
+        <p className="batch-note">문장 다듬기는 문맥을 보고 어순·조사·어미와 문장 호응을 자연스럽게 고칩니다. 내용의 주체·부정·숫자·이름은 유지하고, 각 자막이 원래 발화 구간의 내용을 담도록 확인합니다. 문장 단위 변경이라 새 문장의 단어별 정밀 타임코드를 보장하지 않습니다. 같은 화자의 이어지는 최대 12개 cue·336자씩, 파일당 최대 120개 cue·3,360자·60초까지 처리합니다. 의미나 구간 대응이 불확실하면 해당 문맥은 맞춤법 교정 결과로 돌아갑니다.</p>
+      </fieldset>
 
       <label className={diarize ? 'speaker-toggle is-active' : 'speaker-toggle'}>
         <input

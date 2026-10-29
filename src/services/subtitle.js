@@ -174,7 +174,9 @@ function normalizeCueTimeline(cues) {
 
   for (let index = 0; index < sorted.length;) {
     let groupEnd = index + 1;
-    while (groupEnd < sorted.length && sorted[groupEnd].start === sorted[index].start) {
+    while (groupEnd < sorted.length && sorted[groupEnd].start === sorted[index].start
+      && sorted[groupEnd - 1].timingSource !== 'speech_window'
+      && sorted[groupEnd].timingSource !== 'speech_window') {
       groupEnd += 1;
     }
     const next = sorted[groupEnd];
@@ -204,7 +206,8 @@ function prepareOrdinarySources(segments) {
       text: group.map((segment) => String(segment.text).replace(/\s+/g, ' ').trim()).join(' '),
       // Do not repair provider word-aligned text with a character-based estimate.
       sourceWords: group.some((segment) => Array.isArray(segment.sourceWords)) ? [] : undefined,
-      timingSource: group.some((segment) => segment.timingSource === 'word') ? 'word'
+      timingSource: group.some((segment) => segment.timingSource === 'speech_window') ? 'speech_window'
+        : group.some((segment) => segment.timingSource === 'word') ? 'word'
         : group.some((segment) => segment.timingSource === 'manual') ? 'manual' : undefined,
     });
     index = groupEnd;
@@ -217,6 +220,7 @@ function prepareOrdinarySources(segments) {
     // Match the existing ordinary 0.3s merge allowance; diarization never enters here.
     if (previous && gap >= 0 && gap <= 0.3 + 1e-9
       && !Array.isArray(previous.sourceWords) && !Array.isArray(segment.sourceWords)
+      && previous.timingSource !== 'speech_window' && segment.timingSource !== 'speech_window'
       && previous.timingSource !== 'word' && segment.timingSource !== 'word'
       && previous.timingSource !== 'manual' && segment.timingSource !== 'manual'
       && isKoreanDependentPredicateTail(previous.text, segment.text)) {

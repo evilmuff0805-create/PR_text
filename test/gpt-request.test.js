@@ -5,7 +5,8 @@ import OpenAI from 'openai';
 process.env.OPENAI_API_KEY ||= 'test-key';
 
 const { buildCorrectionRequest, shouldFallbackToGpt4o, getCorrectionModel,
-  correctTextWithUsage, translateToEnglish, translateToKorean } = await import('../src/services/gpt.js');
+  correctTextWithUsage, translateToEnglish, translateToKorean,
+  rewriteKoreanSentenceLines, verifyKoreanSentenceLines } = await import('../src/services/gpt.js');
 
 test('both Luna correction requests use explicit medium reasoning without sampling overrides', () => {
   for (const model of ['gpt-6-luna', 'gpt-5.6-luna']) {
@@ -76,6 +77,26 @@ test('correction prompt permits clear dictation and spelling errors while retain
   assert.match(systemPrompt, /문맥상 명백한 교정을 놓치지 않았는지 확인하세요/);
   assert.match(systemPrompt, /숫자, 소수점, 부호, 수량과 단위를 보존/);
   assert.match(systemPrompt, /사람 이름, 지명, 상호와 고유명사는 추측해 바꾸지 마세요/);
+});
+
+test('sentence rewrite and independent verifier prompts require grammatical and natural improvement', async t => {
+  const prompts = [];
+  t.mock.method(OpenAI.prototype, 'post', async (path, { body }) => {
+    prompts.push(body.messages[0].content);
+    return sdkResponse(prompts.length === 1
+      ? JSON.stringify({ groups: [{ lines: ['문장입니다'] }] })
+      : JSON.stringify({ accepted: [false] }));
+  });
+  const source = [['문맥상 자연스럽지 않은 어미입니다']];
+  await rewriteKoreanSentenceLines(source);
+  await verifyKoreanSentenceLines(source, [['어색한 후보입니다']]);
+  assert.match(prompts[0], /주어와 서술어, 목적·이유와 뒤따르는 서술/);
+  assert.match(prompts[0], /연결 어미와 종결 표현이 자연스럽게 호응/);
+  assert.match(prompts[0], /합니다체는 합니다체, 해요체는 해요체, 반말은 반말/);
+  assert.match(prompts[1], /원문보다 문법과 말맛을 실제로 개선/);
+  assert.match(prompts[1], /원문만큼 부자연스럽거나 더 어색하면 거부/);
+  assert.match(prompts[1], /높임 수준과 종결 말투/);
+  assert.match(prompts[1], /맞춤법·띄어쓰기·문장부호의 명백한 개선도 허용/);
 });
 
 test('only Luna client errors use the gpt-4o fallback', () => {

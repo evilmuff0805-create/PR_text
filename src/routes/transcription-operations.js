@@ -22,10 +22,12 @@ router.post('/', authMiddleware, upload, async (req, res, next) => {
     const operationKey = req.get('X-Transcription-Operation-Key');
     if (!isOperationKey(operationKey)) return res.status(400).json({ error: '유효하지 않은 변환 작업 키입니다.' });
     const language = req.body.language || null;
+    const polishMode = req.body.polishMode === undefined ? 'preserve' : req.body.polishMode;
+    if (!['preserve', 'grammar'].includes(polishMode)) return res.status(400).json({ error: '문법 다듬기 옵션을 확인해 주세요.' });
     try {
       const queued = await createAndQueueTranscriptionOperation({
         userId: req.user.id, operationKey, buffer: req.file.buffer, filename: req.file.originalname,
-        contentType: req.file.mimetype, language,
+        contentType: req.file.mimetype, language, polishMode,
       });
       console.log('[transcription.operation.accepted]', JSON.stringify({
         requestId: req.requestId, operationId: queued.operationId, mode: 'ordinary', existing: queued.existing,

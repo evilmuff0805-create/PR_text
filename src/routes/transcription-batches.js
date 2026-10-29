@@ -41,8 +41,8 @@ export function createTranscriptionBatchesRouter({
 
   router.get('/', handle(async (req, res) => res.json(await service.list(req.user.id))));
   router.post('/', handle(async (req, res) => {
-    const { batchKey, language, files } = req.body || {};
-    const created = await service.create({ userId: req.user.id, batchKey, language, files });
+    const { batchKey, language, polishMode, files } = req.body || {};
+    const created = await service.create({ userId: req.user.id, batchKey, language, polishMode, files });
     res.status(created.existing ? 200 : 201).json(created);
   }));
   router.get('/:batchId', checkIds, handle(async (req, res) => {
