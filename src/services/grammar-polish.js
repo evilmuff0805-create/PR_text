@@ -1,71 +1,19 @@
 import { buildSubtitleCues } from './subtitle.js';
 import { normalizeLanguage } from './language.js';
-import { evaluateSpokenTextCorrection } from './postprocess.js';
 
 export const POLISH_MODES = new Set(['preserve', 'grammar']);
-const MAX_LINES = 12;
-const MAX_TOTAL_LINES = 120;
-const MAX_INPUT_CHARS = MAX_TOTAL_LINES * 28;
-const TIMEOUT_MS = 12_000;
+const MAX_CUES_PER_GROUP = 12;
+const MAX_GROUPS_PER_CALL = 6;
+const MAX_TOTAL_CUES = 120;
+const MAX_INPUT_CHARS = 3_360;
+const MAX_CUE_CHARS = 28;
+// Real dialogue benchmarking showed that rewrite + independent review can
+// exceed 12s for a 12-window batch. Keep a 30s per-batch ceiling and the
+// existing 60s whole-file budget.
+const CALL_TIMEOUT_MS = 30_000;
 const TOTAL_BUDGET_MS = 60_000;
-const PARTICLE_GROUPS = [['은', '는'], ['이', '가'], ['을', '를'], ['과', '와'], ['으로', '로']];
-const TOKEN = /[가-힣]+|[A-Za-z]+|\d+(?:[.,]\d+)*/gu;
 const NUMBER = /[+\-−±∓＋－]?\p{N}+(?:[.,:/~–—-]\p{N}+)*/gu;
-const NEGATION = /안|못|않|없|아니|말고/gu;
-const PUNCTUATION = /[^\p{L}\p{N}\s]/gu;
-
-function splitParticle(word) {
-  for (const group of PARTICLE_GROUPS) {
-    for (const particle of group) {
-      const stem = word.endsWith(particle) ? word.slice(0, -particle.length) : '';
-      if (stem) return { stem, particle, group };
-    }
-  }
-  return { stem: word, particle: '', group: null };
-}
-
-function particleFits(stem, particle) {
-  const lastCode = stem.charCodeAt(stem.length - 1);
-  const final = lastCode >= 0xac00 && lastCode <= 0xd7a3 ? (lastCode - 0xac00) % 28 : 0;
-  if (particle === '은' || particle === '이' || particle === '을' || particle === '과') return final !== 0;
-  if (particle === '는' || particle === '가' || particle === '를' || particle === '와') return final === 0;
-  if (particle === '으로') return final !== 0 && final !== 8;
-  if (particle === '로') return final === 0 || final === 8;
-  return false;
-}
-
-function matchesIn(text, regex) {
-  return [...text.matchAll(regex)].map((match) => match[0]);
-}
-
-function punctuationSignature(text) {
-  return [...text.matchAll(new RegExp(PUNCTUATION.source, 'gu'))]
-    .map((match) => `${(text.slice(0, match.index).match(TOKEN) || []).length}:${match[0]}`);
-}
-
-function safeKoreanEdit(original, candidate) {
-  if (typeof candidate !== 'string' || !candidate.trim() || candidate.length > 28
-    || /[\r\n\t\u0000-\u001f\u007f]/u.test(candidate)) return false;
-  if (!evaluateSpokenTextCorrection(original, candidate).accepted) return false;
-  if (JSON.stringify(matchesIn(original, new RegExp(NUMBER.source, 'gu'))) !== JSON.stringify(matchesIn(candidate, new RegExp(NUMBER.source, 'gu')))) return false;
-  if (JSON.stringify(matchesIn(original, new RegExp(NEGATION.source, 'gu'))) !== JSON.stringify(matchesIn(candidate, new RegExp(NEGATION.source, 'gu')))) return false;
-  if (JSON.stringify(punctuationSignature(original)) !== JSON.stringify(punctuationSignature(candidate))) return false;
-  const before = original.match(TOKEN) || [];
-  const after = candidate.match(TOKEN) || [];
-  if (before.length !== after.length) return false;
-  let particleChanges = 0;
-  for (let index = 0; index < before.length; index += 1) {
-    if (before[index] === after[index]) continue;
-    if (!/[가-힣]/u.test(before[index]) || !/[가-힣]/u.test(after[index])) return false;
-    const left = splitParticle(before[index]);
-    const right = splitParticle(after[index]);
-    if (left.stem.length < 2 || left.stem !== right.stem || !left.group || left.group !== right.group
-      || particleFits(left.stem, left.particle) || !particleFits(right.stem, right.particle)) return false;
-    particleChanges += 1;
-  }
-  // Changing several grammatical roles in one line can reverse who did what.
-  return particleChanges <= 1;
-}
+const ENGLISH = /[A-Za-z]+(?:[.'’-][A-Za-z]+)*/gu;
 
 function sameCueTimeline(before, after) {
   return before.length === after.length && before.every((cue, index) => {
@@ -74,111 +22,292 @@ function sameCueTimeline(before, after) {
   });
 }
 
-function annotate(segments, statuses, originalSegments = segments) {
-  return segments.map((segment, index) => ({ ...segment,
-    grammarPolish: { originalText: originalSegments[index]?.text, status: statuses[index] || 'skipped' },
-  }));
+function signature(text, pattern) {
+  return [...String(text ?? '').matchAll(new RegExp(pattern.source, 'gu'))].map((match) => match[0]);
 }
 
-/** Applies optional Korean grammar edits after spelling correction and alignment.
- * Any uncertainty leaves the complete corrected baseline in place. */
-export async function polishKoreanSegments(segments, language, { polishLines, signal, buildCues = buildSubtitleCues } = {}) {
+function isDiarized(cues) {
+  return cues.some((cue) => cue.speaker !== undefined && cue.speaker !== null && cue.speaker !== '');
+}
+
+function canJoinCueWindow(previous, next, diarized) {
+  if (diarized && previous.speaker !== next.speaker) return false;
+  const gap = Number(next.start) - Number(previous.end);
+  if (!Number.isFinite(gap) || gap < -1e-9) return false;
+  // Diarized speech never groups across a positive silence. Ordinary speech
+  // follows the existing 0.3s dependency-tail bound; larger pauses start a
+  // new sentence window and are never filled by the rewrite.
+  return diarized ? gap <= 1e-9 : gap <= 0.3 + 1e-9;
+}
+
+function makeGroups(cues) {
+  const groups = [];
+  const diarized = isDiarized(cues);
+  for (let index = 0; index < cues.length;) {
+    const group = [index];
+    while (index + 1 < cues.length && group.length < MAX_CUES_PER_GROUP
+      && canJoinCueWindow(cues[index], cues[index + 1], diarized)) {
+      index += 1;
+      group.push(index);
+    }
+    groups.push(group);
+    index += 1;
+  }
+  return groups;
+}
+
+function validCandidate(source, candidate) {
+  if (typeof candidate !== 'string') return false;
+  const cleaned = candidate.replace(/\s+/gu, ' ').trim();
+  if (!cleaned || cleaned !== candidate || /[\r\n\t\u0000-\u001f\u007f]/u.test(candidate)) return false;
+  if (Array.from(candidate).length > MAX_CUE_CHARS) return false;
+  if (hasFormalKoreanEnding(source) && !hasFormalKoreanEnding(candidate)) return false;
+  if (JSON.stringify(signature(source, NUMBER)) !== JSON.stringify(signature(candidate, NUMBER))) return false;
+  if (JSON.stringify(signature(source, ENGLISH)) !== JSON.stringify(signature(candidate, ENGLISH))) return false;
+  return true;
+}
+
+function hasFormalKoreanEnding(text) {
+  return /(?:니다|니까|십시오)[.!?…。、」』"”’)]*$/u.test(String(text ?? '').trim());
+}
+
+function koreanEojeolCounts(text) {
+  const counts = new Map();
+  for (const eojeol of String(text ?? '').match(/[가-힣]+/gu) || []) {
+    counts.set(eojeol, (counts.get(eojeol) || 0) + 1);
+  }
+  return counts;
+}
+
+function preservesKoreanEojeolOwnership(sourceGroup, candidateGroup) {
+  const sourceCounts = sourceGroup.map(koreanEojeolCounts);
+  const candidateCounts = candidateGroup.map(koreanEojeolCounts);
+  for (let sourceIndex = 0; sourceIndex < sourceCounts.length; sourceIndex += 1) {
+    for (const [eojeol, sourceCount] of sourceCounts[sourceIndex]) {
+      if ((candidateCounts[sourceIndex].get(eojeol) || 0) >= sourceCount) continue;
+      for (let candidateIndex = 0; candidateIndex < candidateCounts.length; candidateIndex += 1) {
+        if (candidateIndex === sourceIndex) continue;
+        if ((candidateCounts[candidateIndex].get(eojeol) || 0)
+          > (sourceCounts[candidateIndex].get(eojeol) || 0)) return false;
+      }
+    }
+  }
+  return true;
+}
+
+function addUsage(total, usage = {}) {
+  for (const key of Object.keys(total)) {
+    total[key] += Number.isSafeInteger(usage[key]) && usage[key] > 0 ? usage[key] : 0;
+  }
+}
+
+function summarizeStatuses(statuses) {
+  return statuses.reduce((counts, status) => {
+    counts[status] = (counts[status] || 0) + 1;
+    return counts;
+  }, {});
+}
+
+/** Rewrites Korean subtitle windows as an opt-in post-processing stage.
+ * The same cue count, cue ownership, speaker, and times are mandatory.
+ * Any failed mapping or meaning/timing review rolls back the entire window. */
+export async function polishKoreanSegments(segments, language, {
+  rewriteLines,
+  verifyLines,
+  polishLines,
+  signal,
+  buildCues = buildSubtitleCues,
+} = {}) {
   const startedAt = Date.now();
   let calls = 0;
   let model;
+  let requestedModel;
+  let fallbackUsed = false;
   const usage = { promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, totalTokens: 0 };
-  const metrics = () => ({ wallMs: Date.now() - startedAt, calls, ...(model ? { model } : {}), usage });
+  const metrics = () => ({ wallMs: Date.now() - startedAt, calls, ...(model ? { model } : {}), ...(requestedModel ? { requestedModel } : {}), fallbackUsed, usage });
   const normalized = normalizeLanguage(language);
-  const isKorean = normalized === 'ko';
-  if (!isKorean) return { segments: annotate(segments, Array(segments.length).fill('unsupported_language')), applied: 0, skipped: segments.length, unavailable: false, metrics: metrics() };
-
-  const eligible = [];
-  const baseline = segments.map((segment) => ({ ...segment }));
-  const statuses = Array(segments.length).fill('skipped');
-  for (let index = 0; index < segments.length; index += 1) {
-    const segment = segments[index];
-    if (typeof segment.text !== 'string' || !segment.text.trim()) { statuses[index] = 'empty_line'; continue; }
-    if (Array.from(segment.text).length > 28) { statuses[index] = 'long_line'; continue; }
-    if (segment.wordAlignedCues) { statuses[index] = 'word_timing'; continue; }
-    if (segment.subtitleReview?.candidateText || segment.subtitleReview?.timingCandidate) { statuses[index] = 'review_pending'; continue; }
-    if (!/[가-힣]/u.test(segment.text)) { statuses[index] = 'non_korean_row'; continue; }
-    eligible.push(index);
+  if (normalized !== 'ko') {
+    return { segments, applied: 0, skipped: segments.length, unavailable: false, metrics: metrics() };
   }
-  const selected = [];
+
+  const cues = buildCues(segments, { holdShortGaps: false }).map((cue) => ({ ...cue }));
+  if (cues.length > 5_000) {
+    return { segments, applied: 0, skipped: cues.length, unavailable: false, limited: true,
+      summary: { statuses: { limit: cues.length } }, metrics: metrics() };
+  }
+  const beforeCues = buildCues(cues, { holdShortGaps: false });
+  if (!sameCueTimeline(cues, beforeCues)) {
+    return { segments, applied: 0, skipped: cues.length, unavailable: true, limited: false,
+      summary: { statuses: { timeline_fallback: cues.length } }, metrics: metrics() };
+  }
+  const baseline = cues.map((cue) => ({ ...cue }));
+  const statuses = Array(cues.length).fill('skipped');
+  const groups = makeGroups(cues);
+  const reviewRanges = segments.filter((segment) => segment.subtitleReview?.candidateText
+    || segment.subtitleReview?.timingCandidate).map((segment) => [Number(segment.start), Number(segment.end)]);
+  const eligibleGroups = [];
+  let selectedCues = 0;
   let selectedChars = 0;
-  for (const index of eligible) {
-    const length = Array.from(segments[index].text).length;
-    if (selected.length >= MAX_TOTAL_LINES || selectedChars + length > MAX_INPUT_CHARS) break;
-    selected.push(index);
+  let limited = false;
+
+  for (const group of groups) {
+    const groupCues = group.map((index) => cues[index]);
+    if (groupCues.some((cue) => reviewRanges.some(([start, end]) => (
+      Number(cue.start) < end && Number(cue.end) > start
+    )))) {
+      for (const index of group) statuses[index] = 'review_pending';
+      continue;
+    }
+    if (groupCues.some((cue) => typeof cue.text !== 'string' || !cue.text.trim()
+      || Array.from(cue.text).length > MAX_CUE_CHARS || !/[가-힣]/u.test(cue.text))) {
+      for (const index of group) statuses[index] = 'unsupported_cue';
+      continue;
+    }
+    const length = groupCues.reduce((sum, cue) => sum + Array.from(cue.text).length, 0);
+    if (selectedCues + group.length > MAX_TOTAL_CUES || selectedChars + length > MAX_INPUT_CHARS) {
+      limited = true;
+      for (const index of group) statuses[index] = 'limit';
+      continue;
+    }
+    selectedCues += group.length;
     selectedChars += length;
-  }
-  const limited = selected.length < eligible.length;
-  for (const index of eligible.slice(selected.length)) statuses[index] = 'limit';
-  if (!selected.length || typeof polishLines !== 'function') {
-    return { segments: annotate(baseline, statuses), applied: 0, skipped: baseline.length, unavailable: false, limited, metrics: metrics() };
+    eligibleGroups.push(group);
   }
 
-  let applied = 0;
+  const rewriter = typeof rewriteLines === 'function' ? rewriteLines : polishLines;
+  if (!eligibleGroups.length || typeof rewriter !== 'function' || typeof verifyLines !== 'function') {
+    const unavailable = typeof verifyLines !== 'function';
+    if (unavailable) for (const group of eligibleGroups) for (const index of group) statuses[index] = 'verifier_unavailable';
+    return { segments, applied: 0, skipped: segments.length, unavailable, limited,
+      summary: { statuses: summarizeStatuses(statuses) }, metrics: metrics() };
+  }
+
   let unavailable = false;
-  for (let offset = 0; offset < selected.length; offset += MAX_LINES) {
+  let applied = 0;
+  for (let offset = 0; offset < eligibleGroups.length; offset += MAX_GROUPS_PER_CALL) {
     if (signal?.aborted || Date.now() - startedAt >= TOTAL_BUDGET_MS) {
       unavailable = true;
-      for (const index of selected.slice(offset)) statuses[index] = 'timeout';
+      for (const group of eligibleGroups.slice(offset).flat()) statuses[group] = 'timeout';
       break;
     }
+    const groupBatch = eligibleGroups.slice(offset, offset + MAX_GROUPS_PER_CALL);
+    const sourceGroups = groupBatch.map((group) => group.map((index) => cues[index].text));
+    const remaining = TOTAL_BUDGET_MS - (Date.now() - startedAt);
     const controller = new AbortController();
     const abort = () => controller.abort(signal?.reason);
     if (signal?.aborted) abort();
     else signal?.addEventListener('abort', abort, { once: true });
-    const remaining = TOTAL_BUDGET_MS - (Date.now() - startedAt);
-    const timer = setTimeout(() => controller.abort(new Error('문법 다듬기 시간 초과')), Math.min(TIMEOUT_MS, remaining));
-    let abortReject;
-    const abortPromise = new Promise((_, reject) => { abortReject = reject; });
-    const rejectOnAbort = () => abortReject(controller.signal.reason || new Error('문법 다듬기 중단'));
-    if (controller.signal.aborted) rejectOnAbort();
-    else controller.signal.addEventListener('abort', rejectOnAbort, { once: true });
-    let candidates;
-    try {
-      const chunk = selected.slice(offset, offset + MAX_LINES);
+    const timer = setTimeout(() => controller.abort(new Error('문장 다듬기 시간 초과')),
+      Math.min(CALL_TIMEOUT_MS, remaining));
+    const request = async (fn) => {
       calls += 1;
-      const response = await Promise.race([polishLines(chunk.map((index) => segments[index].text), { signal: controller.signal }), abortPromise]);
-      if (Array.isArray(response)) candidates = response;
-      else if (response && Array.isArray(response.lines)) {
-        candidates = response.lines;
-        model ||= typeof response.model === 'string' ? response.model : undefined;
-        for (const key of Object.keys(usage)) usage[key] += Number.isSafeInteger(response.usage?.[key]) && response.usage[key] > 0 ? response.usage[key] : 0;
+      const result = await fn(sourceGroups, { signal: controller.signal });
+      model ||= result?.model;
+      requestedModel ||= result?.requestedModel;
+      fallbackUsed ||= result?.fallbackUsed === true;
+      addUsage(usage, result?.usage);
+      return result;
+    };
+    let rewritten;
+    let verdict;
+    let apiError;
+    try {
+      let rejectOnAbort;
+      const abortPromise = new Promise((_, reject) => { rejectOnAbort = reject; });
+      const reject = () => rejectOnAbort(controller.signal.reason || new Error('문장 다듬기 취소'));
+      if (controller.signal.aborted) reject();
+      else controller.signal.addEventListener('abort', reject, { once: true });
+      try {
+        rewritten = await Promise.race([request(rewriter), abortPromise]);
+        const candidateGroups = rewritten?.groups;
+        if (!Array.isArray(candidateGroups) || candidateGroups.length !== sourceGroups.length
+          || candidateGroups.some((candidate, index) => !Array.isArray(candidate)
+            || candidate.length !== sourceGroups[index].length
+            || candidate.some((line) => typeof line !== 'string' || !line.trim()))) {
+          apiError = 'invalid_response';
+        } else {
+          const structurallySafe = candidateGroups.map((candidateGroup, groupIndex) => (
+            candidateGroup.every((line, lineIndex) => validCandidate(sourceGroups[groupIndex][lineIndex], line))
+              && preservesKoreanEojeolOwnership(sourceGroups[groupIndex], candidateGroup)
+          ));
+          const reviewGroups = candidateGroups.map((candidateGroup, groupIndex) => (
+            structurallySafe[groupIndex] ? candidateGroup : sourceGroups[groupIndex]
+          ));
+          if (candidateGroups.some((group, index) => group.some((line, lineIndex) => line !== sourceGroups[index][lineIndex]))) {
+            verdict = await Promise.race([request((input, options) => verifyLines(sourceGroups, reviewGroups, options)), abortPromise]);
+          } else {
+            verdict = { accepted: sourceGroups.map(() => true), model: rewritten.model,
+              usage: { promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, totalTokens: 0 } };
+          }
+          if (!Array.isArray(verdict?.accepted) || verdict.accepted.length !== sourceGroups.length
+            || verdict.accepted.some((accepted) => typeof accepted !== 'boolean')) apiError = 'invalid_response';
+        }
+      } finally {
+        controller.signal.removeEventListener('abort', reject);
       }
     } catch {
-      unavailable = true;
-      for (const index of selected.slice(offset)) statuses[index] = 'timeout';
-      break;
+      apiError = controller.signal.aborted ? 'timeout' : 'api_error';
     } finally {
       clearTimeout(timer);
-      controller.signal.removeEventListener('abort', rejectOnAbort);
       signal?.removeEventListener('abort', abort);
     }
-    const chunk = selected.slice(offset, offset + MAX_LINES);
-    if (!Array.isArray(candidates) || candidates.length !== chunk.length) {
+
+    if (apiError) {
       unavailable = true;
-      for (const index of chunk) statuses[index] = 'invalid_response';
+      for (const group of groupBatch) for (const index of group) statuses[index] = apiError;
+      if (apiError === 'timeout' || apiError === 'api_error') {
+        for (const group of eligibleGroups.slice(offset + groupBatch.length)) {
+          for (const index of group) statuses[index] = apiError;
+        }
+        break;
+      }
       continue;
     }
-    for (let position = 0; position < chunk.length; position += 1) {
-      const index = chunk[position];
-      const original = segments[index].text;
-      const candidate = candidates[position];
-      if (safeKoreanEdit(original, candidate)) {
-        baseline[index] = { ...baseline[index], text: candidate };
-        applied += Number(candidate !== original);
-        statuses[index] = candidate === original ? 'unchanged' : 'applied';
-      } else {
-        statuses[index] = 'unsafe_candidate';
+
+    const candidateGroups = rewritten.groups;
+    for (let groupIndex = 0; groupIndex < groupBatch.length; groupIndex += 1) {
+      const group = groupBatch[groupIndex];
+      const candidateGroup = candidateGroups[groupIndex];
+      const structurallySafe = candidateGroup.every((line, lineIndex) => validCandidate(sourceGroups[groupIndex][lineIndex], line))
+        && preservesKoreanEojeolOwnership(sourceGroups[groupIndex], candidateGroup);
+      const accepted = structurallySafe && verdict.accepted[groupIndex] === true;
+      if (!accepted) {
+        for (const index of group) statuses[index] = structurallySafe ? 'meaning_or_timing_rejected' : 'unsafe_candidate';
+        continue;
+      }
+      for (let lineIndex = 0; lineIndex < group.length; lineIndex += 1) {
+        const cueIndex = group[lineIndex];
+        const candidate = candidateGroup[lineIndex];
+        if (candidate !== baseline[cueIndex].text) {
+          const { wordAlignedCues: ignoredWordCues, timingSource: ignoredTimingSource, ...safeCue } = baseline[cueIndex];
+          baseline[cueIndex] = { ...safeCue, text: candidate, timingSource: 'speech_window' };
+          applied += 1;
+          statuses[cueIndex] = 'applied';
+        } else statuses[cueIndex] = 'unchanged';
       }
     }
   }
-  if (applied && !sameCueTimeline(buildCues(segments, { holdShortGaps: false }), buildCues(baseline, { holdShortGaps: false }))) {
-    return { segments: annotate(segments, Array(segments.length).fill('timeline_fallback'), segments), applied: 0, skipped: segments.length, unavailable: true, limited, metrics: metrics() };
+
+  if (applied) {
+    const afterCues = buildCues(baseline, { holdShortGaps: false });
+    if (!sameCueTimeline(beforeCues, afterCues)) {
+      return { segments, applied: 0, skipped: cues.length, unavailable: true, limited, metrics: metrics() };
+    }
+    const annotated = baseline.map((cue, index) => {
+      const status = statuses[index] || 'skipped';
+      if (status === 'applied') return { ...cue, grammarPolish: {
+        originalText: cues[index].text,
+        originalTimingSource: cues[index].timingSource,
+        status,
+      } };
+      return { ...cue, grammarPolish: { status } };
+    });
+    return { segments: annotated, applied, skipped: cues.length - applied,
+      unavailable, limited, summary: { statuses: summarizeStatuses(statuses) }, metrics: metrics() };
   }
 
-  return { segments: annotate(baseline, statuses, segments), applied, skipped: segments.length - applied, unavailable, limited, metrics: metrics() };
+  // If nothing was rewritten, return the original editor rows byte-for-byte.
+  // This keeps an opt-in no-op from changing the saved row layout.
+  return { segments, applied: 0, skipped: cues.length, unavailable, limited,
+    summary: { statuses: summarizeStatuses(statuses) }, metrics: metrics() };
 }

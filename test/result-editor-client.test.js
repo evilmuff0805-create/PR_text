@@ -42,6 +42,15 @@ test('mismatched line counts warn the user and block every download path', async
   assert.match(page, /if \(lineCountMismatch\) return;/);
 });
 
+test('restoring polished originals updates the result summary instead of retaining the applied count', async () => {
+  const page = await read('client/src/pages/ResultPage.jsx');
+  assert.match(page, /const restorePolishedOriginals = useCallback\(\(\) => \{/);
+  assert.match(page, /const remainingPolishedOriginals = editedSegments\.filter/);
+  assert.match(page, /const sourceAppliedPolishCount = polishRows\.filter/);
+  assert.match(page, /const restoredPolishCount = Math\.max\(0, sourceAppliedPolishCount - remainingPolishedOriginals\)/);
+  assert.match(page, /polishRestored\s*\?\s*`문장 다듬기 전 문장으로 \$\{restoredPolishCount\}개 자막 구간을 복원했습니다\.`/);
+});
+
 test('edits and speaker colors survive a page refresh', async () => {
   const page = await read('client/src/pages/ResultPage.jsx');
   assert.match(page, /readStoredEdits\(transcriptionLogId, segments, user\?\.id\)/);

@@ -400,8 +400,8 @@ export default function HomePage() {
       <fieldset className="conversion-options__field" style={{ border: 0, padding: 0, margin: 0 }}>
         <legend>한국어 자막</legend>
         <label><input type="radio" name="polish-mode" value="preserve" checked={polishMode === 'preserve'} disabled={Boolean(activeOperationKey)} onChange={() => setPolishMode('preserve')} /> 변환 전 원문 보존 (기존 맞춤법 교정)</label>
-        <label><input type="radio" name="polish-mode" value="grammar" checked={polishMode === 'grammar'} disabled={Boolean(activeOperationKey)} onChange={() => setPolishMode('grammar')} /> 한국어 문법 다듬기</label>
-        <p className="batch-note">문법 다듬기는 맞춤법 교정 뒤 받침 규칙에 맞는 한국어 조사 형태를 짧은 줄에서만 고칩니다. 문장 전체 재작성은 하지 않습니다. 파일당 최대 120줄·3,360자·60초까지 처리하며 나머지는 기존 맞춤법 교정 결과를 유지합니다. 일부 줄은 시간·단어 정렬·검토 상태 때문에 건너뛸 수 있습니다.</p>
+        <label><input type="radio" name="polish-mode" value="grammar" checked={polishMode === 'grammar'} disabled={Boolean(activeOperationKey)} onChange={() => setPolishMode('grammar')} /> 문장 다듬기</label>
+        <p className="batch-note">문장 다듬기는 문맥을 보고 어순·조사·어미와 문장 호응을 자연스럽게 고칩니다. 내용의 주체·부정·숫자·이름은 유지하고, 각 자막이 원래 발화 구간의 내용을 담도록 확인합니다. 문장 단위 변경이라 새 문장의 단어별 정밀 타임코드를 보장하지 않습니다. 같은 화자의 이어지는 최대 12개 cue·336자씩, 파일당 최대 120개 cue·3,360자·60초까지 처리합니다. 의미나 구간 대응이 불확실하면 해당 문맥은 맞춤법 교정 결과로 돌아갑니다.</p>
       </fieldset>
 
       <label className={diarize ? 'speaker-toggle is-active' : 'speaker-toggle'}>

@@ -416,14 +416,21 @@ export async function processTranscriptionSegments(segments, language, { correct
   let grammarPolish;
   if (POLISH_MODES.has(polishMode) && polishMode === 'grammar') {
     try {
-      const polish = polishLines || (await import('./gpt.js')).polishKoreanGrammarLines;
+      const gpt = await import('./gpt.js');
+      const rewrite = polishLines || gpt.rewriteKoreanSentenceLines;
       const polishLanguage = normalizeLanguage(language) === 'ko' || correctionTimings?.languageDecision === 'inferred_from_hangul_segments' ? 'ko' : language;
-      const result = await polishKoreanSegments(finalSegments, polishLanguage, { polishLines: polish, signal });
+      const result = await polishKoreanSegments(finalSegments, polishLanguage, {
+        rewriteLines: rewrite,
+        verifyLines: gpt.verifyKoreanSentenceLines,
+        signal,
+      });
       finalSegments = result.segments;
-      grammarPolish = { requested: true, applied: result.applied, skipped: result.skipped, unavailable: result.unavailable, metrics: result.metrics };
+      grammarPolish = { requested: true, applied: result.applied, skipped: result.skipped,
+        unavailable: result.unavailable, limited: result.limited, summary: result.summary, metrics: result.metrics };
     } catch {
-      finalSegments = finalSegments.map((segment) => ({ ...segment, grammarPolish: { originalText: segment.text, status: 'unavailable' } }));
-      grammarPolish = { requested: true, applied: 0, skipped: finalSegments.length, unavailable: true, metrics: { wallMs: 0, calls: 0, usage: { promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, totalTokens: 0 } } };
+      grammarPolish = { requested: true, applied: 0, skipped: finalSegments.length, unavailable: true,
+        summary: { statuses: { api_error: finalSegments.length } },
+        metrics: { wallMs: 0, calls: 0, usage: { promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, totalTokens: 0 } } };
     }
   }
   return {

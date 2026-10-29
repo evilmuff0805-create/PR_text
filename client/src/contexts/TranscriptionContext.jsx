@@ -63,8 +63,9 @@ function uploadTranscription({ formData, token, onProgress, onUploadComplete, op
 function resultFromResponse(data, diarize) {
   const polishRows = Array.isArray(data.segments) ? data.segments.filter((segment) => segment.grammarPolish) : [];
   const grammarPolish = polishRows.length ? {
+    ...(data.grammarPolish || {}),
     applied: polishRows.filter((segment) => segment.grammarPolish.status === 'applied').length,
-    unavailable: polishRows.some((segment) => ['timeout', 'invalid_response', 'timeline_fallback'].includes(segment.grammarPolish.status)),
+    unavailable: (data.grammarPolish?.unavailable === true) || polishRows.some((segment) => ['timeout', 'api_error', 'invalid_response', 'timeline_fallback', 'verifier_unavailable', 'meaning_or_timing_rejected', 'unsafe_candidate'].includes(segment.grammarPolish.status)),
     limited: polishRows.some((segment) => segment.grammarPolish.status === 'limit'),
   } : data.grammarPolish || (data.polishMode === 'grammar' ? { applied: 0, unavailable: false } : null);
   return {

@@ -43,6 +43,22 @@ function unzipStored(buffer) {
 
 const item = (label, segments = [{ start: 12.345, end: 12.567, text: '네' }]) => ({ label, status: 'completed', segments });
 
+test('subtitle payload bounds optional sentence-polish restoration metadata and accepts legacy line backups', () => {
+  const base = { start: 0, end: 1, text: '문장입니다', timingSource: 'speech_window' };
+  assert.equal(validateSubtitleSegments([{ ...base, grammarPolish: {
+    status: 'applied', originalText: '원래 문장입니다', originalTimingSource: 'word',
+  } }]), null);
+  assert.equal(validateSubtitleSegments([{ ...base, grammarPolish: {
+    status: 'applied', originalText: 'x'.repeat(10_000),
+  } }]), null);
+  assert.match(validateSubtitleSegments([{ ...base, grammarPolish: {
+    status: 'applied', originalText: 'x'.repeat(10_001),
+  } }]), /복원 정보/u);
+  assert.match(validateSubtitleSegments([{ ...base, grammarPolish: {
+    status: 'applied', sourceRows: Array.from({ length: 100 }, () => 'x'.repeat(1_000)),
+  } }]), /복원 정보/u);
+});
+
 test('batch ZIP keeps independent millisecond timelines, silence and simultaneous speech', () => {
   const first = item('첫 번째 인물', [
     { start: 0.25, end: 0.4, text: '네' },
