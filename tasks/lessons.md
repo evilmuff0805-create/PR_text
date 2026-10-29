@@ -33,3 +33,4 @@
 - A semantic verifier can approve an awkward sentence or overlook token movement. Test naturalness independently, retain failed real API cases, and distinguish local implementation completion from release reliability when bounded calls frequently fall back.
 - Compare smaller AI batches on identical saved inputs, sequentially, counting all malformed/timeout fallbacks. Lower failure frequency can increase total latency and token use; do not compare a fast failed request with a successful request as a speed gain.
 - Successful execution and equal subtitle times do not establish lyrical meaning preservation. If independent audio evidence is inconclusive, exclude those rewrites from quality wins and keep release approval separate from bounded local implementation completion.
+- Keep upload option descriptions to one concise user-facing sentence; keep implementation limits in documentation and contextual result notices.

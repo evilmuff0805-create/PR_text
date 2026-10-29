@@ -40,7 +40,7 @@ export default function BatchTranscriptionPanel({ onLogin }) {
         <p className="batch-note">여기에 파일 여러 개를 놓거나 선택하세요. 파일당 업로드 최대 150MiB, WAV 원본 최대 500MiB입니다. 큰 WAV 준비와 업로드는 파일별로 순서대로 진행합니다.</p>
         <label className="batch-field"><span>공통 원본 언어</span><select value={state.language} disabled={locked} onChange={(event) => state.setLanguage(event.target.value)}><option value="">자동 감지</option><option value="ko">한국어</option><option value="en">영어</option><option value="ja">일본어</option><option value="zh">중국어</option></select></label>
         <label className="batch-field"><span>한국어 자막</span><select value={state.polishMode} disabled={locked} onChange={(event) => state.setPolishMode(event.target.value)}><option value="preserve">변환 전 원문 보존 (기존 맞춤법 교정)</option><option value="grammar">문장 다듬기</option></select></label>
-        <p className="batch-note">문장 다듬기는 문맥을 보고 문장 전체를 자연스럽게 고칩니다. 의미를 유지하고 각 자막 내용이 원래 발화 구간에 맞도록 별도로 확인합니다. 새 문장의 단어별 정밀 타임코드는 보장하지 않습니다. 같은 화자의 이어지는 최대 12개 cue·336자씩, 파일당 최대 120개 cue·3,360자·60초까지 처리하며 의미나 구간 대응이 불확실하면 기존 교정 결과를 유지합니다.</p>
+        <p className="batch-note">원문의 의미를 살리며 문장을 자연스럽게 다듬고, 자막 구간은 유지합니다.</p>
       </div>}
       <ol className="batch-file-list" aria-label="사람별 파일 목록">{state.rows.map((row, index) => {
         const local = state.localStates[row.clientId];
