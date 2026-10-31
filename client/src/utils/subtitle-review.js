@@ -5,6 +5,53 @@ const validText = (value) => typeof value === 'string' && value.length <= 10_000
 const validRange = (start, end) => Number.isFinite(start) && Number.isFinite(end) && start >= 0 && end > start;
 const validTimingText = (value) => validText(value) && value.trim() && !/[\u0000-\u001f\u007f]/.test(value);
 
+const LOCAL_EXCLUSION_TOKEN = /^[a-z][a-z0-9_-]{0,95}$/;
+const LOCAL_EXCLUSION_REASONS = new Set(['distributed_repetition', 'suspicious_silence', 'exact_zero_with_provider_risk', 'user_selection']);
+const hasSpeaker = (segment) => segment?.speaker !== undefined && segment.speaker !== null && segment.speaker !== '';
+
+// Keep the snapshot after edits so an old exclusion cannot follow new speech.
+export function normalizeLocalExclusion(value) {
+  if (!value || value.version !== 1 || !['review', 'automatic', 'user', 'restored'].includes(value.status)
+    || !LOCAL_EXCLUSION_REASONS.has(value.reason)
+    || !validText(value.binding?.text) || !value.binding.text.trim() || !validRange(value.binding?.start, value.binding?.end)) return undefined;
+  const result = { version: 1, status: value.status, reason: value.reason,
+    binding: { text: value.binding.text, start: value.binding.start, end: value.binding.end } };
+  if (typeof value.groupId === 'string' && LOCAL_EXCLUSION_TOKEN.test(value.groupId)) result.groupId = value.groupId;
+  if (Number.isSafeInteger(value.occurrences) && value.occurrences >= 1 && value.occurrences <= 20_000) result.occurrences = value.occurrences;
+  if (['exact_zero', 'signal_present', 'unavailable', 'not_checked'].includes(value.audioStatus)) result.audioStatus = value.audioStatus;
+  return result;
+}
+
+export function getBoundLocalExclusion(segment) {
+  if (hasSpeaker(segment)) return undefined;
+  const value = normalizeLocalExclusion(segment?.subtitleReview?.localExclusion);
+  return value && value.binding.text === segment.text && value.binding.start === segment.start
+    && value.binding.end === segment.end ? value : undefined;
+}
+
+export function isLocallyExcluded(segment) {
+  return ['automatic', 'user'].includes(getBoundLocalExclusion(segment)?.status);
+}
+
+export function setSubtitleExclusion(segment, excluded) {
+  if (!segment || hasSpeaker(segment) || !validText(segment.text) || !segment.text.trim() || !validRange(segment.start, segment.end)) return segment;
+  const prior = normalizeSubtitleReview(segment.subtitleReview, segment.text);
+  const previous = normalizeLocalExclusion(prior?.localExclusion);
+  if (!excluded && !previous) return segment;
+  const binding = { text: segment.text, start: segment.start, end: segment.end };
+  const bound = getBoundLocalExclusion(segment);
+  const localExclusion = excluded
+    ? { version: 1, status: 'user', reason: 'user_selection', binding,
+      ...(bound?.groupId ? { groupId: bound.groupId, occurrences: bound.occurrences } : {}),
+      audioStatus: bound?.audioStatus || 'not_checked' }
+    : { ...previous, status: 'restored' };
+  const review = { version: 1, issues: [], ...prior,
+    originalText: prior?.originalText ?? previous?.binding.text ?? segment.text,
+    originalTiming: prior?.originalTiming ?? (previous ? { start: previous.binding.start, end: previous.binding.end } : { start: segment.start, end: segment.end }),
+    localExclusion };
+  return { ...segment, subtitleReview: normalizeSubtitleReview(review, segment.text) };
+}
+
 function normalizeTimingEvidence(value, confirmed = false) {
   if (!value || !validRange(value.sourceStart, value.sourceEnd) || !validRange(value.start, value.end)
     || !validTimingText(value.matchingText)
@@ -40,6 +87,8 @@ export function normalizeSubtitleReview(value, currentText) {
   if (timingConfirmation && review.originalTiming && timingConfirmation.sourceStart === review.originalTiming.start
     && timingConfirmation.sourceEnd === review.originalTiming.end
     && (currentText === undefined || timingConfirmation.matchingText === currentText)) review.timingConfirmation = timingConfirmation;
+  const localExclusion = normalizeLocalExclusion(value.localExclusion);
+  if (localExclusion) review.localExclusion = localExclusion;
   if (value.timingStatus === 'unverified' || review.textStatus || review.timingCandidate || review.timingConfirmation || review.originalTiming) review.timingStatus = 'unverified';
   return review;
 }

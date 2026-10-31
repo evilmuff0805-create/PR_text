@@ -1,4 +1,5 @@
 import { MAX_SPEAKERS } from './speakers.js';
+import { normalizeLocalExclusion } from './subtitle-review.js';
 
 export const MAX_SUBTITLE_SEGMENTS = 5_000;
 export const MAX_SUBTITLE_SEGMENT_TEXT = 10_000;
@@ -12,6 +13,7 @@ export function validateSubtitleSegments(segments, { allowEmpty = false } = {}) 
 
   let totalTextLength = 0;
   let totalGrammarRestoreLength = 0;
+  let totalExclusionBindingLength = 0;
   for (const segment of segments) {
     if (!segment || typeof segment !== 'object') return '자막 세그먼트 형식이 올바르지 않습니다.';
     if (!Number.isFinite(segment.start) || !Number.isFinite(segment.end) || segment.start < 0 || segment.end < segment.start) {
@@ -31,6 +33,12 @@ export function validateSubtitleSegments(segments, { allowEmpty = false } = {}) 
       }
       totalGrammarRestoreLength += metadata.originalText?.length || 0;
       if (totalGrammarRestoreLength > MAX_SUBTITLE_TOTAL_TEXT) return '문장 다듬기 복원 정보가 너무 큽니다.';
+    }
+    if (segment.subtitleReview?.localExclusion !== undefined) {
+      const exclusion = normalizeLocalExclusion(segment.subtitleReview.localExclusion);
+      if (!exclusion) return '자막 제외 정보가 올바르지 않습니다.';
+      totalExclusionBindingLength += exclusion.binding.text.length;
+      if (totalExclusionBindingLength > MAX_SUBTITLE_TOTAL_TEXT) return '자막 제외 정보가 너무 큽니다.';
     }
     if (segment.speaker !== undefined && (!Number.isInteger(segment.speaker) || segment.speaker < 0 || segment.speaker >= MAX_SPEAKERS)) {
       return '화자 정보가 올바르지 않습니다.';

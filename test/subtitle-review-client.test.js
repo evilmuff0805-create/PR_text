@@ -105,7 +105,7 @@ test('acknowledged single caches supersede only their exact source anchor and ne
 });
 
 let compiled;
-async function fixture({ segments = [candidateSegment()], store = storage(), owner = 'owner', logId = 101, holdShortGaps = true, single = false, incoming = true, serverVerified = false, wrapper = false } = {}) {
+async function fixture({ segments = [candidateSegment()], store = storage(), owner = 'owner', logId = 101, holdShortGaps = true, single = false, incoming = true, serverVerified = false, wrapper = false, language = 'ko', diarize = false, saveError = null } = {}) {
   compiled ||= (await transformWithEsbuild(await readFile(new URL('../client/src/pages/ResultPage.jsx', import.meta.url), 'utf8'), 'ResultPage.jsx', { loader: 'jsx', format: 'cjs', jsx: 'automatic' })).code;
   const editorHooks = [], wrapperHooks = [], effects = [], timers = new Map(), requests = [], urls = [], revoked = [], mediaByUrl = new Map(), navigations = [], editorKeys = [];
   let hooks = editorHooks, cursor = 0, dirty = true, tree, nextTimer = 0, nextUrl = 0, flush, routeState = null, editorKey;
@@ -135,7 +135,7 @@ async function fixture({ segments = [candidateSegment()], store = storage(), own
     alert() {}, fetch: async (url, options = {}) => {
       const row = { url, method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : undefined }; requests.push(row);
       if (url === '/api/download') return new Response('synthetic download');
-      if (/^\/api\/auth\/transcription\/\d+\/segments$/.test(url) && row.method === 'PUT') return Response.json({ ok: true });
+      if (/^\/api\/auth\/transcription\/\d+\/segments$/.test(url) && row.method === 'PUT') return saveError ? Response.json({ error: saveError }, { status: 400 }) : Response.json({ ok: true });
       throw new Error(`Unexpected synthetic request: ${url}`);
     } });
   function media(url) {
@@ -150,7 +150,7 @@ async function fixture({ segments = [candidateSegment()], store = storage(), own
     if (node.type === 'audio') node.props.ref.current = media(node.props.src);
     return { ...node, props: { ...node.props, children: expand(node.props.children) } };
   };
-  const result = { segments, text: segments.map(({ text }) => text).join('\n'), transcriptionLogId: logId, ownerId: owner, holdShortGaps };
+  const result = { segments, text: segments.map(({ text }) => text).join('\n'), transcriptionLogId: logId, ownerId: owner, holdShortGaps, language, diarize };
   const settle = async () => { for (let i = 0; i < 60; i++) {
     if (dirty) {
       dirty = false; cursor = 0;
@@ -333,4 +333,164 @@ test('late play resolution and real ref detachment cannot keep a previous local 
   const pending = page.button('앞뒤 포함 듣기').props.onClick();
   page.unmount(); assert.equal(media.paused, true); assert.ok(page.revoked.includes(audio.props.src));
   resolve(); await pending; assert.equal(media.paused, true); assert.equal(page.requests.length, 0);
+});
+
+function localReviewSegment(status = 'review', { start = 0, end = start + 0.2, text = '검토할 합성 반복 문장', groupId = 'repeat_1' } = {}) {
+  return { start, end, text, subtitleReview: { version: 1, issues: [], localExclusion: {
+    version: 1, status, reason: status === 'automatic' ? 'exact_zero_with_provider_risk' : 'distributed_repetition',
+    binding: { text, start, end }, groupId, occurrences: 3,
+    audioStatus: status === 'automatic' ? 'exact_zero' : 'signal_present',
+  } } };
+}
+
+test('local exclusions require an exact current text/range binding and cannot affect speaker-labelled speech', () => {
+  const source = localReviewSegment('automatic'), before = structuredClone(source);
+  assert.equal(review.isLocallyExcluded(source), true);
+  assert.equal(review.getBoundLocalExclusion(source).binding.start, 0);
+  for (const changed of [{ ...source, text: `${source.text} 변경` }, { ...source, start: 0.001 }, { ...source, end: 0.201 }, { ...source, speaker: 0 }]) {
+    assert.equal(review.getBoundLocalExclusion(changed), undefined);
+    assert.equal(review.isLocallyExcluded(changed), false);
+  }
+  for (const changed of [
+    { ...source.subtitleReview.localExclusion, status: 'verified' },
+    { ...source.subtitleReview.localExclusion, reason: 'untrusted_reason' },
+    { ...source.subtitleReview.localExclusion, binding: { text: ' ', start: 0, end: 1 } },
+    { ...source.subtitleReview.localExclusion, binding: { text: source.text, start: null, end: 1 } },
+    { ...source.subtitleReview.localExclusion, binding: { text: source.text, start: 0, end: 0 } },
+  ]) assert.equal(review.normalizeLocalExclusion(changed), undefined);
+  assert.deepEqual(source, before);
+});
+
+test('exclude, edit, exclude again and restore retain the first text/time snapshot without deleting a row', () => {
+  const source = localReviewSegment(), before = structuredClone(source);
+  const excluded = review.setSubtitleExclusion(source, true);
+  assert.equal(review.isLocallyExcluded(excluded), true);
+  assert.notEqual(review.subtitleEditSignature([source]), review.subtitleEditSignature([excluded]));
+  const edited = review.editSubtitleText(excluded, '사용자가 고친 합성 문장');
+  assert.equal(review.isLocallyExcluded(edited), false);
+  assert.equal(edited.subtitleReview.localExclusion.status, 'user');
+  const timed = review.confirmSubtitleTiming(edited, 0.01, 0.19);
+  const reexcluded = review.setSubtitleExclusion(timed, true);
+  assert.equal(review.isLocallyExcluded(reexcluded), true);
+  assert.equal(reexcluded.subtitleReview.originalText, source.text);
+  assert.deepEqual(reexcluded.subtitleReview.originalTiming, { start: source.start, end: source.end });
+  assert.deepEqual(reexcluded.subtitleReview.localExclusion.binding, { text: edited.text, start: 0.01, end: 0.19 });
+  const restored = review.setSubtitleExclusion(reexcluded, false);
+  assert.equal(review.isLocallyExcluded(restored), false);
+  assert.equal(restored.subtitleReview.localExclusion.status, 'restored');
+  assert.deepEqual([restored.text, restored.start, restored.end], [edited.text, 0.01, 0.19]);
+  assert.deepEqual(source, before);
+});
+
+test('metadata-only exclusions survive single caches and batch draft flushing with ownership and current metadata guards', async () => {
+  const source = localReviewSegment(), excluded = review.setSubtitleExclusion(source, true), store = storage();
+  const initial = { ownerId: 'owner', transcriptionLogId: 101, segments: [source], text: source.text };
+  store.setItem(drafts.lastResultKey('owner'), JSON.stringify(initial));
+  const saved = drafts.cacheSavedResult(store, 'owner', 101, initial, [excluded], drafts.resultSnapshotSignature(initial));
+  assert.equal(review.isLocallyExcluded(drafts.resolveSavedResult(store, 'owner', initial).segments[0]), true);
+  drafts.writeResultDraft(store, 'owner', 101, { segments: [excluded], baseSignature: review.subtitleEditSignature([source]), fullTextDraft: source.text });
+  const reloaded = drafts.readResultDraft(store, 'owner', 101, [source]);
+  assert.equal(review.isLocallyExcluded(reloaded.segments[0]), true);
+  assert.equal(drafts.readResultDraft(store, 'another-owner', 101, [source]), null);
+  assert.equal(drafts.readResultDraft(store, 'owner', 102, [source]), null);
+  assert.equal(drafts.readResultDraft(store, 'owner', 101, [review.setSubtitleExclusion(source, false)]), null);
+  const batchSaves = [];
+  await drafts.flushStoredBatchDrafts({ items: [{ status: 'completed', transcriptionLogId: 101 }], storage: store, ownerId: 'owner',
+    fetchLog: async () => ({ segments: [source] }), saveLog: async (id, segments) => batchSaves.push({ id, segments }) });
+  assert.equal(batchSaves.length, 1);
+  assert.deepEqual(batchSaves[0].segments, [excluded]);
+  assert.equal(review.subtitleEditSignature(saved.segments), review.subtitleEditSignature(batchSaves[0].segments));
+  const legacy = { segments: [{ ...source, subtitleReview: { version: 1, issues: [] } }], baseText: source.text };
+  drafts.writeResultDraft(store, 'owner', 101, legacy);
+  assert.equal(drafts.readResultDraft(store, 'owner', 101, [excluded]), null);
+});
+
+test('repetition groups stay included until explicit per-row exclusion and count only currently bound decisions', async () => {
+  const input = [localReviewSegment(), localReviewSegment('review', { start: 2 }), localReviewSegment('automatic', { start: 4 })];
+  const before = structuredClone(input), page = await fixture({ segments: input });
+  assert.ok(page.nodes().some((node) => node.type === 'summary' && page.text(node).includes('반복·제외 검토 · 1개 묶음 · 제외 1개')));
+  assert.ok(page.nodes().some((node) => node.type === 'p' && page.text(node).includes('무음 근거 자동 제외 1개 · 사용자 제외 0개 · 복원 0개 · 미확정 검토 2개')));
+  assert.ok(page.nodes().some((node) => node.type === 'p' && page.text(node).includes('#1 00:00.000 - 00:00.200')));
+  page.button('구간별에서 검토').props.onClick(); await page.settle();
+  assert.equal(page.mainText().props.value, input[0].text);
+  assert.equal(page.text(page.byId('review-exclusion-action-0')), '이 구간 제외');
+  assert.equal(page.text(page.byId('review-exclusion-action-2')), '이 구간 복원');
+  page.byId('review-exclusion-action-0').props.onClick(); await page.settle();
+  const staleExcluded = page.byId('review-exclusion-action-0').props.onClick;
+  page.mainText().props.onChange({ target: { value: '수정한 현재 합성 문구' } }); await page.settle();
+  staleExcluded(); await page.settle();
+  assert.equal(page.text(page.byId('review-exclusion-action-0')), '이 구간 제외');
+  assert.ok(page.nodes().some((node) => node.type === 'p' && page.text(node).includes('문구·시간 변경으로 이전 제외는 적용하지 않음')));
+  assert.ok(page.nodes().some((node) => node.type === 'p' && page.text(node).includes('무음 근거 자동 제외 1개 · 사용자 제외 0개 · 복원 0개 · 미확정 검토 1개')));
+  assert.deepEqual(input, before);
+});
+
+test('all excluded rows keep their text, save and reload while every empty export handler stays blocked until restore', async () => {
+  const source = localReviewSegment(), store = storage(), page = await fixture({ segments: [source], store, single: true });
+  const oldSrt = page.button('SRT').props.onClick;
+  const exports = () => page.nodes().filter((node) => node.type === 'button' && String(node.props.className || '').includes('export-option'));
+  exports().find((node) => page.text(node).includes('ASS')).props.onClick(); await page.settle();
+  const oldAss = page.button('ASS 자막 다운로드').props.onClick;
+  await page.segmentsMode(); page.byId('review-exclusion-action-0').props.onClick(); await page.settle();
+  assert.equal(page.mainText().props.value, source.text);
+  assert.equal(page.byId('full-transcript'), undefined);
+  assert.ok(exports().every((node) => node.props.disabled));
+  assert.equal(page.button('ASS 자막 다운로드').props.disabled, true);
+  assert.ok(page.nodes().some((node) => node.type === 'p' && page.text(node).includes('남은 자막 없음')));
+  await oldSrt(); await oldAss();
+  for (const node of exports()) await node.props.onClick();
+  await page.settle();
+  assert.equal(page.requests.filter(({ url }) => url === '/api/download').length, 0);
+  await page.flush();
+  const saved = page.requests.find(({ method }) => method === 'PUT').body.segments;
+  assert.equal(saved.length, 1); assert.deepEqual([saved[0].text, saved[0].start, saved[0].end], [source.text, source.start, source.end]);
+  assert.equal(review.isLocallyExcluded(saved[0]), true);
+  page.unmount();
+  const restoredPage = await fixture({ segments: [source], store, single: true, incoming: false });
+  await restoredPage.segmentsMode();
+  assert.equal(restoredPage.text(restoredPage.byId('review-exclusion-action-0')), '이 구간 복원');
+  restoredPage.byId('review-exclusion-action-0').props.onClick(); await restoredPage.settle(); await restoredPage.flush();
+  assert.equal(restoredPage.mainText().props.value, source.text);
+  assert.equal(restoredPage.button('SRT').props.disabled, false);
+  await restoredPage.button('SRT').props.onClick();
+  const downloaded = restoredPage.requests.find(({ url }) => url === '/api/download').body.segments;
+  assert.equal(downloaded[0].subtitleReview.localExclusion.status, 'restored');
+  assert.equal(review.isLocallyExcluded(downloaded[0]), false);
+});
+
+test('single and shared batch editors download the same metadata mask and permit explicit English-only manual selection', async () => {
+  for (const single of [true, false]) {
+    const source = [{ start: 0, end: 0.2, text: 'Synthetic English phrase' }, { start: 1, end: 2, text: 'Keep this phrase' }];
+    const page = await fixture({ segments: source, single, holdShortGaps: single, language: 'en' });
+    await page.segmentsMode(); page.byId('review-exclusion-action-0').props.onClick(); await page.settle(); await page.flush();
+    await page.button('SRT').props.onClick();
+    const download = page.requests.find(({ url }) => url === '/api/download').body;
+    assert.equal(download.holdShortGaps, single);
+    assert.equal(download.segments.length, 2);
+    assert.deepEqual(download.segments, page.requests.find(({ method }) => method === 'PUT').body.segments);
+    assert.equal(download.segments[0].subtitleReview.localExclusion.reason, 'user_selection');
+    assert.equal(review.isLocallyExcluded(download.segments[0]), true);
+    assert.equal(download.segments[1].text, source[1].text);
+  }
+  for (const options of [{ diarize: true }, { segments: [{ ...localReviewSegment(), speaker: 0 }] }]) {
+    const page = await fixture(options); await page.segmentsMode();
+    assert.equal(page.byId('review-exclusion-action-0'), undefined);
+    assert.equal(page.nodes().some((node) => node.type === 'summary' && page.text(node).includes('반복·제외 검토')), false);
+  }
+});
+
+test('metadata exclusion actions reject mismatched full-text drafts and show a linked-row save conflict without discarding text', async () => {
+  const message = '제외 충돌: 연결된 자막 1, 2행을 함께 선택해 주세요.';
+  const page = await fixture({ segments: [localReviewSegment()], saveError: message });
+  await page.segmentsMode(); const stale = page.byId('review-exclusion-action-0').props.onClick;
+  page.byId('editor-tab-text').props.onClick(); await page.settle();
+  page.byId('full-transcript').props.onChange({ target: { value: '보존할 첫 줄\n보존할 추가 줄' } }); await page.settle(); await page.segmentsMode();
+  assert.equal(page.byId('review-exclusion-action-0').props.disabled, true);
+  stale(); await page.settle(); assert.equal(page.text(page.byId('review-exclusion-action-0')), '이 구간 제외');
+  page.mainText().props.onChange({ target: { value: '현재 합성 문구' } }); await page.settle();
+  page.byId('review-exclusion-action-0').props.onClick(); await page.settle();
+  await assert.rejects(page.flush(), /제외 충돌/);
+  await page.settle();
+  assert.ok(page.nodes().some((node) => node.props.role === 'alert' && page.text(node) === message));
+  assert.equal(page.mainText().props.value, '현재 합성 문구');
 });

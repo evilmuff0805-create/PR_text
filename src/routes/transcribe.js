@@ -318,8 +318,8 @@ router.post('/', createTiming, timedAuth, timedUpload, async (req, res) => {
 
     // 한국어 맞춤법·띄어쓰기 교정 적용
     const processedResult = polishMode === 'grammar'
-      ? await processTranscriptionSegments(result.segments, result.language, { polishMode: 'grammar' })
-      : await processTranscriptionSegments(result.segments, result.language);
+      ? await processTranscriptionSegments(result.segments, result.language, { polishMode: 'grammar', audioBuffer: buffer, originalname })
+      : await processTranscriptionSegments(result.segments, result.language, { audioBuffer: buffer, originalname });
     const processedSegments = processedResult.segments;
     req.transcriptionTiming.correctionTimings = processedResult.correctionTimings;
     req.transcriptionTiming.correctionMs = processedResult.correctionMs;

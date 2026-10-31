@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { generateSRT, generateTXT, generateASS } from '../services/subtitle.js';
+import { isLocallyExcluded } from '../services/subtitle-review.js';
 import { authMiddleware } from '../middleware/auth.js';
 import { validateSubtitleSegments } from '../services/subtitle-payload.js';
 import {
@@ -86,18 +87,24 @@ router.post('/', authMiddleware, (req, res) => {
     let content;
     if (format === 'srt') {
       content = generateSRT(segments, colors, { holdShortGaps });
-      if (!content) return res.status(422).json({ error: '인식된 대사가 없어 SRT를 만들 수 없습니다. 원본을 확인해 주세요.' });
+      if (!content && !segments.some(isLocallyExcluded)) return res.status(422).json({ error: '인식된 대사가 없어 SRT를 만들 수 없습니다. 원본을 확인해 주세요.' });
     } else if (format === 'txt') {
       content = generateTXT(segments);
     } else if (format === 'ass') {
       content = generateASS(segments, { ...assOptions, holdShortGaps }, colors);
     }
+    if (!content) return res.status(422).json({ error: segments.some(isLocallyExcluded)
+      ? '제외 후 남은 자막이 없습니다. 제외를 복원해 주세요.'
+      : '남은 자막이 없어 파일을 만들 수 없습니다. 원본을 확인해 주세요.' });
 
     const mimeTypes = { srt: 'application/x-subrip', txt: 'text/plain', ass: 'text/x-ssa' };
     res.setHeader('Content-Type', `${mimeTypes[format]}; charset=utf-8`);
     res.setHeader('Content-Disposition', `attachment; filename="subtitle.${format}"`);
     res.send(content);
   } catch (err) {
+    if (err.code === 'LOCAL_EXCLUSION_CONFLICT') {
+      return res.status(400).json({ error: err.message, code: err.code, connectedRows: err.connectedRows });
+    }
     console.error('[download]', err.message);
     res.status(500).json({ error: '다운로드 중 오류가 발생했습니다.' });
   }

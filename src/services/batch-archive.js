@@ -1,5 +1,6 @@
 import { generateSRT } from './subtitle.js';
 import { validateSubtitleSegments } from './subtitle-payload.js';
+import { isLocallyExcluded } from './subtitle-review.js';
 
 const MAX_BATCH_FILES = 5;
 const MAX_ARCHIVE_BYTES = 128 * 1024 * 1024;
@@ -119,7 +120,13 @@ export function createBatchSrtArchive({ items, allowPartial = false } = {}) {
       const error = validateSubtitleSegments(item.segments, { allowEmpty: true });
       if (error) throw archiveError(`${index + 1}번 자막: ${error}`, 'INVALID_BATCH_SUBTITLES');
       const content = generateSRT(item.segments, null, { holdShortGaps: false });
-      if (!content) status = '인식된 대사 없음 · 검토 필요 (SRT 제외)';
+      if (!content) {
+        const emptiedByExclusion = item.segments.some(isLocallyExcluded)
+          && generateSRT(item.segments, null, { holdShortGaps: false, ignoreLocalExclusions: true }) !== '';
+        status = emptiedByExclusion
+          ? '제외 후 남은 자막 없음 · 제외 복원 가능 (SRT 제외)'
+          : '인식된 대사 없음 · 검토 필요 (SRT 제외)';
+      }
       else {
         // Separate-person files retain their own speech ends and cross-track sync.
         entries.push({ name: batchSrtFilename(label, index), content });
@@ -133,16 +140,18 @@ export function createBatchSrtArchive({ items, allowPartial = false } = {}) {
     content: [
       'PR-text 사람별 자막 묶음',
       `전사 완료 ${completedCount}건 중 대사가 있는 SRT ${includedSrtCount}개를 포함합니다. 인식된 대사가 없는 완료 건은 ZIP에서 SRT를 제외합니다.`,
+      '제외 후 남은 자막이 없는 완료 건도 SRT를 제외하며, 원본 자막은 편집 화면에서 제외를 복원할 수 있습니다.',
       '',
       ...statuses,
       '',
       '프리미어 프로 가져오기',
       '1. 같은 영상의 0초부터 내보낸 사람별 오디오를 사용하세요. 앞부분 무음을 제거한 파일은 원래 위치를 자동으로 복원할 수 없습니다.',
       '2. SRT를 각각 가져와 인물별 자막 트랙에 같은 시작점으로 놓고 트랙마다 스타일을 지정하세요. 트랙 배치는 직접 진행합니다.',
-      '3. 각 SRT는 실제 인식된 대사로 시작하며, 첫 대사의 타임코드와 원문은 유지됩니다.',
+      '3. 각 SRT는 제외하지 않은 실제 인식 대사로 시작하며, 남은 대사의 타임코드와 원문은 유지됩니다.',
       '4. SRT는 밀리초 시간을 저장합니다. 시퀀스 fps는 편집 프로그램에서 설정하며, 이 묶음에서 29.97fps에 맞춰 시간을 재배율하거나 첫 대사를 0초로 이동하지 않습니다.',
       '5. 인물 간 동시 발화는 각각의 파일에 남습니다. 다른 마이크에 들어간 목소리는 편집 화면에서 확인해 주세요.',
       '6. 인식된 대사가 없는 파일은 실제 무음을 뜻하지 않습니다. 원음을 확인하고 필요한 경우 해당 파일만 다시 변환하세요.',
+      '7. 제외 후 비어 있는 파일은 새로 변환할 필요 없이 편집 화면에서 제외를 복원한 뒤 다시 내려받을 수 있습니다.',
       '',
       '시간은 음성 인식 결과를 사용합니다. 편집 후 텍스트의 단어별 싱크가 자동 재분석되는 기능은 아닙니다.',
       '묶음 다운로드 및 재다운로드는 새 변환을 요청하지 않으며 변환 시간을 추가로 차감하지 않습니다.',
