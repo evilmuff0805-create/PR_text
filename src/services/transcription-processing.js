@@ -6,6 +6,7 @@ import { isKoreanDependentPredicateTail } from './korean-subtitle.js';
 import { annotateSubtitleReviews, mergeSubtitleReviews } from './subtitle-review.js';
 import { POLISH_MODES, polishKoreanSegments } from './grammar-polish.js';
 import { annotateLocalTranscriptReview } from './local-transcript-review.js';
+import { finalizeTranscriptionContext } from './context-finalization.js';
 
 // Provider hallucination loops are uniform, low-confidence repeats from one decode window.
 // These thresholds intentionally leave ordinary or weakly evidenced repetition untouched.
@@ -264,7 +265,7 @@ export function refineEnglishSegmentsWithWordTimings(segments) {
   return segments.flatMap(refineEnglishSegment);
 }
 
-export function refineKoreanSegmentsWithWordTimings(segments, { originalSegments } = {}) {
+export function refineKoreanSegmentsWithWordTimings(segments, { originalSegments, trace } = {}) {
   // Download/edit payloads accept at most 5,000 source rows. Keep exact cue
   // times in a compact source row when word/pause splitting exceeds that cap.
   const maxFlatCues = 5_000;
@@ -282,14 +283,17 @@ export function refineKoreanSegmentsWithWordTimings(segments, { originalSegments
     refined.push(...(wordTimed ? cues.map((cue) => ({ ...cue, timingSource: 'word' })) : cues));
   };
   const originals = Array.isArray(originalSegments) && originalSegments.length === segments.length ? originalSegments : null;
+  if (trace) trace.blocks = [];
   const alignSource = (source, index) => originals
     ? alignCorrectedKoreanSegmentWithWordTimings(originals[index], source)
     : alignKoreanSegmentWithWordTimings(source);
   for (let index = 0; index < segments.length; index += 1) {
+    const sourceStartIndex = index;
     const source = segments[index];
     if (hasSpeakerLabel(source)) {
       appendFlat([source]);
       compact.push(source);
+      if (trace) trace.blocks.push({ sourceStartIndex, sourceEndIndex: index, flatCount: 1 });
       continue;
     }
 
@@ -362,8 +366,11 @@ export function refineKoreanSegmentsWithWordTimings(segments, { originalSegments
           ...(review ? { subtitleReview: review } : {}) };
       }), aligned.aligned);
     }
+    if (trace) trace.blocks.push({ sourceStartIndex, sourceEndIndex: index,
+      flatCount: (typeof rowReview?.candidateText === 'string' || rowReview?.timingCandidate) && cues.length > 1 ? 1 : reviewedCues.length });
     compact.push(compactRow);
   }
+  if (trace) trace.compact = needsCompact;
   return needsCompact ? compact : refined;
 }
 
@@ -399,9 +406,10 @@ export async function processTranscriptionSegments(segments, language, { correct
 
   // Validate the original words before mapping corrected spelling. A failed
   // mapping keeps original timed cues instead of restoring leading silence.
+  const contextTrace = {};
   const timedSegments = normalizeLanguage(language) === 'ko'
     || correctionTimings?.languageDecision === 'inferred_from_hangul_segments'
-    ? refineKoreanSegmentsWithWordTimings(processedSegments, { originalSegments: filteredSegments }) : processedSegments;
+    ? refineKoreanSegmentsWithWordTimings(processedSegments, { originalSegments: filteredSegments, trace: contextTrace }) : processedSegments;
 
   const reviewedSegments = normalizeLanguage(language) === 'ko'
     || correctionTimings?.languageDecision === 'inferred_from_hangul_segments'
@@ -416,6 +424,7 @@ export async function processTranscriptionSegments(segments, language, { correct
       text: normalizeLanguage(language) === 'en' ? segment.text : removeCommas(segment.text),
     }));
   let grammarPolish;
+  const baseSegments = finalSegments;
   if (POLISH_MODES.has(polishMode) && polishMode === 'grammar') {
     try {
       const gpt = await import('./gpt.js');
@@ -435,6 +444,27 @@ export async function processTranscriptionSegments(segments, language, { correct
         metrics: { wallMs: 0, calls: 0, usage: { promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, totalTokens: 0 } } };
     }
   }
+  let contextFinalization;
+  try {
+    const finalized = finalizeTranscriptionContext({ sourceSegments: nonSilentSegments,
+      correctionSourceSegments: filteredSegments, correctedSegments: processedSegments,
+      baseSegments, segments: finalSegments, trace: contextTrace,
+      language: correctionTimings?.languageDecision === 'inferred_from_hangul_segments' ? 'ko' : language });
+    finalSegments = finalized.segments;
+    contextFinalization = finalized.summary;
+    if (grammarPolish && finalized.summary.grammarWithheld > 0) {
+      // AI work and usage already happened. Only reconcile the displayed
+      // outcome after local boundary preservation withheld rewritten cues.
+      const statuses = finalSegments.reduce((counts, segment) => {
+        const status = segment.grammarPolish?.status;
+        if (status) counts[status] = (counts[status] || 0) + 1;
+        return counts;
+      }, {});
+      const applied = statuses.applied || 0;
+      grammarPolish = { ...grammarPolish, applied, skipped: finalSegments.length - applied,
+        summary: { ...grammarPolish.summary, statuses } };
+    }
+  } catch { /* Keep the completed AI result when local ownership cannot be validated. */ }
   let localTranscriptReview;
   try {
     // All existing AI work, including opt-in grammar, has already finished.
@@ -451,6 +481,7 @@ export async function processTranscriptionSegments(segments, language, { correct
     segments: finalSegments,
     ...(grammarPolish ? { grammarPolish } : {}),
     ...(localTranscriptReview ? { localTranscriptReview } : {}),
+    ...(contextFinalization ? { contextFinalization } : {}),
     correctionTimings,
     correctionMs: performance.now() - correctionStartedAt,
   };

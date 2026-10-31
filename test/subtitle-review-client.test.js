@@ -494,3 +494,215 @@ test('metadata exclusion actions reject mismatched full-text drafts and show a l
   assert.ok(page.nodes().some((node) => node.props.role === 'alert' && page.text(node) === message));
   assert.equal(page.mainText().props.value, '현재 합성 문구');
 });
+
+function fixedCueSegment() {
+  const text = '첫 합성 문구를 고쳤어요 다음 합성 구간이에요';
+  const originalText = '첫 합성 문구를 고쳣어요 다음 합성 구간이에요';
+  return { start: 0, end: 1, text, timingSource: 'speech_window',
+    sourceWords: [{ start: 0, end: 1, word: originalText }], wordAlignedCues: [[0, 1, originalText]],
+    fixedCuePlan: { version: 1, binding: { text, start: 0, end: 1 },
+      cues: [[0, 0.2, '첫 합성 문구를 고쳤어요'], [0.7, 1, '다음 합성 구간이에요']],
+      original: { text: originalText, start: 0, end: 1, cues: [[0, 0.2, '첫 합성 문구를 고쳣어요'], [0.7, 1, '다음 합성 구간이에요']] } },
+    subtitleReview: { version: 1, issues: [{ code: 'cue_window_correction_applied' }, { code: 'source_boundary_preserved' }],
+      originalText, originalTiming: { start: 0, end: 1 }, correctionStatus: 'cue_applied', correctionBinding: { text, start: 0, end: 1 }, timingStatus: 'unverified' } };
+}
+
+function heldCueSegment() {
+  const text = '보존할 합성 원문';
+  return { start: 0, end: 1, text, subtitleReview: { version: 1, issues: [{ code: 'finalization_candidate_held', reason: 'ambiguous_ownership' }],
+    originalText: text, candidateText: '검토할 합성 교정안', textStatus: 'candidate', correctionStatus: 'held',
+    correctionBinding: { text, start: 0, end: 1 }, timingStatus: 'unverified' } };
+}
+
+test('fixed cue metadata preserves compact gaps and never claims word alignment or a manual timing confirmation', () => {
+  const source = fixedCueSegment(), before = structuredClone(source);
+  const normalized = review.normalizeFixedCuePlan(source.fixedCuePlan);
+  assert.deepEqual(normalized, source.fixedCuePlan);
+  assert.equal(review.getSubtitleCorrectionStatus(source), 'cue_applied');
+  assert.equal(review.getSubtitleTimingConfirmation(source), undefined);
+  assert.equal(review.normalizeSubtitleReview(source.subtitleReview, source.text).textStatus, undefined);
+  for (const issue of review.getSubtitleReviewIssues(source).filter(({ code }) => ['cue_window_correction_applied', 'source_boundary_preserved'].includes(code))) {
+    assert.doesNotMatch(review.subtitleReviewIssueLabel(issue), /단어 정렬 성공|수동 확인됨|화자 전환 확정/);
+  }
+  const changed = { ...source, fixedCuePlan: { ...source.fixedCuePlan, cues: [[0, 0.2, '첫 합성 문구를 고쳤어요'], [0.6, 1, '다음 합성 구간이에요']] } };
+  assert.notEqual(review.subtitleEditSignature([source]), review.subtitleEditSignature([changed]));
+  for (const altered of [{ ...source, text: `${source.text} 변경` }, { ...source, end: 1.001 }, { ...source, speaker: 0 }, { ...source, fixedCuePlan: undefined }]) {
+    assert.equal(review.getSubtitleCorrectionStatus(altered), undefined);
+    assert.equal(review.getSubtitleReviewIssues(altered).some(({ code }) => code === 'cue_window_correction_applied'), false);
+  }
+  assert.deepEqual(source, before);
+});
+
+test('text, candidate and explicit time edits invalidate fixed corrections and old active word data without changing other speech', () => {
+  const source = fixedCueSegment(), before = structuredClone(source);
+  const edited = [review.editSubtitleText(source, '수동으로 고친 합성 구간'), review.confirmSubtitleCandidate(source, '직접 확인한 합성 구간'), review.confirmSubtitleTiming(source, 0.01, 0.99)];
+  for (const segment of edited) {
+    assert.equal(segment.fixedCuePlan, undefined);
+    assert.equal(segment.sourceWords, undefined);
+    assert.equal(segment.wordAlignedCues, undefined);
+    assert.equal(segment.subtitleReview.correctionStatus, undefined);
+    assert.equal(segment.subtitleReview.correctionBinding, undefined);
+    assert.equal(review.getSubtitleCorrectionStatus(segment), undefined);
+    assert.equal(review.restoreFixedCuePlan(segment), segment);
+  }
+  assert.deepEqual([edited[0].start, edited[0].end, edited[1].start, edited[1].end], [0, 1, 0, 1]);
+  assert.equal(edited[1].subtitleReview.textStatus, 'confirmed');
+  assert.equal(edited[2].timingSource, 'manual');
+  assert.deepEqual(source, before);
+});
+
+test('restoring corrected compact text retains its original cue boundaries and cannot reactivate word-aligned text', () => {
+  const source = fixedCueSegment(), restored = review.restoreFixedCuePlan(source);
+  assert.equal(restored.text, source.fixedCuePlan.original.text);
+  assert.deepEqual(restored.fixedCuePlan.cues, source.fixedCuePlan.original.cues);
+  assert.deepEqual([restored.start, restored.end, restored.timingSource], [0, 1, 'speech_window']);
+  assert.equal(restored.sourceWords, undefined); assert.equal(restored.wordAlignedCues, undefined);
+  assert.equal(review.getSubtitleCorrectionStatus(restored), 'restored');
+  assert.equal(review.getSubtitleTimingConfirmation(restored), undefined);
+  assert.equal(review.normalizeSubtitleReview(restored.subtitleReview, restored.text).textStatus, undefined);
+  assert.equal(review.getSubtitleReviewIssues(restored).some(({ code }) => code === 'cue_window_correction_applied'), false);
+  const edited = review.editSubtitleText(restored, '새로 직접 쓴 합성 문구');
+  assert.equal(review.getSubtitleCorrectionStatus(edited), undefined);
+  assert.equal(edited.fixedCuePlan, undefined);
+});
+
+test('explicit confirmation of unchanged timing preserves compact fixed boundaries and remains a separate manual action', () => {
+  const source = fixedCueSegment(), confirmed = review.confirmSubtitleTiming(source, source.start, source.end);
+  assert.equal(confirmed.timingSource, 'manual');
+  assert.deepEqual(review.getBoundFixedCuePlan(confirmed).cues, source.fixedCuePlan.cues);
+  assert.equal(review.getSubtitleCorrectionStatus(confirmed), 'cue_applied');
+  assert.equal(review.getSubtitleTimingConfirmation(confirmed).status, 'confirmed');
+  assert.equal(confirmed.sourceWords, undefined); assert.equal(confirmed.wordAlignedCues, undefined);
+  const store = storage();
+  drafts.writeResultDraft(store, 'owner', 101, { segments: [confirmed], baseSignature: review.subtitleEditSignature([source]) });
+  const restored = drafts.readResultDraft(store, 'owner', 101, [source]).segments[0];
+  assert.deepEqual(restored.fixedCuePlan.cues, source.fixedCuePlan.cues);
+  assert.equal(restored.timingSource, 'manual');
+  assert.equal(review.getSubtitleCorrectionStatus(restored), 'cue_applied');
+  const moved = review.confirmSubtitleTiming(confirmed, 0.01, 0.99);
+  assert.equal(moved.fixedCuePlan, undefined);
+  assert.equal(review.getSubtitleCorrectionStatus(moved), undefined);
+});
+
+test('held automatic proposals disappear after content/time edits while a newly entered user proposal stays explicit', () => {
+  const source = heldCueSegment();
+  assert.equal(review.getSubtitleCorrectionStatus(source), 'held');
+  for (const changed of [review.editSubtitleText(source, '새로 편집한 현재 문구'), review.confirmSubtitleTiming(source, 0.01, 0.99)]) {
+    assert.equal(changed.subtitleReview.candidateText, undefined);
+    assert.equal(changed.subtitleReview.correctionStatus, undefined);
+    assert.equal(changed.subtitleReview.textStatus, undefined);
+  }
+  const manual = review.confirmSubtitleCandidate(source, '사용자가 직접 선택한 교정안');
+  assert.equal(manual.text, '사용자가 직접 선택한 교정안');
+  assert.equal(manual.subtitleReview.candidateText, manual.text);
+  assert.equal(manual.subtitleReview.textStatus, 'confirmed');
+  assert.equal(manual.subtitleReview.correctionStatus, undefined);
+});
+
+test('five thousand editor rows keep extra fixed compact cues and restoration metadata through draft and batch flushing', async () => {
+  const source = [fixedCueSegment(), ...Array.from({ length: 4999 }, (_, index) => ({ start: index + 2, end: index + 2.2, text: '다른 합성 대사' }))];
+  const restored = [review.restoreFixedCuePlan(source[0]), ...source.slice(1)], store = storage();
+  drafts.writeResultDraft(store, 'owner', 101, { segments: restored, baseSignature: review.subtitleEditSignature(source), fullTextDraft: drafts.segmentText(restored) });
+  const roundtrip = drafts.readResultDraft(store, 'owner', 101, source);
+  assert.equal(roundtrip.segments.length, 5000);
+  assert.deepEqual(roundtrip.segments[0].fixedCuePlan.cues, [[0, 0.2, '첫 합성 문구를 고쳣어요'], [0.7, 1, '다음 합성 구간이에요']]);
+  assert.equal(roundtrip.segments[0].subtitleReview.correctionStatus, 'restored');
+  assert.equal(roundtrip.segments[0].wordAlignedCues, undefined);
+  assert.deepEqual(roundtrip.segments.slice(1), source.slice(1));
+  const saves = [];
+  await drafts.flushStoredBatchDrafts({ items: [{ status: 'completed', transcriptionLogId: 101 }], storage: store, ownerId: 'owner',
+    fetchLog: async () => ({ segments: source }), saveLog: async (id, segments) => saves.push({ id, segments }) });
+  assert.equal(saves.length, 1);
+  assert.deepEqual(saves[0].segments[0].fixedCuePlan, roundtrip.segments[0].fixedCuePlan);
+});
+
+test('drafts cannot revive removed fixed plans, stale server cue bases or unsigned old compact snapshots', () => {
+  const source = fixedCueSegment(), edited = review.editSubtitleText(source, '저장할 현재 수동 문구'), store = storage();
+  drafts.writeResultDraft(store, 'owner', 101, { segments: [edited], baseSignature: review.subtitleEditSignature([source]) });
+  const restored = drafts.readResultDraft(store, 'owner', 101, [source]);
+  assert.equal(restored.segments[0].fixedCuePlan, undefined);
+  assert.equal(restored.segments[0].wordAlignedCues, undefined);
+  assert.equal(restored.segments[0].sourceWords, undefined);
+  assert.equal(restored.segments[0].text, edited.text);
+  const newer = { ...source, fixedCuePlan: { ...source.fixedCuePlan, cues: [[0, 0.2, '첫 합성 문구를 고쳤어요'], [0.6, 1, '다음 합성 구간이에요']] } };
+  assert.equal(drafts.readResultDraft(store, 'owner', 101, [newer]), null);
+  assert.equal(drafts.readResultDraft(store, 'other-owner', 101, [source]), null);
+  assert.equal(drafts.readResultDraft(store, 'owner', 102, [source]), null);
+  drafts.writeResultDraft(store, 'owner', 101, { segments: [{ start: 0, end: 1, text: source.text }], baseText: source.text });
+  assert.equal(drafts.readResultDraft(store, 'owner', 101, [source]), null);
+});
+
+test('actual fixed-cue UI restores the original snapshot, saves/reloads its fixed timing and never claims manual confirmation', async () => {
+  const source = fixedCueSegment(), store = storage(), page = await fixture({ segments: [source], store, single: true });
+  await page.segmentsMode();
+  assert.ok(page.nodes().some((node) => node.type === 'p' && page.text(node) === '기존 큐 시간을 유지해 교정 문구 반영 · 단어별 싱크 미확인'));
+  assert.ok(page.nodes().some((node) => node.type === 'p' && page.text(node) === '발화 시간 미확인'));
+  assert.match(page.text(page.byId('review-timing-help-0')), /내부 자막은 보존된 큐 경계를 사용/);
+  assert.doesNotMatch(page.text(page.byId('review-timing-help-0')), /글자 수 비례/);
+  assert.equal(page.nodes().some((node) => node.type === 'p' && page.text(node).startsWith('문구 확인됨')), false);
+  assert.ok(page.byId('review-correction-restore-0'));
+  page.byId('review-correction-restore-0').props.onClick(); await page.settle(); await page.flush();
+  const saved = page.requests.find(({ method }) => method === 'PUT').body.segments[0];
+  assert.equal(saved.text, source.fixedCuePlan.original.text);
+  assert.deepEqual(saved.fixedCuePlan.cues, source.fixedCuePlan.original.cues);
+  assert.equal(saved.timingSource, 'speech_window');
+  assert.equal(saved.wordAlignedCues, undefined);
+  page.unmount();
+  const reloaded = await fixture({ segments: [source], store, single: true, incoming: false }); await reloaded.segmentsMode();
+  assert.equal(reloaded.mainText().props.value, saved.text);
+  assert.ok(reloaded.nodes().some((node) => node.type === 'p' && reloaded.text(node).startsWith('교정 전 문구로 복원됨')));
+  assert.equal(reloaded.byId('review-correction-restore-0'), undefined);
+  await reloaded.button('SRT').props.onClick();
+  assert.deepEqual(reloaded.requests.find(({ url }) => url === '/api/download').body.segments[0].fixedCuePlan, saved.fixedCuePlan);
+});
+
+test('actual fixed-cue restore handlers reject later user edits and mismatched full-text drafts', async () => {
+  const source = fixedCueSegment(), page = await fixture({ segments: [source] }); await page.segmentsMode();
+  const staleRestore = page.byId('review-correction-restore-0').props.onClick;
+  page.byId('editor-tab-text').props.onClick(); await page.settle();
+  page.byId('full-transcript').props.onChange({ target: { value: '보존할 첫 줄\n입력한 추가 줄' } }); await page.settle(); await page.segmentsMode();
+  assert.equal(page.byId('review-correction-restore-0').props.disabled, true);
+  staleRestore(); await page.settle(); assert.equal(page.mainText().props.value, source.text);
+  page.mainText().props.onChange({ target: { value: '사용자가 입력한 현재 문구' } }); await page.settle();
+  staleRestore(); await page.settle(); await page.flush();
+  const saved = page.requests.find(({ method }) => method === 'PUT').body.segments[0];
+  assert.equal(saved.text, '사용자가 입력한 현재 문구');
+  assert.equal(saved.fixedCuePlan, undefined);
+  assert.equal(saved.subtitleReview.correctionStatus, undefined);
+  assert.equal(page.byId('review-correction-restore-0'), undefined);
+  assert.match(page.text(page.byId('review-timing-help-0')), /글자 수 비례 추정/);
+  assert.doesNotMatch(page.text(page.byId('review-timing-help-0')), /보존된 큐 경계/);
+});
+
+test('actual held-candidate UI remains unconfirmed, hides stale proposals and allows only a current explicit user choice', async () => {
+  const source = heldCueSegment(), page = await fixture({ segments: [source] }); await page.segmentsMode(); await page.autosave();
+  assert.equal(page.mainText().props.value, source.text);
+  assert.equal(page.requests.length, 0);
+  assert.equal(page.byId('review-candidate-0').props.value, source.subtitleReview.candidateText);
+  assert.ok(page.nodes().some((node) => node.type === 'p' && page.text(node) === '교정 후보 보류 · 현재 문구와 시간 유지'));
+  page.mainText().props.onChange({ target: { value: '고객 대신 만든 현재 합성 문구' } }); await page.settle();
+  assert.equal(page.byId('review-candidate-0').props.value, '');
+  assert.equal(page.button('이 문구 적용·확인').props.disabled, true);
+  page.byId('review-candidate-0').props.onChange({ target: { value: '사용자가 새로 입력한 합성 후보' } }); await page.settle();
+  page.button('이 문구 적용·확인').props.onClick(); await page.settle(); await page.flush();
+  assert.equal(page.mainText().props.value, '사용자가 새로 입력한 합성 후보');
+  const stalePage = await fixture({ segments: [{ ...source, start: 0.01 }] }); await stalePage.segmentsMode();
+  assert.equal(stalePage.byId('review-candidate-0').props.value, '');
+  assert.equal(stalePage.button('이 문구 적용·확인').props.disabled, true);
+  assert.ok(stalePage.nodes().some((node) => node.type === 'p' && stalePage.text(node).includes('이전 자동 교정 판단은 적용하지 않습니다')));
+});
+
+test('polished-text restoration reuses an exact fixed original or invalidates the old plan without reviving word evidence', async () => {
+  for (const matching of [true, false]) {
+    const source = fixedCueSegment();
+    source.grammarPolish = { status: 'applied', originalText: matching ? source.fixedCuePlan.original.text : '다듬기 전의 별도 합성 문구', originalTimingSource: 'word' };
+    const page = await fixture({ segments: [source] });
+    page.button('다듬기 전 문장으로 복원').props.onClick(); await page.settle(); await page.flush();
+    const saved = page.requests.find(({ method }) => method === 'PUT').body.segments[0];
+    assert.equal(saved.text, source.grammarPolish.originalText);
+    assert.equal(saved.timingSource, 'speech_window');
+    assert.equal(saved.sourceWords, undefined); assert.equal(saved.wordAlignedCues, undefined);
+    assert.equal(saved.fixedCuePlan !== undefined, matching);
+    assert.equal(saved.subtitleReview.correctionStatus, matching ? 'restored' : undefined);
+  }
+});

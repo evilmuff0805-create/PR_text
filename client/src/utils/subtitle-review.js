@@ -1,4 +1,8 @@
-const ISSUE_CODES = new Set(['short_cue', 'high_reading_speed', 'overlap_trim', 'word_timing_fallback', 'correction_alignment_rejected', 'correction_guard_rejected', 'chunk_boundary_replanned', 'chunk_boundary_unverified', 'audio_recheck_word_timing', 'audio_recheck_inconclusive', 'audio_recheck_failed', 'audio_boundary_estimate_updated', 'audio_boundary_candidate', 'audio_boundary_inconclusive']);
+import { getBoundCorrectionStatus, getBoundFixedCuePlan, normalizeCorrectionBinding, normalizeFixedCuePlan, restoreFixedCuePlan } from '../../../src/services/fixed-cue-plan.js';
+
+export { getBoundCorrectionStatus, getBoundFixedCuePlan, normalizeCorrectionBinding, normalizeFixedCuePlan, restoreFixedCuePlan };
+
+const ISSUE_CODES = new Set(['short_cue', 'high_reading_speed', 'overlap_trim', 'word_timing_fallback', 'correction_alignment_rejected', 'correction_guard_rejected', 'chunk_boundary_replanned', 'chunk_boundary_unverified', 'audio_recheck_word_timing', 'audio_recheck_inconclusive', 'audio_recheck_failed', 'audio_boundary_estimate_updated', 'audio_boundary_candidate', 'audio_boundary_inconclusive', 'cue_window_correction_applied', 'source_boundary_preserved', 'finalization_candidate_held']);
 const NUMBER_FIELDS = ['durationSeconds', 'characters', 'charactersPerSecond', 'cueStart', 'cueEnd', 'originalEnd', 'clippedEnd', 'trimmedSeconds', 'originalDurationSeconds', 'remainingDurationSeconds', 'sourceIndex', 'wordCount', 'assignedWordCount', 'excludedWordCount', 'chunkIndex', 'sourceStart', 'sourceEnd', 'ownedStart', 'ownedEnd'];
 const validText = (value) => typeof value === 'string' && value.length <= 10_000;
 
@@ -89,6 +93,11 @@ export function normalizeSubtitleReview(value, currentText) {
     && (currentText === undefined || timingConfirmation.matchingText === currentText)) review.timingConfirmation = timingConfirmation;
   const localExclusion = normalizeLocalExclusion(value.localExclusion);
   if (localExclusion) review.localExclusion = localExclusion;
+  const correctionBinding = normalizeCorrectionBinding(value.correctionBinding);
+  if (correctionBinding && ['cue_applied', 'held', 'restored'].includes(value.correctionStatus)) {
+    review.correctionBinding = correctionBinding;
+    review.correctionStatus = value.correctionStatus;
+  }
   if (value.timingStatus === 'unverified' || review.textStatus || review.timingCandidate || review.timingConfirmation || review.originalTiming) review.timingStatus = 'unverified';
   return review;
 }
@@ -97,7 +106,38 @@ export function normalizeSubtitleReview(value, currentText) {
 export const subtitleEditSignature = (segments) => JSON.stringify(segments.map((segment) => ({
   start: segment.start, end: segment.end, text: segment.text ?? '', timingSource: segment.timingSource === 'manual' ? 'manual' : undefined,
   subtitleReview: normalizeSubtitleReview(segment.subtitleReview, segment.text),
+  fixedCuePlan: normalizeFixedCuePlan(segment.fixedCuePlan),
 })));
+
+export function getSubtitleCorrectionStatus(segment) {
+  if (hasSpeaker(segment) || !normalizeSubtitleReview(segment?.subtitleReview, segment?.text)?.correctionStatus) return undefined;
+  const status = getBoundCorrectionStatus(segment);
+  if (status === 'held') return status;
+  return getBoundFixedCuePlan(segment) ? status : undefined;
+}
+
+function reviewBeforeContentChange(segment) {
+  const prior = normalizeSubtitleReview(segment.subtitleReview, segment.text);
+  if (!prior?.correctionStatus && !prior?.correctionBinding && !prior?.issues.some((issue) => ['cue_window_correction_applied', 'source_boundary_preserved', 'finalization_candidate_held'].includes(issue.code))) return prior;
+  const review = { ...prior };
+  review.issues = review.issues.filter((issue) => !['cue_window_correction_applied', 'source_boundary_preserved', 'finalization_candidate_held'].includes(issue.code));
+  if (review.correctionStatus === 'held' && review.textStatus !== 'confirmed') {
+    delete review.candidateText;
+    delete review.textStatus;
+  }
+  delete review.correctionStatus;
+  delete review.correctionBinding;
+  return review;
+}
+
+function discardFixedEvidence(segment, next) {
+  if (segment.fixedCuePlan !== undefined) {
+    delete next.fixedCuePlan;
+    delete next.sourceWords;
+    delete next.wordAlignedCues;
+  }
+  return next;
+}
 
 export function getSubtitleTimingCandidate(segment) {
   const candidate = normalizeSubtitleReview(segment?.subtitleReview, segment?.text)?.timingCandidate;
@@ -141,7 +181,8 @@ export function validateSubtitleTiming(segments, index, start, end, { durationSe
 export function confirmSubtitleTiming(segment, start, end) {
   if (!validRange(start, end) || !validRange(segment?.start, segment?.end)
     || (Number.isFinite(segment.audioStartFloor) && start < segment.audioStartFloor)) return segment;
-  const prior = normalizeSubtitleReview(segment.subtitleReview, segment.text);
+  const unchangedRange = start === segment.start && end === segment.end;
+  const prior = unchangedRange ? normalizeSubtitleReview(segment.subtitleReview, segment.text) : reviewBeforeContentChange(segment);
   const originalTiming = prior?.originalTiming ?? { start: segment.start, end: segment.end };
   const review = { version: 1, issues: prior?.issues || [], ...prior,
     originalTiming,
@@ -153,11 +194,18 @@ export function confirmSubtitleTiming(segment, start, end) {
   // falling back to text-based internal splitting rather than restoring them.
   delete next.sourceWords;
   delete next.wordAlignedCues;
+  if (!unchangedRange) delete next.fixedCuePlan;
   return next;
 }
 
 export function getSubtitleReviewIssues(segment) {
-  const issues = [...(normalizeSubtitleReview(segment.subtitleReview, segment.text)?.issues || [])];
+  const correctionStatus = getSubtitleCorrectionStatus(segment);
+  const fixedPlan = getBoundFixedCuePlan(segment);
+  const issues = (normalizeSubtitleReview(segment.subtitleReview, segment.text)?.issues || []).filter((issue) => (
+    (issue.code !== 'cue_window_correction_applied' || correctionStatus === 'cue_applied')
+    && (issue.code !== 'finalization_candidate_held' || correctionStatus === 'held')
+    && (issue.code !== 'source_boundary_preserved' || fixedPlan)
+  ));
   const duration = Number.isFinite(segment.start) && Number.isFinite(segment.end) ? segment.end - segment.start : NaN;
   if (!Number.isFinite(duration) || duration <= 0) return issues;
   const characters = Array.from(String(segment.text ?? '').replace(/\s+/g, ' ').trim()).length;
@@ -171,17 +219,18 @@ export function subtitleReviewIssueLabel(issue) {
   const reasons = { empty: '빈 교정 후보', numeric_change: '숫자·단위 변경 가능성', speech_deletion: '대사 누락 가능성', speech_insertion: '대사 추가 가능성', repetition_change: '반복·추임새 변경 가능성' };
   const labels = { short_cue: '0.3초 미만의 짧은 자막 구간', high_reading_speed: '구간 길이에 비해 글자가 많음', overlap_trim: '겹침 정리로 표시 구간이 줄어듦', word_timing_fallback: '단어 시간 근거가 불완전함', correction_alignment_rejected: '교정 문구와 단어 시간의 대응 미확인', correction_guard_rejected: `자동 교정 보류${reasons[issue.reason] ? ` · ${reasons[issue.reason]}` : ''}`,
     chunk_boundary_replanned: '전사 조각 경계를 단어 시간으로 다시 나눔', chunk_boundary_unverified: '전사 조각 경계 대조 필요', audio_recheck_word_timing: '같은 전사 모델로 시간 재측정 · 싱크 미확인', audio_recheck_inconclusive: '재측정 결과 불명확', audio_recheck_failed: '부분 오디오 재측정 실패',
-    audio_boundary_estimate_updated: '모델 시간 추정 반영 · 발화 싱크 미확인', audio_boundary_candidate: '오디오 재측정 시간 후보 · 발화 싱크 미확인', audio_boundary_inconclusive: '오디오 재측정 시간 확인 불가 · 발화 싱크 미확인' };
+    audio_boundary_estimate_updated: '모델 시간 추정 반영 · 발화 싱크 미확인', audio_boundary_candidate: '오디오 재측정 시간 후보 · 발화 싱크 미확인', audio_boundary_inconclusive: '오디오 재측정 시간 확인 불가 · 발화 싱크 미확인',
+    cue_window_correction_applied: '기존 큐 시간을 유지해 문구 교정 · 단어별 싱크 미확인', source_boundary_preserved: '원전사 말차례 경계를 보존함 · 화자 전환 검증 아님', finalization_candidate_held: '문구 귀속이나 보존 근거가 불충분해 교정 후보 보류' };
   return labels[issue.code] || '원본 확인이 필요한 구간';
 }
 
 export function editSubtitleText(segment, text) {
   if (text === segment.text) return segment;
-  const prior = normalizeSubtitleReview(segment.subtitleReview, segment.text);
+  const prior = reviewBeforeContentChange(segment);
   const review = { version: 1, issues: prior?.issues || [], ...prior,
     originalText: prior?.originalText ?? segment.text ?? '', timingStatus: 'unverified' };
   if (review.textStatus === 'confirmed') review.textStatus = review.candidateText === undefined ? undefined : 'candidate';
-  return { ...segment, text, subtitleReview: normalizeSubtitleReview(review, text) };
+  return discardFixedEvidence(segment, { ...segment, text, subtitleReview: normalizeSubtitleReview(review, text) });
 }
 
 export function validateSubtitleCandidate(segments, index, candidate) {
@@ -193,11 +242,12 @@ export function validateSubtitleCandidate(segments, index, candidate) {
 }
 
 export function confirmSubtitleCandidate(segment, candidate) {
-  const prior = normalizeSubtitleReview(segment.subtitleReview, segment.text);
+  const prior = candidate === segment.text ? normalizeSubtitleReview(segment.subtitleReview, segment.text) : reviewBeforeContentChange(segment);
   const review = { version: 1, issues: prior?.issues || [], ...prior,
     originalText: prior?.originalText ?? segment.text ?? '', candidateText: candidate,
     textStatus: 'confirmed', timingStatus: 'unverified' };
-  return { ...segment, text: candidate, subtitleReview: normalizeSubtitleReview(review, candidate) };
+  const next = { ...segment, text: candidate, subtitleReview: normalizeSubtitleReview(review, candidate) };
+  return candidate === segment.text ? next : discardFixedEvidence(segment, next);
 }
 
 export function normalizeReviewMemory(value) {

@@ -1,4 +1,4 @@
-import { getSubtitleTimingConfirmation, normalizeLocalExclusion, normalizeReviewMemory, normalizeSubtitleReview, subtitleEditSignature, validateSubtitleTiming } from './subtitle-review.js';
+import { getBoundFixedCuePlan, getSubtitleTimingConfirmation, normalizeCorrectionBinding, normalizeFixedCuePlan, normalizeLocalExclusion, normalizeReviewMemory, normalizeSubtitleReview, subtitleEditSignature, validateSubtitleTiming } from './subtitle-review.js';
 
 export const resultDraftKey = (ownerId, logId) => `resultEdits:v2:${ownerId}:${logId}`;
 export const lastResultKey = (ownerId) => `lastResult:v2:${ownerId}`;
@@ -13,6 +13,7 @@ const sameRange = (left, right) => left.start === right.start && left.end === ri
 const legacyEditSignature = (segments) => JSON.stringify(segments.map((segment) => ({ text: segment.text ?? '', subtitleReview: normalizeSubtitleReview(segment.subtitleReview, segment.text) })));
 const hasSpeaker = (segment) => segment.speaker !== undefined && segment.speaker !== null && segment.speaker !== '';
 const hasLocalExclusion = (segments) => segments.some((segment) => normalizeLocalExclusion(segment.subtitleReview?.localExclusion));
+const hasFixedCueState = (segments) => segments.some((segment) => normalizeFixedCuePlan(segment.fixedCuePlan) || normalizeCorrectionBinding(segment.subtitleReview?.correctionBinding));
 
 function hasManualTimingOrigin(edited, source) {
   const confirmation = getSubtitleTimingConfirmation(edited);
@@ -80,16 +81,23 @@ export function readResultDraft(storage, ownerId, logId, segments) {
       if (draft.baseSignature !== serverSignature && subtitleEditSignature(draft.segments) !== serverSignature) {
         // Older text-only signatures may restore only their unchanged time ranges.
         const unchangedTimes = draft.segments.every((segment, index) => sameRange(segment, segments[index]));
-        if (hasLocalExclusion(segments) || hasLocalExclusion(draft.segments) || !unchangedTimes
+        if (hasLocalExclusion(segments) || hasLocalExclusion(draft.segments) || hasFixedCueState(segments) || hasFixedCueState(draft.segments) || !unchangedTimes
           || (draft.baseSignature !== legacyEditSignature(segments) && legacyEditSignature(draft.segments) !== legacyEditSignature(segments))) return null;
       }
-    } else if (hasLocalExclusion(segments) || hasLocalExclusion(draft.segments)
+    } else if (hasLocalExclusion(segments) || hasLocalExclusion(draft.segments) || hasFixedCueState(segments) || hasFixedCueState(draft.segments)
       || draft.segments.some((segment, index) => !sameRange(segment, segments[index]))
       || (draft.baseText !== serverText && segmentText(draft.segments) !== serverText)) return null;
     return { ...draft, reviewMemory: normalizeReviewMemory(draft.reviewMemory), segments: segments.map((segment, index) => {
       const edited = draft.segments[index];
       const review = normalizeSubtitleReview(edited.subtitleReview ?? segment.subtitleReview, edited.text);
       const restored = { ...segment, start: edited.start, end: edited.end, text: edited.text, ...(review ? { subtitleReview: review } : {}) };
+      const fixedPlan = getBoundFixedCuePlan(edited);
+      if (fixedPlan) restored.fixedCuePlan = fixedPlan;
+      else delete restored.fixedCuePlan;
+      if (segment.fixedCuePlan !== undefined || edited.fixedCuePlan !== undefined) {
+        delete restored.sourceWords;
+        delete restored.wordAlignedCues;
+      }
       if (hasManualTimingOrigin(edited, segment)) {
         delete restored.sourceWords;
         delete restored.wordAlignedCues;

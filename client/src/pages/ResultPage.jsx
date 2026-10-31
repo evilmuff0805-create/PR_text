@@ -10,7 +10,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { formatSegmentTime } from '../utils/format-segment-time.js';
 import { cacheSavedResult, isTranscriptionLogId, lastResultKey, readResultDraft, resolveSavedResult, resultSnapshotSignature, writeResultDraft } from '../utils/result-drafts.js';
-import { confirmSubtitleCandidate, confirmSubtitleTiming, editSubtitleText, findRememberedSubtitle, formatSubtitleTimeInput, getBoundLocalExclusion, getSubtitleReviewIssues, getSubtitleTimingCandidate, getSubtitleTimingConfirmation, isLocallyExcluded, normalizeReviewMemory, normalizeSubtitleReview, parseSubtitleTimeInput, rememberSubtitleCandidate, setSubtitleExclusion, subtitleEditSignature, subtitleReviewIssueLabel, validateSubtitleCandidate, validateSubtitleTiming } from '../utils/subtitle-review.js';
+import { confirmSubtitleCandidate, confirmSubtitleTiming, editSubtitleText, findRememberedSubtitle, formatSubtitleTimeInput, getBoundFixedCuePlan, getBoundLocalExclusion, getSubtitleCorrectionStatus, getSubtitleReviewIssues, getSubtitleTimingCandidate, getSubtitleTimingConfirmation, isLocallyExcluded, normalizeReviewMemory, normalizeSubtitleReview, parseSubtitleTimeInput, rememberSubtitleCandidate, restoreFixedCuePlan, setSubtitleExclusion, subtitleEditSignature, subtitleReviewIssueLabel, validateSubtitleCandidate, validateSubtitleTiming } from '../utils/subtitle-review.js';
 import {
   buildSceneContext,
   createCaptionRequestTracker,
@@ -189,10 +189,14 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
   onConfirmTiming,
   exclusionEnabled,
   onSetExclusion,
+  onRestoreCueCorrection,
 }) {
   const review = normalizeSubtitleReview(segment.subtitleReview, segment.text);
   const issues = getSubtitleReviewIssues(segment);
-  const candidate = pendingReview?.base === segment ? pendingReview.value : review?.candidateText ?? '';
+  const fixedCuePlan = timingEnabled ? getBoundFixedCuePlan(segment) : undefined;
+  const correctionStatus = timingEnabled ? getSubtitleCorrectionStatus(segment) : undefined;
+  const candidate = pendingReview?.base === segment ? pendingReview.value
+    : review?.correctionStatus === 'held' && correctionStatus !== 'held' ? '' : review?.candidateText ?? '';
   const remember = pendingReview?.base === segment && pendingReview.remember === true;
   const duration = Number.isFinite(segment.start) && Number.isFinite(segment.end) ? segment.end - segment.start : NaN;
   const timingCandidate = getSubtitleTimingCandidate(segment);
@@ -238,6 +242,18 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
           {issues.length > 0 && <ul>{issues.map((issue, issueIndex) => <li key={`${issue.code}-${issueIndex}`}>{subtitleReviewIssueLabel(issue)}</li>)}</ul>}
           <p className="subtitle-review__hint">표시는 원본 확인을 돕는 기준입니다. 짧은 구간만으로 인식 오류나 실제 발화 시간을 단정하지 않습니다.</p>
           <button type="button" className="button button--secondary" disabled={!audioAvailable} onClick={() => onPlayReviewRange(index, segment, reviewSession)}>앞뒤 포함 듣기</button>
+          {correctionStatus && <section className="subtitle-review__memory" aria-label="문구 교정 처리 내역">
+            <p className="subtitle-review__status" role="status">{correctionStatus === 'cue_applied'
+              ? '기존 큐 시간을 유지해 교정 문구 반영 · 단어별 싱크 미확인'
+              : correctionStatus === 'restored' ? '교정 전 문구로 복원됨 · 기존 큐 시간 유지 · 단어별 싱크 미확인'
+                : '교정 후보 보류 · 현재 문구와 시간 유지'}</p>
+            <p className="subtitle-review__hint">{correctionStatus === 'held'
+              ? '후보를 자동 반영하지 않았습니다. 원음을 확인한 뒤 필요한 문구만 직접 적용해 주세요.'
+              : '문구의 큐 경계만 보존한 결과이며 새 단어 정렬이나 수동 싱크 확인을 뜻하지 않습니다.'}</p>
+            {correctionStatus === 'cue_applied' && fixedCuePlan?.original && <button id={`review-correction-restore-${index}`} type="button" className="button button--secondary" disabled={reviewApplyDisabled}
+              onClick={() => onRestoreCueCorrection(index, segment, reviewSession)}>교정 전 문구 복원</button>}
+          </section>}
+          {review?.correctionStatus && !correctionStatus && <p className="subtitle-review__hint">문구나 시간이 달라 이전 자동 교정 판단은 적용하지 않습니다.</p>}
           {exclusionEnabled && <section className="subtitle-review__exclusion" aria-labelledby={`review-exclusion-title-${index}`}>
             <h3 id={`review-exclusion-title-${index}`}>내보내기 포함 여부</h3>
             <p className="subtitle-review__status" role="status">{excluded
@@ -273,7 +289,7 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
               <label htmlFor={`review-end-${index}`}><span>발화 끝</span><input id={`review-end-${index}`} type="text" inputMode="decimal" autoComplete="off" aria-describedby={`review-timing-help-${index}`} value={timingEnd}
                 onChange={(event) => onTimingChange(index, segment, { endInput: event.target.value }, reviewSession)} /></label>
             </div>
-            <p id={`review-timing-help-${index}`} className="subtitle-review__hint">초(예: 338.125) 또는 HH:MM:SS.mmm로 입력합니다. 원본을 직접 듣고 시작·끝을 확인한 뒤 적용하세요. 긴 문구의 내부 분할 시간은 이 범위 안의 글자 수 비례 추정이며, 단어별 재정렬은 보장하지 않습니다.</p>
+            <p id={`review-timing-help-${index}`} className="subtitle-review__hint">초(예: 338.125) 또는 HH:MM:SS.mmm로 입력합니다. 원본을 직접 듣고 시작·끝을 확인한 뒤 적용하세요. {fixedCuePlan ? '내부 자막은 보존된 큐 경계를 사용하며, 단어별 재정렬을 뜻하지 않습니다.' : '긴 문구의 내부 분할 시간은 이 범위 안의 글자 수 비례 추정이며, 단어별 재정렬은 보장하지 않습니다.'}</p>
             {!audioAvailable && <p className="subtitle-review__hint">시간을 적용하려면 위에서 이 파일의 원본을 연결해 재생 길이를 확인해 주세요.</p>}
             <button type="button" className="button button--secondary" disabled={!audioAvailable}
               onClick={() => onPlayReviewRange(index, segment, reviewSession, { start: parseSubtitleTimeInput(timingStart), end: parseSubtitleTimeInput(timingEnd) })}>입력 범위 앞뒤 듣기</button>
@@ -282,7 +298,7 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
             {timingError && <p className="subtitle-review__error" role="alert">{timingError}</p>}
           </section>}
           <dl className="subtitle-review__comparison">
-            <div><dt>보존 문구</dt><dd>{review?.originalText ?? originalText ?? segment.text}</dd></div>
+            <div><dt>보존 문구</dt><dd>{fixedCuePlan?.original?.text ?? review?.originalText ?? originalText ?? segment.text}</dd></div>
             <div><dt>현재 편집 문구</dt><dd>{segment.text}</dd></div>
           </dl>
           {rememberedReview && <div className="subtitle-review__memory">
@@ -702,6 +718,25 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
     setFullTextDraft(joinSegmentLines(next));
   }, [exclusionEnabled]);
 
+  const restoreCueCorrection = useCallback((index, base, session) => {
+    if (!timingEnabled || !reviewMountedRef.current || reviewSessionRef.current !== session
+      || editedSegmentsRef.current[index] !== base || lineCountMismatchRef.current) return;
+    const restored = restoreFixedCuePlan(base);
+    if (restored === base) return;
+    const textError = validateSubtitleCandidate(editedSegmentsRef.current, index, restored.text);
+    const timingError = restored.start === base.start && restored.end === base.end ? null
+      : validateSubtitleTiming(editedSegmentsRef.current, index, restored.start, restored.end);
+    if (textError || timingError) {
+      setReviewError({ scope: reviewScopeRef.current, index, message: textError || timingError });
+      return;
+    }
+    const next = editedSegmentsRef.current.map((segment, position) => position === index ? restored : segment);
+    editedSegmentsRef.current = next;
+    setEditedSegments(next);
+    setFullTextDraft(joinSegmentLines(next));
+    setReviewError(null);
+  }, [timingEnabled]);
+
   // 사용자와 기록별로 초안을 분리한다. 묶음의 다른 파일이나 계정에 편집본이 섞이지 않는다.
   useEffect(() => {
     if (editedSegments.length === 0 || !transcriptionLogId) return;
@@ -945,9 +980,17 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
   const restorePolishedOriginals = useCallback(() => {
     const next = editedSegmentsRef.current.map((segment) => {
       if (!segment.grammarPolish || typeof segment.grammarPolish.originalText !== 'string') return segment;
-      const restored = { ...segment, text: segment.grammarPolish.originalText };
-      if (segment.grammarPolish.originalTimingSource === undefined) delete restored.timingSource;
-      else restored.timingSource = segment.grammarPolish.originalTimingSource;
+      const fixedPlan = getBoundFixedCuePlan(segment);
+      const hasFixedEvidence = segment.fixedCuePlan !== undefined || segment.timingSource === 'speech_window';
+      const canRestoreFixed = fixedPlan?.original?.text === segment.grammarPolish.originalText
+        && fixedPlan.original.start === segment.start && fixedPlan.original.end === segment.end;
+      const restored = canRestoreFixed ? restoreFixedCuePlan(segment)
+        : hasFixedEvidence ? editSubtitleText(segment, segment.grammarPolish.originalText)
+          : { ...segment, text: segment.grammarPolish.originalText };
+      if (!hasFixedEvidence) {
+        if (segment.grammarPolish.originalTimingSource === undefined) delete restored.timingSource;
+        else restored.timingSource = segment.grammarPolish.originalTimingSource;
+      }
       delete restored.grammarPolish;
       return restored;
     });
@@ -1322,6 +1365,7 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
                     onConfirmTiming={confirmTiming}
                     exclusionEnabled={exclusionEnabled}
                     onSetExclusion={changeExclusion}
+                    onRestoreCueCorrection={restoreCueCorrection}
                   />
                 );
               })}
