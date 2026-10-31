@@ -5,7 +5,7 @@ import {
   refineKoreanSegmentsWithWordTimings,
 } from '../src/services/transcription-processing.js';
 import { mergeChunkSegments } from '../src/services/audio-chunks.js';
-import { generateASS, generateSRT } from '../src/services/subtitle.js';
+import { buildSubtitleCues, generateASS, generateSRT } from '../src/services/subtitle.js';
 
 process.env.SUPABASE_URL ??= 'https://example.supabase.co';
 process.env.SUPABASE_ANON_KEY ??= 'test-anon-key';
@@ -66,7 +66,7 @@ test('word-timed Korean short responses do not merge or acquire a minimum displa
   assert.equal(result.segments[0].subtitleReview.timingStatus, 'unverified');
 });
 
-test('a provider-separated dependent predicate is joined only with complete adjacent word timings', async () => {
+test('a provider-separated predicate retains unknown source boundaries and verified speech times', async () => {
   for (const [gap, spellingCorrection] of [[0.3, false], [0.301, false], [0.3, true], [0.301, true]]) {
     const first = source();
     first.sourceWords.pop();
@@ -87,14 +87,13 @@ test('a provider-separated dependent predicate is joined only with complete adja
     assert.deepEqual([first, tail], before);
     const last = result.segments.at(-1);
     assert.equal(last.end, tail.sourceWords[0].end);
-    if (gap === 0.3) {
-      assert.deepEqual(result.segments.map((segment) => segment.text), [front, back]);
-      assert.equal(last.start, 12);
-    } else {
-      assert.equal(last.text, '됩니다');
-      assert.equal(last.start, tail.start);
-      assert.equal(result.segments.at(-2).end, 13.7);
-    }
+    assert.equal(last.text, tail.text);
+    assert.equal(last.start, tail.sourceWords[0].start);
+    assert.equal(result.segments.at(-2).end, 13.7);
+    assert.equal(result.segments.slice(0, -1).map(segment => segment.text).join(' '), first.text.replace('편안하개', '편안하게'));
+    const cues = buildSubtitleCues(result.segments, { holdShortGaps: false });
+    assert.deepEqual(cues.map(cue => [cue.start, cue.end]), [[10.1, 13.7], [tail.start, tail.sourceWords[0].end]]);
+    assert.ok(cues.every(cue => cue.text.length <= 28));
   }
 });
 
@@ -213,12 +212,17 @@ test('correction failure still aligns the preserved original speech offline', as
   ]);
 });
 
-test('untimed Korean sources retain the existing ordinary short-source fallback', async () => {
+test('untimed Korean sources keep the original AI input while restoring separate source windows', async () => {
+  const requests = [];
   const result = await processTranscriptionSegments([
     { start: 5, end: 5.4, text: '네' },
     { start: 5.6, end: 7, text: '설명을 이어갑니다' },
-  ], 'ko', { correct });
-  assert.deepEqual(result.segments, [{ start: 5, end: 7, text: '네 설명을 이어갑니다' }]);
+  ], 'ko', { correct: async value => { requests.push(value); return value; } });
+  assert.deepEqual(requests, ['네 설명을 이어갑니다']);
+  assert.deepEqual(result.segments.map(({ start, end, text }) => ({ start, end, text })), [
+    { start: 5, end: 5.4, text: '네' }, { start: 5.6, end: 7, text: '설명을 이어갑니다' },
+  ]);
+  assert.deepEqual(buildSubtitleCues(result.segments, { holdShortGaps: false }).map(cue => [cue.start, cue.end]), [[5, 5.4], [5.6, 7]]);
 });
 
 test('diarized Korean sources retain provider windows even if word metadata exists', async () => {

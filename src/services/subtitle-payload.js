@@ -1,5 +1,6 @@
 import { MAX_SPEAKERS } from './speakers.js';
 import { normalizeLocalExclusion } from './subtitle-review.js';
+import { normalizeFixedCuePlan } from './fixed-cue-plan.js';
 
 export const MAX_SUBTITLE_SEGMENTS = 5_000;
 export const MAX_SUBTITLE_SEGMENT_TEXT = 10_000;
@@ -14,6 +15,9 @@ export function validateSubtitleSegments(segments, { allowEmpty = false } = {}) 
   let totalTextLength = 0;
   let totalGrammarRestoreLength = 0;
   let totalExclusionBindingLength = 0;
+  let fixedText = 0;
+  let originalFixedText = 0;
+  let fixedCount = 0;
   for (const segment of segments) {
     if (!segment || typeof segment !== 'object') return '자막 세그먼트 형식이 올바르지 않습니다.';
     if (!Number.isFinite(segment.start) || !Number.isFinite(segment.end) || segment.start < 0 || segment.end < segment.start) {
@@ -39,6 +43,14 @@ export function validateSubtitleSegments(segments, { allowEmpty = false } = {}) 
       if (!exclusion) return '자막 제외 정보가 올바르지 않습니다.';
       totalExclusionBindingLength += exclusion.binding.text.length;
       if (totalExclusionBindingLength > MAX_SUBTITLE_TOTAL_TEXT) return '자막 제외 정보가 너무 큽니다.';
+    }
+    if (segment.fixedCuePlan !== undefined) {
+      const plan = normalizeFixedCuePlan(segment.fixedCuePlan);
+      if (!plan) return '고정 자막 구간 정보가 올바르지 않습니다.';
+      fixedText += plan.binding.text.length;
+      originalFixedText += plan.original?.text.length ?? 0;
+      fixedCount += plan.cues.length + (plan.original?.cues.length ?? 0);
+      if (fixedText > MAX_SUBTITLE_TOTAL_TEXT || originalFixedText > MAX_SUBTITLE_TOTAL_TEXT || fixedCount > 50_000) return '고정 자막 구간 정보가 너무 큽니다.';
     }
     if (segment.speaker !== undefined && (!Number.isInteger(segment.speaker) || segment.speaker < 0 || segment.speaker >= MAX_SPEAKERS)) {
       return '화자 정보가 올바르지 않습니다.';

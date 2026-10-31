@@ -1,3 +1,5 @@
+import { normalizeCorrectionBinding } from './fixed-cue-plan.js';
+
 const MAX_ISSUES = 16;
 const MAX_REVIEW_TEXT = 10_000;
 const TOKEN = /^[a-z][a-z0-9_-]{0,95}$/;
@@ -123,6 +125,11 @@ export function mergeSubtitleReviews(...reviews) {
     if (timingConfirmation) fields.timingConfirmation = timingConfirmation;
     const localExclusion = normalizeLocalExclusion(review.localExclusion);
     if (localExclusion) fields.localExclusion = localExclusion;
+    const correctionBinding = normalizeCorrectionBinding(review.correctionBinding);
+    if (correctionBinding && ['cue_applied', 'held', 'restored'].includes(review.correctionStatus)) {
+      fields.correctionBinding = correctionBinding;
+      fields.correctionStatus = review.correctionStatus;
+    }
     if (review.textStatus === 'candidate' || review.textStatus === 'confirmed') fields.textStatus = review.textStatus;
     if (review.timingStatus === 'unverified') fields.timingStatus = 'unverified';
   }

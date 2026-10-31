@@ -1,6 +1,7 @@
 import { isKoreanDependentPredicateTail, splitKoreanSubtitleText } from './korean-subtitle.js';
 import { alignKoreanSegmentWithWordTimings } from './korean-word-timing.js';
 import { annotateSubtitleReviews, mergeSubtitleReviews, overlapTrimReview, retainManualSubtitleRange, getBoundLocalExclusion, isLocallyExcluded } from './subtitle-review.js';
+import { getBoundFixedCuePlan } from './fixed-cue-plan.js';
 
 // Transient ownership survives splitting/merging, but is never serialized into
 // API captions. Local exclusion is applied only after the full timeline freezes.
@@ -121,6 +122,10 @@ function splitSegment(segment, maxLen = SUBTITLE_MAX_CHARS) {
     ...(segment[SUBTITLE_SOURCE_INDICES] ? { [SUBTITLE_SOURCE_INDICES]: segment[SUBTITLE_SOURCE_INDICES] } : {}),
     ...(cueReview ? { subtitleReview: cueReview } : {}),
   });
+  const fixed = getBoundFixedCuePlan(segment);
+  if (fixed) return fixed.cues.map(([cueStart, cueEnd, cueText]) => withReview({
+    start: cueStart, end: cueEnd, text: cleanText(cueText), speaker: spk, timingSource: 'speech_window',
+  }));
   if (!hasSpeaker && segment.timingSource === 'word'
     && Array.isArray(segment.wordAlignedCues)
     && segment.wordAlignedCues.length <= text.length) {
@@ -175,15 +180,15 @@ function splitSegment(segment, maxLen = SUBTITLE_MAX_CHARS) {
 // 서로 다른 시작 시간의 겹침은 다음 발화 시작에서 자른다. 같은 시각에
 // 시작한 큐끼리 자르면 앞 화자의 대사가 0초가 되어 사라지므로 각각 보존한다.
 // 실제 발화 뒤의 무음을 채우거나 근거 없는 발화 순서를 만들지 않는다.
-function normalizeCueTimeline(cues) {
+function normalizeCueTimeline(cues, { preserveEqualStarts = false } = {}) {
   const sorted = cues.map((cue) => ({ ...cue }))
     .sort((a, b) => a.start - b.start || a.end - b.end);
 
   for (let index = 0; index < sorted.length;) {
     let groupEnd = index + 1;
     while (groupEnd < sorted.length && sorted[groupEnd].start === sorted[index].start
-      && sorted[groupEnd - 1].timingSource !== 'speech_window'
-      && sorted[groupEnd].timingSource !== 'speech_window') {
+      && (preserveEqualStarts || (sorted[groupEnd - 1].timingSource !== 'speech_window'
+      && sorted[groupEnd].timingSource !== 'speech_window'))) {
       groupEnd += 1;
     }
     const next = sorted[groupEnd];
@@ -205,7 +210,8 @@ function prepareOrdinarySources(segments) {
   const grouped = [];
   for (let index = 0; index < sorted.length;) {
     let groupEnd = index + 1;
-    while (groupEnd < sorted.length && sorted[groupEnd].start === sorted[index].start) groupEnd += 1;
+    while (groupEnd < sorted.length && sorted[groupEnd].start === sorted[index].start
+      && !getBoundFixedCuePlan(sorted[groupEnd - 1]) && !getBoundFixedCuePlan(sorted[groupEnd])) groupEnd += 1;
     const group = sorted.slice(index, groupEnd);
     grouped.push({
       ...group[0],
@@ -227,6 +233,7 @@ function prepareOrdinarySources(segments) {
     const gap = previous ? segment.start - previous.end : Infinity;
     // Match the existing ordinary 0.3s merge allowance; diarization never enters here.
     if (previous && gap >= 0 && gap <= 0.3 + 1e-9
+      && !getBoundFixedCuePlan(previous) && !getBoundFixedCuePlan(segment)
       && !Array.isArray(previous.sourceWords) && !Array.isArray(segment.sourceWords)
       && previous.timingSource !== 'speech_window' && segment.timingSource !== 'speech_window'
       && previous.timingSource !== 'word' && segment.timingSource !== 'word'
@@ -242,8 +249,14 @@ function prepareOrdinarySources(segments) {
 
   // Clip source windows before splitting so later fragments cannot jump past
   // the next source and interleave its text. Never extend a source into silence.
+  const nextDifferent = new Array(continued.length);
+  for (let index = continued.length - 1; index >= 0; index--) {
+    nextDifferent[index] = index + 1 < continued.length && continued[index + 1].start > continued[index].start
+      ? continued[index + 1] : nextDifferent[index + 1];
+  }
   return continued.map((segment, index) => {
-    const next = continued[index + 1];
+    if (getBoundFixedCuePlan(segment)) return segment;
+    const next = nextDifferent[index];
     const reviewed = next ? overlapTrimReview(segment, next.start) : segment;
     return { ...reviewed, end: next ? Math.min(segment.end, next.start) : segment.end };
   });
@@ -259,6 +272,7 @@ export function buildSubtitleCues(segments, options = {}) {
     cues = annotateSubtitleReviews(
       prepareOrdinarySources(usable).flatMap((segment) => splitSegment(segment)), { stage: 'export' },
     );
+    if (usable.some(getBoundFixedCuePlan)) cues = normalizeCueTimeline(cues, { preserveEqualStarts: true });
   } else {
     cues = normalizeCueTimeline(usable.flatMap((segment) => splitSegment(segment)));
   }
