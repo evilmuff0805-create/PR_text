@@ -12,6 +12,36 @@ const SHORT_RESPONSE = /^(?:네|예|아니|아니요|아뇨|응|어|음|그래|�
 const INTEGER_FIELDS = new Set(['characters', 'sourceIndex', 'chunkIndex', 'wordCount', 'assignedWordCount', 'excludedWordCount']);
 const DENSITY_ISSUES = new Set(['short_cue', 'high_reading_speed']);
 const finiteTime = value => typeof value === 'number' && Number.isFinite(value) && value >= 0;
+const LOCAL_EXCLUSION_STATUSES = new Set(['review', 'automatic', 'user', 'restored']);
+const LOCAL_EXCLUSION_REASONS = new Set([
+  'distributed_repetition', 'suspicious_silence', 'exact_zero_with_provider_risk', 'user_selection',
+]);
+const LOCAL_AUDIO_STATUSES = new Set(['exact_zero', 'signal_present', 'unavailable', 'not_checked']);
+
+/** An exclusion is a reversible decision bound to one exact editor row. */
+export function normalizeLocalExclusion(value) {
+  if (!value || value.version !== 1 || !LOCAL_EXCLUSION_STATUSES.has(value.status)
+    || !LOCAL_EXCLUSION_REASONS.has(value.reason)
+    || !value.binding || typeof value.binding.text !== 'string' || !value.binding.text.trim()
+    || value.binding.text.length > MAX_REVIEW_TEXT || !finiteTime(value.binding.start)
+    || !finiteTime(value.binding.end) || value.binding.end <= value.binding.start) return undefined;
+  const result = { version: 1, status: value.status, reason: value.reason,
+    binding: { text: value.binding.text, start: value.binding.start, end: value.binding.end } };
+  if (typeof value.groupId === 'string' && TOKEN.test(value.groupId)) result.groupId = value.groupId;
+  if (Number.isSafeInteger(value.occurrences) && value.occurrences >= 1 && value.occurrences <= 20_000) result.occurrences = value.occurrences;
+  if (LOCAL_AUDIO_STATUSES.has(value.audioStatus)) result.audioStatus = value.audioStatus;
+  return result;
+}
+
+export function getBoundLocalExclusion(segment) {
+  const exclusion = normalizeLocalExclusion(segment?.subtitleReview?.localExclusion);
+  return exclusion && !hasSpeaker(segment) && exclusion.binding.text === segment.text
+    && exclusion.binding.start === segment.start && exclusion.binding.end === segment.end ? exclusion : undefined;
+}
+
+export function isLocallyExcluded(segment) {
+  return ['automatic', 'user'].includes(getBoundLocalExclusion(segment)?.status);
+}
 
 export function normalizeOriginalTiming(value) {
   return value && finiteTime(value.start) && finiteTime(value.end) && value.end > value.start
@@ -91,6 +121,8 @@ export function mergeSubtitleReviews(...reviews) {
     if (timingCandidate) fields.timingCandidate = timingCandidate;
     const timingConfirmation = normalizeTimingReview(review.timingConfirmation, { confirmation: true });
     if (timingConfirmation) fields.timingConfirmation = timingConfirmation;
+    const localExclusion = normalizeLocalExclusion(review.localExclusion);
+    if (localExclusion) fields.localExclusion = localExclusion;
     if (review.textStatus === 'candidate' || review.textStatus === 'confirmed') fields.textStatus = review.textStatus;
     if (review.timingStatus === 'unverified') fields.timingStatus = 'unverified';
   }

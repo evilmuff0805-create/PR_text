@@ -318,8 +318,9 @@ export function createTranscriptionOperations({
         const raw = await transcribeAudio(buffer, operation.filename, operation.requested_language, { durationSeconds: Number(operation.duration_seconds), signal: context.controller.signal });
         context.controller.signal.throwIfAborted();
         const processed = operation.polish_mode === 'grammar'
-          ? await processSegments(raw.segments, raw.language, { polishMode: 'grammar', signal: context.controller.signal })
-          : await processSegments(raw.segments, raw.language);
+          ? await processSegments(raw.segments, raw.language, { polishMode: 'grammar', signal: context.controller.signal,
+            audioBuffer: buffer, originalname: operation.filename })
+          : await processSegments(raw.segments, raw.language, { audioBuffer: buffer, originalname: operation.filename, signal: context.controller.signal });
         context.controller.signal.throwIfAborted();
         providerFinished = true;
         for (let attempt = 0; attempt < 3; attempt++) {
@@ -328,6 +329,7 @@ export function createTranscriptionOperations({
               p_text: joinSegmentText(processed.segments), p_segments: processed.segments, p_language: normalizeLanguage(raw.language),
               p_timings: { provider: raw.timings, correction: processed.correctionTimings,
                 ...(processed.grammarPolish?.metrics ? { grammarPolish: processed.grammarPolish.metrics } : {}),
+                ...(processed.localTranscriptReview ? { localTranscriptReview: processed.localTranscriptReview } : {}),
                 elapsedMs: Date.now() - started } });
             if (checkpoint) break;
             const current = await row(operation.id);

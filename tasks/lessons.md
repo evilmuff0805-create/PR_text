@@ -34,3 +34,7 @@
 - Compare smaller AI batches on identical saved inputs, sequentially, counting all malformed/timeout fallbacks. Lower failure frequency can increase total latency and token use; do not compare a fast failed request with a successful request as a speed gain.
 - Successful execution and equal subtitle times do not establish lyrical meaning preservation. If independent audio evidence is inconclusive, exclude those rewrites from quality wins and keep release approval separate from bounded local implementation completion.
 - Keep upload option descriptions to one concise user-facing sentence; keep implementation limits in documentation and contextual result notices.
+- An exact-silence decision needs all original channels and sample precision; downmix cancellation or low-volume quantization must never become deletion evidence. Keep unsupported decoding and exhausted budgets as unavailable.
+- Bind a reversible subtitle exclusion to its exact text and source range. Freeze splitting and overlap handling before filtering, preserve mixed-source ownership, and prevent a display hold from refilling an excluded interval.
+- Repeated text over sound is not evidence of absent speech. Preserve uncertain phrases for review, distinguish zero-signal measurements from human speech judgments, and report unchanged real-file output honestly.
+- Convert audio duration to frame boundaries carefully: floating-point multiplication can invent an extra frame at EOF. Compare exact file frame counts and test non-integral decimal durations.

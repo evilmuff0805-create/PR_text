@@ -10,7 +10,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { formatSegmentTime } from '../utils/format-segment-time.js';
 import { cacheSavedResult, isTranscriptionLogId, lastResultKey, readResultDraft, resolveSavedResult, resultSnapshotSignature, writeResultDraft } from '../utils/result-drafts.js';
-import { confirmSubtitleCandidate, confirmSubtitleTiming, editSubtitleText, findRememberedSubtitle, formatSubtitleTimeInput, getSubtitleReviewIssues, getSubtitleTimingCandidate, getSubtitleTimingConfirmation, normalizeReviewMemory, normalizeSubtitleReview, parseSubtitleTimeInput, rememberSubtitleCandidate, subtitleEditSignature, subtitleReviewIssueLabel, validateSubtitleCandidate, validateSubtitleTiming } from '../utils/subtitle-review.js';
+import { confirmSubtitleCandidate, confirmSubtitleTiming, editSubtitleText, findRememberedSubtitle, formatSubtitleTimeInput, getBoundLocalExclusion, getSubtitleReviewIssues, getSubtitleTimingCandidate, getSubtitleTimingConfirmation, isLocallyExcluded, normalizeReviewMemory, normalizeSubtitleReview, parseSubtitleTimeInput, rememberSubtitleCandidate, setSubtitleExclusion, subtitleEditSignature, subtitleReviewIssueLabel, validateSubtitleCandidate, validateSubtitleTiming } from '../utils/subtitle-review.js';
 import {
   buildSceneContext,
   createCaptionRequestTracker,
@@ -44,6 +44,11 @@ function buildEditedSegments(segments, editedText) {
 
 function joinSegmentLines(segments) {
   return segments.map((segment) => segment.text).join('\n');
+}
+
+function hasIncludedDialogue(segments, exclusionEnabled) {
+  return segments.some((segment) => segment.text?.replace(/\./g, '').trim() && segment.end > segment.start
+    && (!exclusionEnabled || !isLocallyExcluded(segment)));
 }
 
 // 변환 기록 ID로만 편집본을 식별한다. 세그먼트 개수와 앞뒤 시간으로 식별하던 때는
@@ -182,6 +187,8 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
   onTimingChange,
   onUseTimingCandidate,
   onConfirmTiming,
+  exclusionEnabled,
+  onSetExclusion,
 }) {
   const review = normalizeSubtitleReview(segment.subtitleReview, segment.text);
   const issues = getSubtitleReviewIssues(segment);
@@ -192,13 +199,17 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
   const timingConfirmation = getSubtitleTimingConfirmation(segment);
   const timingStart = pendingTiming?.base === segment ? pendingTiming.startInput : formatSubtitleTimeInput(segment.start, { isStart: true });
   const timingEnd = pendingTiming?.base === segment ? pendingTiming.endInput : formatSubtitleTimeInput(segment.end);
+  const localExclusion = exclusionEnabled ? review?.localExclusion : undefined;
+  const boundExclusion = exclusionEnabled ? getBoundLocalExclusion(segment) : undefined;
+  const excluded = exclusionEnabled && isLocallyExcluded(segment);
   return (
-    <article className="result-segment-row">
+    <article className={`result-segment-row${excluded ? ' result-segment-row--excluded' : ''}`} id={`subtitle-segment-${index}`}>
       <div className="result-segment-meta">
         <span className="result-segment-index">#{String(index + 1).padStart(2, '0')}</span>
         <span className="result-segment-time">
           {formatSegmentTime(segment.start)} - {formatSegmentTime(segment.end)}
         </span>
+        {excluded && <span className="subtitle-review__exclusion-label">{boundExclusion.status === 'automatic' ? '무음 근거로 자동 제외' : '사용자가 제외'}</span>}
         {segment.speaker !== undefined && (
           <span className="result-segment-speaker" style={{ color: speakerColor }}>
             인물 {Number(segment.speaker) + 1}
@@ -227,6 +238,21 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
           {issues.length > 0 && <ul>{issues.map((issue, issueIndex) => <li key={`${issue.code}-${issueIndex}`}>{subtitleReviewIssueLabel(issue)}</li>)}</ul>}
           <p className="subtitle-review__hint">표시는 원본 확인을 돕는 기준입니다. 짧은 구간만으로 인식 오류나 실제 발화 시간을 단정하지 않습니다.</p>
           <button type="button" className="button button--secondary" disabled={!audioAvailable} onClick={() => onPlayReviewRange(index, segment, reviewSession)}>앞뒤 포함 듣기</button>
+          {exclusionEnabled && <section className="subtitle-review__exclusion" aria-labelledby={`review-exclusion-title-${index}`}>
+            <h3 id={`review-exclusion-title-${index}`}>내보내기 포함 여부</h3>
+            <p className="subtitle-review__status" role="status">{excluded
+              ? (boundExclusion.status === 'automatic' ? '확인된 무음과 인식 위험 근거로 자동 제외됨' : '사용자 선택으로 제외됨')
+              : localExclusion && !boundExclusion ? '문구·시간 변경으로 이전 제외는 적용하지 않음 · 현재 자막 포함'
+                : boundExclusion?.status === 'restored' ? '복원됨 · 현재 자막 포함' : '현재 자막 포함'}</p>
+            {boundExclusion?.groupId && <p>같은 문구의 반복 검토 묶음 · 처리 당시 {boundExclusion.occurrences || 1}곳. 실제로 반복한 대사인지 원음을 확인해 주세요.</p>}
+            {boundExclusion?.status === 'review' && <p className="subtitle-review__hint">{boundExclusion.audioStatus === 'signal_present'
+              ? '음향 신호가 있어 무음으로 제외하지 않았습니다. 반복만으로 잘못된 자막이라고 판단하지 않습니다.'
+              : '무음 여부가 확인되지 않아 대사를 유지했습니다. 원음을 듣고 확인해 주세요.'}</p>}
+            {localExclusion && <p className="subtitle-review__hint">판단 당시 문구: {localExclusion.binding.text}<br />판단 당시 범위: {formatSegmentTime(localExclusion.binding.start)} - {formatSegmentTime(localExclusion.binding.end)}</p>}
+            <p className="subtitle-review__hint">원음을 확인한 뒤 잘못된 자막만 제외하세요. 문구와 시간은 보존하며 SRT·ASS·TXT에서만 빠집니다. 문구나 시간을 바꾸면 이전 제외는 해제됩니다.</p>
+            <button id={`review-exclusion-action-${index}`} type="button" className="button button--secondary" disabled={reviewApplyDisabled}
+              onClick={() => onSetExclusion(index, segment, !excluded, reviewSession)}>{excluded ? '이 구간 복원' : '이 구간 제외'}</button>
+          </section>}
           {timingEnabled && <section className="subtitle-review__timing" aria-labelledby={`review-timing-${index}`}>
             <h3 id={`review-timing-${index}`}>발화 시간 검토</h3>
             <p className="subtitle-review__status">{timingConfirmation ? '시간 수동 확인 · 음소·내부 단어 싱크 미확인' : '발화 시간 미확인'}</p>
@@ -480,6 +506,24 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
       .sort((a, b) => a - b)
   ), [segments]);
   const timingEnabled = !diarize && segments.every((segment) => segment.speaker === undefined || segment.speaker === null || segment.speaker === '');
+  const exclusionEnabled = timingEnabled;
+  const localExclusionSummary = useMemo(() => {
+    const summary = { automatic: 0, user: 0, restored: 0, review: 0, groups: [] };
+    if (!exclusionEnabled) return summary;
+    const groups = new Map();
+    editedSegments.forEach((segment, index) => {
+      const value = getBoundLocalExclusion(segment);
+      if (!value) return;
+      summary[value.status] += 1;
+      if (value.groupId) {
+        if (!groups.has(value.groupId)) groups.set(value.groupId, { id: value.groupId, text: segment.text, members: [] });
+        groups.get(value.groupId).members.push({ index, start: segment.start, end: segment.end });
+      }
+    });
+    summary.groups = [...groups.values()];
+    return summary;
+  }, [editedSegments, exclusionEnabled]);
+  const hasIncludedSubtitles = hasIncludedDialogue(editedSegments, exclusionEnabled);
   const [speakerColors, setSpeakerColors] = useState(() => {
     const init = {};
     speakerIds.forEach(id => { init[String(id)] = DEFAULT_SPEAKER_COLORS[id] ?? '#39FF14'; });
@@ -488,6 +532,7 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
   });
 
   const [saveState, setSaveState] = useState('idle');
+  const [saveError, setSaveError] = useState('');
   const persistedTextRef = useRef(joinSegmentLines(segments));
   const persistedEditSignatureRef = useRef(subtitleEditSignature(segments));
   const saveRequestRef = useRef(null);
@@ -648,6 +693,15 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
     setFullTextDraft(joinSegmentLines(next)); setTimingError(null);
   }, [isCurrentSource, stopRangeTimer, timingEnabled]);
 
+  const changeExclusion = useCallback((index, base, excluded, session) => {
+    if (!exclusionEnabled || !reviewMountedRef.current || reviewSessionRef.current !== session
+      || editedSegmentsRef.current[index] !== base || lineCountMismatchRef.current) return;
+    const next = editedSegmentsRef.current.map((segment, position) => position === index ? setSubtitleExclusion(segment, excluded) : segment);
+    editedSegmentsRef.current = next;
+    setEditedSegments(next);
+    setFullTextDraft(joinSegmentLines(next));
+  }, [exclusionEnabled]);
+
   // 사용자와 기록별로 초안을 분리한다. 묶음의 다른 파일이나 계정에 편집본이 섞이지 않는다.
   useEffect(() => {
     if (editedSegments.length === 0 || !transcriptionLogId) return;
@@ -669,13 +723,16 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
       const nextSignature = subtitleEditSignature(snapshot);
       if (nextSignature === persistedEditSignatureRef.current) return;
       const request = (async () => {
-        setSaveState('saving');
+        setSaveState('saving'); setSaveError('');
         try {
           const res = await fetch(`/api/auth/transcription/${transcriptionLogId}/segments`, {
             method: 'PUT', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
             body: JSON.stringify({ segments: snapshot }),
           });
-          if (!res.ok) throw new Error('편집 내용을 저장하지 못했습니다. 이 화면의 내용을 유지한 채 다시 시도해 주세요.');
+          if (!res.ok) {
+            const data = await res.json().catch(() => null);
+            throw new Error(data?.error || '편집 내용을 저장하지 못했습니다. 이 화면의 내용을 유지한 채 다시 시도해 주세요.');
+          }
           persistedTextRef.current = nextText; persistedEditSignatureRef.current = nextSignature;
           const currentSource = resultSourceRef.current;
           if (!saveSource.resultOverride && reviewMountedRef.current && currentSource.ownerId === saveSource.ownerId
@@ -686,7 +743,7 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
             }
           }
           setSaveState('saved');
-        } catch (error) { setSaveState('failed'); throw error; }
+        } catch (error) { setSaveState('failed'); setSaveError(error.message); throw error; }
       })();
       saveRequestRef.current = request;
       try { await request; } finally { if (saveRequestRef.current === request) saveRequestRef.current = null; }
@@ -919,6 +976,7 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
   }
 
   async function handleDownload(format) {
+    if (!hasIncludedDialogue(editedSegmentsRef.current, exclusionEnabled)) return;
     if (format === 'ass') {
       setShowAssPanel(true);
       return;
@@ -929,9 +987,11 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
   async function doDownload(format, options) {
     // 버튼은 비활성화돼 있지만, 어긋난 상태로는 어떤 경로로도 파일이 나가지 않게 막는다.
     if (lineCountMismatch) return;
+    const exportSegments = editedSegmentsRef.current;
+    if (!hasIncludedDialogue(exportSegments, exclusionEnabled)) return;
     setDownloading(true);
     try {
-      const body = { segments: editedSegments, format, holdShortGaps: holdShortGaps !== false };
+      const body = { segments: exportSegments, format, holdShortGaps: holdShortGaps !== false };
       if (format === 'ass' && options) {
         body.assOptions = options;
       }
@@ -1149,7 +1209,17 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
             {sourceAudioError && <p className="subtitle-review__error" role="alert">{sourceAudioError}</p>}
             {reviewMemory.length > 0 && <div><p>이 창의 현재 파일에 기억한 후보 {reviewMemory.length}개 · 다른 영상이나 계정에서 사용하지 않습니다.</p><button type="button" className="button button--secondary" onClick={() => { if (!reviewMountedRef.current || reviewSessionRef.current !== reviewSession) return; reviewMemoryRef.current = []; setReviewMemoryState({ scope: reviewScope, items: [] }); }}>이 파일의 후보 기억 지우기</button></div>}
           </details>
-          <p className="subtitle-review-guidance">구간별 편집에서 문구·시간 검토와 원본 듣기를 사용할 수 있습니다. 검토가 끝나지 않은 대사도 삭제하지 않고 다운로드에 포함합니다.</p>
+          {saveState === 'failed' && saveError && <p className="subtitle-review__error" role="alert">{saveError}</p>}
+          <p className="subtitle-review-guidance">구간별 편집에서 문구·시간 검토와 원본 듣기를 사용할 수 있습니다. {exclusionEnabled ? '무음 근거로 자동 제외되거나 직접 제외한 구간 외에는 미검토 대사도 다운로드에 포함합니다.' : '검토가 끝나지 않은 대사도 다운로드에 포함합니다.'}</p>
+          {exclusionEnabled && (localExclusionSummary.groups.length > 0 || localExclusionSummary.automatic + localExclusionSummary.user + localExclusionSummary.restored + localExclusionSummary.review > 0) && <details className="subtitle-review subtitle-review-groups">
+            <summary>반복·제외 검토 · {localExclusionSummary.groups.length}개 묶음 · 제외 {localExclusionSummary.automatic + localExclusionSummary.user}개</summary>
+            <p role="status">무음 근거 자동 제외 {localExclusionSummary.automatic}개 · 사용자 제외 {localExclusionSummary.user}개 · 복원 {localExclusionSummary.restored}개 · 미확정 검토 {localExclusionSummary.review}개</p>
+            <p className="subtitle-review__hint">반복 묶음은 정답이나 오류 판정이 아닙니다. 일괄 제외하지 않으며 각 구간의 원음을 확인한 뒤 제외·복원할 수 있습니다.</p>
+            {localExclusionSummary.groups.length > 0 && <ul className="subtitle-review-groups__list">{localExclusionSummary.groups.map((group) => <li key={group.id}>
+              <p>{group.text}</p><p className="subtitle-review__hint">{group.members.map((member) => `#${member.index + 1} ${formatSegmentTime(member.start)} - ${formatSegmentTime(member.end)}`).join(' · ')}</p>
+            </li>)}</ul>}
+            <button type="button" className="result-editor-tip__link" onClick={() => selectEditorMode('segments')}>구간별에서 검토</button>
+          </details>}
 
           <div className="result-editor-tabs" aria-label="자막 편집 방식" role="tablist">
             {EDITOR_MODES.map((mode, index) => (
@@ -1250,6 +1320,8 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
                     onTimingChange={changeTiming}
                     onUseTimingCandidate={useTimingCandidate}
                     onConfirmTiming={confirmTiming}
+                    exclusionEnabled={exclusionEnabled}
+                    onSetExclusion={changeExclusion}
                   />
                 );
               })}
@@ -1268,7 +1340,7 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
               {DOWNLOAD_FORMATS.map((format) => (
                 <button
                   className={format.id === 'ass' && showAssPanel ? 'export-option is-active' : 'export-option'}
-                  disabled={downloading || lineCountMismatch || (format.id === 'srt' && !editedSegments.some(segment => segment.text?.replace(/\./g, '').trim() && segment.end > segment.start))}
+                  disabled={downloading || lineCountMismatch || !hasIncludedSubtitles}
                   key={format.id}
                   onClick={() => handleDownload(format.id)}
                   type="button"
@@ -1286,7 +1358,7 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
             </div>
 
             <p className="result-tool-note">SRT에는 인식된 대사만 포함되며 첫 대사의 타임코드와 원문을 유지합니다. 글자 크기는 편집 프로그램에 따라 달라질 수 있습니다.</p>
-            {!editedSegments.some(segment => segment.text?.replace(/\./g, '').trim() && segment.end > segment.start) && <p className="result-tool-note" role="status">인식된 대사가 없어 SRT를 만들 수 없습니다. 원본을 확인해 주세요.</p>}
+            {!hasIncludedSubtitles && <p className="result-tool-note" role="status">남은 자막 없음 · 내보낼 대사가 없어 SRT·ASS·TXT를 만들 수 없습니다. 구간별 검토에서 제외한 자막을 복원할 수 있습니다.</p>}
             <p className="result-tool-note">SRT는 밀리초 타임코드로 저장됩니다. 프리미어 시퀀스의 프레임레이트를 원본 영상과 맞춰 주세요.</p>
             {hasSpeakers && (
               <p className="result-tool-note">화자 색상은 SRT와 ASS에 포함됩니다.</p>
@@ -1441,7 +1513,7 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
 
               <button
                 className="gradient-btn ass-download"
-                disabled={downloading}
+                disabled={downloading || lineCountMismatch || !hasIncludedSubtitles}
                 onClick={handleAssDownload}
                 type="button"
               >

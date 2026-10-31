@@ -8,7 +8,7 @@ import { formatSegmentTime } from '../utils/format-segment-time.js';
 const STATUS_LABELS = { awaiting_upload: '파일 접수 필요', ready: '접수 완료', queued: '변환 대기', running: '변환 중', finalizing: '결과 저장 중', completed: '완료', failed: '실패', cancelled: '취소됨' };
 
 export function BatchImportNotice() {
-  return <p className="batch-note">ZIP에는 인식된 대사가 있는 변환의 SRT만 포함됩니다. 대사가 없는 완료 건은 전사 완료 건수에는 포함되지만 SRT 파일은 제외되며, ZIP 사용안내에서 건수를 확인할 수 있습니다.</p>;
+  return <p className="batch-note">ZIP에는 내보낼 대사가 남은 변환의 SRT만 포함됩니다. 인식된 대사가 없거나 모든 구간을 제외한 완료 건도 전사 완료 건수에는 포함되지만 SRT 파일은 제외되며, ZIP 사용안내에서 건수를 확인할 수 있습니다.</p>;
 }
 
 export default function BatchTranscriptionPanel({ onLogin }) {

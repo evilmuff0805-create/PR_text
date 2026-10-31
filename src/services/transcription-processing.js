@@ -5,6 +5,7 @@ import { alignCorrectedKoreanSegmentWithWordTimings, alignKoreanSegmentWithWordT
 import { isKoreanDependentPredicateTail } from './korean-subtitle.js';
 import { annotateSubtitleReviews, mergeSubtitleReviews } from './subtitle-review.js';
 import { POLISH_MODES, polishKoreanSegments } from './grammar-polish.js';
+import { annotateLocalTranscriptReview } from './local-transcript-review.js';
 
 // Provider hallucination loops are uniform, low-confidence repeats from one decode window.
 // These thresholds intentionally leave ordinary or weakly evidenced repetition untouched.
@@ -366,7 +367,8 @@ export function refineKoreanSegmentsWithWordTimings(segments, { originalSegments
   return needsCompact ? compact : refined;
 }
 
-export async function processTranscriptionSegments(segments, language, { correct, polishMode = 'preserve', signal, polishLines } = {}) {
+export async function processTranscriptionSegments(segments, language, { correct, polishMode = 'preserve', signal, polishLines,
+  audioBuffer, originalname, analyzeLocalAudio } = {}) {
   // 교정 전에 합친다. GPT가 잘린 조각이 아니라 온전한 문장을 보게 된다.
   const repetitionFilteredSegments = filterWhisperRepetitionLoops(segments);
   if (repetitionFilteredSegments.length !== segments.length) {
@@ -433,9 +435,22 @@ export async function processTranscriptionSegments(segments, language, { correct
         metrics: { wallMs: 0, calls: 0, usage: { promptTokens: 0, cachedTokens: 0, cacheWriteTokens: 0, completionTokens: 0, totalTokens: 0 } } };
     }
   }
+  let localTranscriptReview;
+  try {
+    // All existing AI work, including opt-in grammar, has already finished.
+    // Local findings must never change an AI request or trigger a recheck.
+    const local = await annotateLocalTranscriptReview(finalSegments, {
+      sourceSegments: segments, buffer: audioBuffer, originalname, signal,
+      language: correctionTimings?.languageDecision === 'inferred_from_hangul_segments' ? 'ko' : language,
+      ...(analyzeLocalAudio ? { analyzeAudio: analyzeLocalAudio } : {}),
+    });
+    finalSegments = local.segments;
+    localTranscriptReview = local.summary;
+  } catch { /* Preserve the completed transcription when local review is unavailable. */ }
   return {
     segments: finalSegments,
     ...(grammarPolish ? { grammarPolish } : {}),
+    ...(localTranscriptReview ? { localTranscriptReview } : {}),
     correctionTimings,
     correctionMs: performance.now() - correctionStartedAt,
   };

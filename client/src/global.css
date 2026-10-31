@@ -6362,6 +6362,40 @@ textarea:focus-visible {
   color: var(--danger);
 }
 
+.result-segment-row--excluded {
+  border-inline-start: 3px solid var(--text-muted);
+}
+
+.subtitle-review__exclusion-label {
+  color: var(--text-muted);
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.subtitle-review__exclusion {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  padding-block: 12px;
+  border-block: 1px solid var(--border-color);
+}
+
+.subtitle-review__exclusion h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.subtitle-review-groups p {
+  overflow-wrap: anywhere;
+}
+
+.subtitle-review-groups__list {
+  display: grid;
+  gap: 12px;
+  margin-block: 12px;
+  padding-inline-start: 20px;
+}
+
 .subtitle-review__actions {
   display: flex;
   flex-wrap: wrap;

@@ -1,6 +1,10 @@
 import { isKoreanDependentPredicateTail, splitKoreanSubtitleText } from './korean-subtitle.js';
 import { alignKoreanSegmentWithWordTimings } from './korean-word-timing.js';
-import { annotateSubtitleReviews, mergeSubtitleReviews, overlapTrimReview, retainManualSubtitleRange } from './subtitle-review.js';
+import { annotateSubtitleReviews, mergeSubtitleReviews, overlapTrimReview, retainManualSubtitleRange, getBoundLocalExclusion, isLocallyExcluded } from './subtitle-review.js';
+
+// Transient ownership survives splitting/merging, but is never serialized into
+// API captions. Local exclusion is applied only after the full timeline freezes.
+export const SUBTITLE_SOURCE_INDICES = Symbol('subtitleSourceIndices');
 
 export const DEFAULT_SPEAKER_COLORS = [
   '#FFFFFF', // 0: 흰색
@@ -113,7 +117,10 @@ function splitSegment(segment, maxLen = SUBTITLE_MAX_CHARS) {
     version: 1, issues: review.issues,
     ...(review.timingStatus ? { timingStatus: review.timingStatus } : {}),
   } : undefined;
-  const withReview = cue => cueReview ? { ...cue, subtitleReview: cueReview } : cue;
+  const withReview = cue => ({ ...cue,
+    ...(segment[SUBTITLE_SOURCE_INDICES] ? { [SUBTITLE_SOURCE_INDICES]: segment[SUBTITLE_SOURCE_INDICES] } : {}),
+    ...(cueReview ? { subtitleReview: cueReview } : {}),
+  });
   if (!hasSpeaker && segment.timingSource === 'word'
     && Array.isArray(segment.wordAlignedCues)
     && segment.wordAlignedCues.length <= text.length) {
@@ -202,6 +209,7 @@ function prepareOrdinarySources(segments) {
     const group = sorted.slice(index, groupEnd);
     grouped.push({
       ...group[0],
+      [SUBTITLE_SOURCE_INDICES]: group.flatMap(segment => segment[SUBTITLE_SOURCE_INDICES] ?? []),
       end: Math.max(...group.map((segment) => segment.end)),
       text: group.map((segment) => String(segment.text).replace(/\s+/g, ' ').trim()).join(' '),
       // Do not repair provider word-aligned text with a character-based estimate.
@@ -226,6 +234,7 @@ function prepareOrdinarySources(segments) {
       && isKoreanDependentPredicateTail(previous.text, segment.text)) {
       previous.text = `${previous.text} ${segment.text}`;
       previous.end = segment.end;
+      previous[SUBTITLE_SOURCE_INDICES] = [...(previous[SUBTITLE_SOURCE_INDICES] ?? []), ...(segment[SUBTITLE_SOURCE_INDICES] ?? [])];
     } else {
       continued.push(segment);
     }
@@ -242,27 +251,52 @@ function prepareOrdinarySources(segments) {
 
 export function buildSubtitleCues(segments, options = {}) {
   // Invalid sources must not clip valid speech, even before long-text splitting.
-  const usable = segments.map(retainManualSubtitleRange)
+  const usable = segments.map((segment, index) => ({ ...retainManualSubtitleRange(segment), [SUBTITLE_SOURCE_INDICES]: [index] }))
     .filter((segment) => cleanText(segment.text) !== '' && segment.end > segment.start);
   const ordinary = usable.every(({ speaker }) => speaker === undefined || speaker === null || speaker === '');
+  let cues;
   if (ordinary) {
-    const cues = annotateSubtitleReviews(
+    cues = annotateSubtitleReviews(
       prepareOrdinarySources(usable).flatMap((segment) => splitSegment(segment)), { stage: 'export' },
     );
-    if (options?.holdShortGaps === false) return cues;
+  } else {
+    cues = normalizeCueTimeline(usable.flatMap((segment) => splitSegment(segment)));
+  }
+
+  const exclusions = ordinary && segments.every(segment => segment.speaker === undefined || segment.speaker === null || segment.speaker === '')
+    && options?.ignoreLocalExclusions !== true
+    ? new Set(segments.flatMap((segment, index) => isLocallyExcluded(segment) ? [index] : [])) : new Set();
+  const barriers = [...exclusions].map(index => getBoundLocalExclusion(segments[index]).binding);
+  if (exclusions.size) {
+    cues = cues.filter(cue => {
+      const owners = cue[SUBTITLE_SOURCE_INDICES] ?? [];
+      const selected = owners.filter(index => exclusions.has(index));
+      if (!selected.length) return true;
+      if (selected.length !== owners.length
+        || (owners.length > 1 && selected.some(index => getBoundLocalExclusion(segments[index])?.status === 'automatic'))) {
+        const connectedRows = [...new Set(owners)].map(index => index + 1).sort((left, right) => left - right);
+        const error = new Error(`제외 충돌: 연결된 자막 ${connectedRows.join(', ')}행을 함께 선택해 주세요.`);
+        error.code = 'LOCAL_EXCLUSION_CONFLICT';
+        error.status = 400;
+        error.connectedRows = connectedRows;
+        throw error;
+      }
+      return false;
+    });
+  }
+  if (ordinary && options?.holdShortGaps !== false) {
     // Export-only display continuity: preserve source/word times and splitting,
     // then hold the preceding dialogue through at most one second of silence.
     // Keep export-only display continuity limited to recognized dialogue cues.
-    return cues.map((cue, index) => {
+    cues = cues.map((cue, index) => {
       const next = cues[index + 1];
       const gap = next ? next.start - cue.end : Infinity;
-      return gap > 0 && gap <= 1 + 1e-9
+      const crossesExclusion = next && barriers.some(range => range.start < next.start && range.end > cue.end);
+      return gap > 0 && gap <= 1 + 1e-9 && !crossesExclusion
         ? { ...cue, end: next.start, holdEndAtNextStart: true } : cue;
     });
   }
-
-  const cues = usable.flatMap((segment) => splitSegment(segment));
-  return normalizeCueTimeline(cues);
+  return options?.includeSourceIndices === true ? cues : cues.map(({ [SUBTITLE_SOURCE_INDICES]: ignored, ...cue }) => cue);
 }
 
 function subtitleStartTick(seconds, ticksPerSecond) {
@@ -315,6 +349,10 @@ export function generateSRT(segments, speakerColors = null, options = {}) {
 
 export function generateTXT(segments) {
   if (!segments || segments.length === 0) return '';
+  if (segments.some(isLocallyExcluded)
+    && segments.every(segment => segment.speaker === undefined || segment.speaker === null || segment.speaker === '')) {
+    return buildSubtitleCues(segments, { holdShortGaps: false }).map(segment => cleanText(segment.text)).join(' ');
+  }
   return segments.map((seg) => cleanText(seg.text)).join(' ');
 }
 
@@ -385,6 +423,7 @@ export function generateASS(segments, options = {}, speakerColors = null) {
   ].join('\n');
 
   const split = buildSubtitleCues(segments, options);
+  if (split.length === 0) return '';
 
   const events = [
     '[Events]',
