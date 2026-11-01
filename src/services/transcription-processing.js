@@ -5,7 +5,8 @@ import { alignCorrectedKoreanSegmentWithWordTimings, alignKoreanSegmentWithWordT
 import { isKoreanDependentPredicateTail } from './korean-subtitle.js';
 import { annotateSubtitleReviews, mergeSubtitleReviews } from './subtitle-review.js';
 import { POLISH_MODES, polishKoreanSegments } from './grammar-polish.js';
-import { annotateLocalTranscriptReview } from './local-transcript-review.js';
+import { annotateLocalTranscriptReview, createLocalAudioAnalysisBudget } from './local-transcript-review.js';
+import { annotateLocalStartEvidence } from './local-audio-start.js';
 import { finalizeTranscriptionContext } from './context-finalization.js';
 
 // Provider hallucination loops are uniform, low-confidence repeats from one decode window.
@@ -375,7 +376,7 @@ export function refineKoreanSegmentsWithWordTimings(segments, { originalSegments
 }
 
 export async function processTranscriptionSegments(segments, language, { correct, polishMode = 'preserve', signal, polishLines,
-  audioBuffer, originalname, analyzeLocalAudio } = {}) {
+  audioBuffer, originalname, analyzeLocalAudio, analyzeLocalStartAudio } = {}) {
   // 교정 전에 합친다. GPT가 잘린 조각이 아니라 온전한 문장을 보게 된다.
   const repetitionFilteredSegments = filterWhisperRepetitionLoops(segments);
   if (repetitionFilteredSegments.length !== segments.length) {
@@ -465,20 +466,32 @@ export async function processTranscriptionSegments(segments, language, { correct
         summary: { ...grammarPolish.summary, statuses } };
     }
   } catch { /* Keep the completed AI result when local ownership cannot be validated. */ }
+  const localAudioBudget = createLocalAudioAnalysisBudget();
   let localTranscriptReview;
   try {
     // All existing AI work, including opt-in grammar, has already finished.
     // Local findings must never change an AI request or trigger a recheck.
     const local = await annotateLocalTranscriptReview(finalSegments, {
-      sourceSegments: segments, buffer: audioBuffer, originalname, signal,
+      sourceSegments: segments, buffer: audioBuffer, originalname, signal, analysisBudget: localAudioBudget,
       language: correctionTimings?.languageDecision === 'inferred_from_hangul_segments' ? 'ko' : language,
       ...(analyzeLocalAudio ? { analyzeAudio: analyzeLocalAudio } : {}),
     });
     finalSegments = local.segments;
     localTranscriptReview = local.summary;
   } catch { /* Preserve the completed transcription when local review is unavailable. */ }
+  let localStartReview;
+  try {
+    const local = await annotateLocalStartEvidence(finalSegments, {
+      buffer: audioBuffer, originalname, signal, analysisBudget: localAudioBudget,
+      language: correctionTimings?.languageDecision === 'inferred_from_hangul_segments' ? 'ko' : language,
+      ...(analyzeLocalStartAudio ? { analyzeAudio: analyzeLocalStartAudio } : {}),
+    });
+    finalSegments = local.segments;
+    localStartReview = local.summary;
+  } catch { /* Preserve completed dialogue when local start verification fails. */ }
   return {
     segments: finalSegments,
+    ...(localStartReview ? { localStartReview } : {}),
     ...(grammarPolish ? { grammarPolish } : {}),
     ...(localTranscriptReview ? { localTranscriptReview } : {}),
     ...(contextFinalization ? { contextFinalization } : {}),

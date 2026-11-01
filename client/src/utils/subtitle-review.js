@@ -1,6 +1,16 @@
-import { getBoundCorrectionStatus, getBoundFixedCuePlan, normalizeCorrectionBinding, normalizeFixedCuePlan, restoreFixedCuePlan } from '../../../src/services/fixed-cue-plan.js';
+import { getBoundCorrectionStatus, getBoundFixedCuePlan, normalizeCorrectionBinding, normalizeFixedCuePlan, restoreFixedCuePlan as restoreFixedCuePlanState } from '../../../src/services/fixed-cue-plan.js';
+import { getBoundLocalStartEvidence, normalizeLocalStartEvidence, setLocalStartEvidenceStatus } from '../../../src/services/local-start-evidence.js';
 
-export { getBoundCorrectionStatus, getBoundFixedCuePlan, normalizeCorrectionBinding, normalizeFixedCuePlan, restoreFixedCuePlan };
+export { getBoundCorrectionStatus, getBoundFixedCuePlan, normalizeCorrectionBinding, normalizeFixedCuePlan, getBoundLocalStartEvidence, normalizeLocalStartEvidence, setLocalStartEvidenceStatus };
+
+export function restoreFixedCuePlan(segment) {
+  const restored = restoreFixedCuePlanState(segment);
+  if (restored === segment || (restored.text === segment.text && restored.start === segment.start && restored.end === segment.end)
+    || restored.subtitleReview?.localStart === undefined) return restored;
+  const subtitleReview = { ...restored.subtitleReview };
+  delete subtitleReview.localStart;
+  return { ...restored, subtitleReview };
+}
 
 const ISSUE_CODES = new Set(['short_cue', 'high_reading_speed', 'overlap_trim', 'word_timing_fallback', 'correction_alignment_rejected', 'correction_guard_rejected', 'chunk_boundary_replanned', 'chunk_boundary_unverified', 'audio_recheck_word_timing', 'audio_recheck_inconclusive', 'audio_recheck_failed', 'audio_boundary_estimate_updated', 'audio_boundary_candidate', 'audio_boundary_inconclusive', 'cue_window_correction_applied', 'source_boundary_preserved', 'finalization_candidate_held']);
 const NUMBER_FIELDS = ['durationSeconds', 'characters', 'charactersPerSecond', 'cueStart', 'cueEnd', 'originalEnd', 'clippedEnd', 'trimmedSeconds', 'originalDurationSeconds', 'remainingDurationSeconds', 'sourceIndex', 'wordCount', 'assignedWordCount', 'excludedWordCount', 'chunkIndex', 'sourceStart', 'sourceEnd', 'ownedStart', 'ownedEnd'];
@@ -93,6 +103,8 @@ export function normalizeSubtitleReview(value, currentText) {
     && (currentText === undefined || timingConfirmation.matchingText === currentText)) review.timingConfirmation = timingConfirmation;
   const localExclusion = normalizeLocalExclusion(value.localExclusion);
   if (localExclusion) review.localExclusion = localExclusion;
+  const localStart = normalizeLocalStartEvidence(value.localStart);
+  if (localStart) review.localStart = localStart;
   const correctionBinding = normalizeCorrectionBinding(value.correctionBinding);
   if (correctionBinding && ['cue_applied', 'held', 'restored'].includes(value.correctionStatus)) {
     review.correctionBinding = correctionBinding;
@@ -118,8 +130,9 @@ export function getSubtitleCorrectionStatus(segment) {
 
 function reviewBeforeContentChange(segment) {
   const prior = normalizeSubtitleReview(segment.subtitleReview, segment.text);
-  if (!prior?.correctionStatus && !prior?.correctionBinding && !prior?.issues.some((issue) => ['cue_window_correction_applied', 'source_boundary_preserved', 'finalization_candidate_held'].includes(issue.code))) return prior;
+  if (!prior?.localStart && !prior?.correctionStatus && !prior?.correctionBinding && !prior?.issues.some((issue) => ['cue_window_correction_applied', 'source_boundary_preserved', 'finalization_candidate_held'].includes(issue.code))) return prior;
   const review = { ...prior };
+  delete review.localStart;
   review.issues = review.issues.filter((issue) => !['cue_window_correction_applied', 'source_boundary_preserved', 'finalization_candidate_held'].includes(issue.code));
   if (review.correctionStatus === 'held' && review.textStatus !== 'confirmed') {
     delete review.candidateText;

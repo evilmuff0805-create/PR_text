@@ -21,6 +21,14 @@ export const LOCAL_TRANSCRIPT_THRESHOLDS = Object.freeze({
   maxCompressedSeconds: .3, minCompressedCharacters: 8,
 });
 let analyzing = false;
+export function createLocalAudioAnalysisBudget() {
+  return { deadline: Date.now() + LOCAL_TRANSCRIPT_LIMITS.timeoutMs, windows: 0, totalSeconds: 0, decodedBytes: 0 };
+}
+export function tryAcquireLocalAudioAnalysis() {
+  if (analyzing) return null;
+  analyzing = true;
+  return () => { analyzing = false; };
+}
 const finite = value => typeof value === 'number' && Number.isFinite(value);
 const validRange = value => value && finite(value.start) && finite(value.end) && value.start >= 0 && value.end > value.start;
 const hasSpeaker = value => value?.speaker !== undefined && value.speaker !== null && value.speaker !== '';
@@ -31,7 +39,7 @@ const groupId = text => `repeat_${createHash('sha256').update(text).digest('hex'
 
 // Parse native samples directly. PCM16 conversion, resampling, downmixing,
 // threshold filters, padding, and noise gates must never establish exact zero.
-function nativeWave(buffer) {
+export function parseNativeWave(buffer) {
   if (!Buffer.isBuffer(buffer) || buffer.length < 44 || buffer.toString('ascii', 0, 4) !== 'RIFF'
     || buffer.toString('ascii', 8, 12) !== 'WAVE') return null;
   const limit = buffer.readUInt32LE(4) + 8;
@@ -99,19 +107,19 @@ function measureFrames(buffer, wave, first, last) {
 }
 
 /** Local measurements only. Ranges already include the caller's safety margin. */
-export async function analyzeExactSilenceRanges(buffer, { originalname, ranges = [], signal, runProcess = execFileAsync } = {}) {
+export async function analyzeExactSilenceRanges(buffer, { originalname, ranges = [], signal, runProcess = execFileAsync, budget = createLocalAudioAnalysisBudget() } = {}) {
   if (!ranges.length) return { measurements: [] };
   const unavailable = reason => ({ measurements: ranges.map(range => ({ ...range, status: 'unavailable', reason })) });
   if (!Buffer.isBuffer(buffer) || buffer.length > LOCAL_TRANSCRIPT_LIMITS.maxAudioBytes) return unavailable('audio_unavailable_or_limit');
-  if (analyzing || signal?.aborted) return unavailable(analyzing ? 'busy' : 'aborted');
-  analyzing = true;
-  const deadline = Date.now() + LOCAL_TRANSCRIPT_LIMITS.timeoutMs;
+  if (signal?.aborted) return unavailable('aborted');
+  const release = tryAcquireLocalAudioAnalysis();
+  if (!release) return unavailable('busy');
+  const deadline = budget.deadline;
   const files = [];
-  let decodedBytes = 0;
-  let totalSeconds = 0;
-  let windows = 0;
+  const initialBytes = budget.decodedBytes;
+  const initialWindows = budget.windows;
   try {
-    const wave = nativeWave(buffer);
+    const wave = parseNativeWave(buffer);
     let inputPath;
     let probe;
     if (!wave) {
@@ -135,22 +143,22 @@ export async function analyzeExactSilenceRanges(buffer, { originalname, ranges =
     for (const range of ranges) {
       const result = { ...range, status: 'unavailable' };
       if (!validRange(range) || range.end - range.start > LOCAL_TRANSCRIPT_LIMITS.maxWindowSeconds
-        || windows >= LOCAL_TRANSCRIPT_LIMITS.maxWindows
-        || totalSeconds + range.end - range.start > LOCAL_TRANSCRIPT_LIMITS.maxTotalWindowSeconds
+        || budget.windows >= LOCAL_TRANSCRIPT_LIMITS.maxWindows
+        || budget.totalSeconds + range.end - range.start > LOCAL_TRANSCRIPT_LIMITS.maxTotalWindowSeconds
         || signal?.aborted || Date.now() >= deadline) {
         measurements.push({ ...result, reason: 'range_or_budget_limit' });
         continue;
       }
-      windows += 1;
-      totalSeconds += range.end - range.start;
+      budget.windows += 1;
+      budget.totalSeconds += range.end - range.start;
       if (wave) {
         const last = range.end === wave.frames / wave.sampleRate ? wave.frames : Math.ceil(range.end * wave.sampleRate);
         const byteCount = (last - Math.floor(range.start * wave.sampleRate)) * wave.blockAlign;
-        if (range.end > wave.frames / wave.sampleRate || decodedBytes + byteCount > LOCAL_TRANSCRIPT_LIMITS.maxDecodedBytes) {
+        if (range.end > wave.frames / wave.sampleRate || budget.decodedBytes + byteCount > LOCAL_TRANSCRIPT_LIMITS.maxDecodedBytes) {
           measurements.push({ ...result, reason: 'range_or_byte_limit' });
           continue;
         }
-        decodedBytes += byteCount;
+        budget.decodedBytes += byteCount;
         measurements.push({ ...result, status: measureSamples(buffer, wave, range.start, range.end) });
         continue;
       }
@@ -162,10 +170,12 @@ export async function analyzeExactSilenceRanges(buffer, { originalname, ranges =
       const last = Math.ceil(range.end * probe.sampleRate);
       const expectedFrames = last - first;
       const expectedBytes = expectedFrames * probe.channels * 8;
-      if (decodedBytes + expectedBytes + 4096 > LOCAL_TRANSCRIPT_LIMITS.maxDecodedBytes) {
+      if (budget.decodedBytes + expectedBytes + 4096 > LOCAL_TRANSCRIPT_LIMITS.maxDecodedBytes) {
         measurements.push({ ...result, reason: 'decoded_byte_limit' });
         continue;
       }
+      // Reserve failed/partial output too when sharing the request budget.
+      budget.decodedBytes += expectedBytes + 4096;
       const outputPath = join(tmpdir(), `local-caption-${randomUUID()}.wav`);
       files.push(outputPath);
       try {
@@ -174,27 +184,26 @@ export async function analyzeExactSilenceRanges(buffer, { originalname, ranges =
           '-map', '0:a:0', '-vn', '-c:a', 'pcm_f64le', '-threads', '1', '-fs', String(expectedBytes + 4096), '-y', outputPath],
         { timeout: Math.max(1, deadline - Date.now()), maxBuffer: 4 * 1024 * 1024, signal, windowsHide: true });
         const size = (await stat(outputPath)).size;
-        if (size > expectedBytes + 4096 || decodedBytes + size > LOCAL_TRANSCRIPT_LIMITS.maxDecodedBytes) throw new Error('decoded size limit');
+        if (size > expectedBytes + 4096) throw new Error('decoded size limit');
         const decoded = await readFile(outputPath);
-        decodedBytes += size;
-        const decodedWave = nativeWave(decoded);
+        const decodedWave = parseNativeWave(decoded);
         if (!decodedWave || decodedWave.encoding !== 3 || decodedWave.bits !== 64 || decodedWave.channels !== probe.channels
           || decodedWave.sampleRate !== probe.sampleRate || decodedWave.frames !== expectedFrames) throw new Error('decoded range incomplete');
         measurements.push({ ...result, status: measureFrames(decoded, decodedWave, 0, expectedFrames) });
       } catch {
         measurements.push({ ...result, reason: 'decode_failed' });
       } finally {
-        // Failed decodes may leave partial files that never enter decodedBytes.
+        // Failed decodes may leave partial files; their reserved budget remains.
         // Release each window immediately; the outer cleanup remains a fallback.
         try { await unlink(outputPath); } catch {}
       }
     }
-    return { measurements, decodedBytes, windows };
+    return { measurements, decodedBytes: budget.decodedBytes - initialBytes, windows: budget.windows - initialWindows };
   } catch {
     return unavailable('analysis_failed');
   } finally {
     await Promise.all(files.map(async file => { try { await unlink(file); } catch {} }));
-    analyzing = false;
+    release();
   }
 }
 
@@ -246,7 +255,7 @@ function sourceMatches(segments, sourceSegments) {
 
 /** Runs strictly AFTER the existing AI pipeline; it never requests AI work. */
 export async function annotateLocalTranscriptReview(segments, {
-  sourceSegments = [], buffer, originalname, language, signal, analyzeAudio = analyzeExactSilenceRanges,
+  sourceSegments = [], buffer, originalname, language, signal, analyzeAudio = analyzeExactSilenceRanges, analysisBudget,
 } = {}) {
   const empty = { automaticExcluded: 0, reviewCandidates: 0, groups: 0, analyzedWindows: 0, unavailableWindows: 0 };
   if (!Array.isArray(segments) || normalizeLanguage(language) !== 'ko' || segments.some(hasSpeaker)
@@ -288,7 +297,7 @@ export async function annotateLocalTranscriptReview(segments, {
   if (!candidates.length) return { segments, summary: empty };
   let measurements = [];
   try {
-    const analyzed = await analyzeAudio(buffer, { originalname, ranges: [...ranges.values()], signal });
+    const analyzed = await analyzeAudio(buffer, { originalname, ranges: [...ranges.values()], signal, ...(analysisBudget ? { budget: analysisBudget } : {}) });
     measurements = Array.isArray(analyzed?.measurements) ? analyzed.measurements : [];
   } catch { /* Local analysis is best-effort: preserve dialogue on failure. */ }
   const measured = new Map(measurements.filter(validRange).map(item => [`${item.start}:${item.end}`, item.status]));
