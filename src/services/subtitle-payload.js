@@ -1,6 +1,7 @@
 import { MAX_SPEAKERS } from './speakers.js';
 import { normalizeLocalExclusion } from './subtitle-review.js';
 import { normalizeFixedCuePlan } from './fixed-cue-plan.js';
+import { normalizeLocalStartEvidence } from './local-start-evidence.js';
 
 export const MAX_SUBTITLE_SEGMENTS = 5_000;
 export const MAX_SUBTITLE_SEGMENT_TEXT = 10_000;
@@ -18,6 +19,8 @@ export function validateSubtitleSegments(segments, { allowEmpty = false } = {}) 
   let fixedText = 0;
   let originalFixedText = 0;
   let fixedCount = 0;
+  let localStartText = 0;
+  let localStartCues = 0;
   for (const segment of segments) {
     if (!segment || typeof segment !== 'object') return '자막 세그먼트 형식이 올바르지 않습니다.';
     if (!Number.isFinite(segment.start) || !Number.isFinite(segment.end) || segment.start < 0 || segment.end < segment.start) {
@@ -43,6 +46,13 @@ export function validateSubtitleSegments(segments, { allowEmpty = false } = {}) 
       if (!exclusion) return '자막 제외 정보가 올바르지 않습니다.';
       totalExclusionBindingLength += exclusion.binding.text.length;
       if (totalExclusionBindingLength > MAX_SUBTITLE_TOTAL_TEXT) return '자막 제외 정보가 너무 큽니다.';
+    }
+    if (segment.subtitleReview?.localStart !== undefined) {
+      const evidence = normalizeLocalStartEvidence(segment.subtitleReview.localStart);
+      if (!evidence) return '로컬 시작 검증 정보가 올바르지 않습니다.';
+      localStartText += evidence.binding.text.length + evidence.cues.reduce((sum, cue) => sum + cue[2].length, 0);
+      localStartCues += evidence.cues.length;
+      if (localStartText > MAX_SUBTITLE_TOTAL_TEXT * 2 || localStartCues > 50_000) return '로컬 시작 검증 정보가 너무 큽니다.';
     }
     if (segment.fixedCuePlan !== undefined) {
       const plan = normalizeFixedCuePlan(segment.fixedCuePlan);

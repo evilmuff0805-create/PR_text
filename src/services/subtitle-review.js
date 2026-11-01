@@ -1,4 +1,5 @@
 import { normalizeCorrectionBinding } from './fixed-cue-plan.js';
+import { normalizeLocalStartEvidence } from './local-start-evidence.js';
 
 const MAX_ISSUES = 16;
 const MAX_REVIEW_TEXT = 10_000;
@@ -125,6 +126,8 @@ export function mergeSubtitleReviews(...reviews) {
     if (timingConfirmation) fields.timingConfirmation = timingConfirmation;
     const localExclusion = normalizeLocalExclusion(review.localExclusion);
     if (localExclusion) fields.localExclusion = localExclusion;
+    const localStart = normalizeLocalStartEvidence(review.localStart);
+    if (localStart) fields.localStart = localStart;
     const correctionBinding = normalizeCorrectionBinding(review.correctionBinding);
     if (correctionBinding && ['cue_applied', 'held', 'restored'].includes(review.correctionStatus)) {
       fields.correctionBinding = correctionBinding;

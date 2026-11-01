@@ -10,7 +10,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext.jsx';
 import { formatSegmentTime } from '../utils/format-segment-time.js';
 import { cacheSavedResult, isTranscriptionLogId, lastResultKey, readResultDraft, resolveSavedResult, resultSnapshotSignature, writeResultDraft } from '../utils/result-drafts.js';
-import { confirmSubtitleCandidate, confirmSubtitleTiming, editSubtitleText, findRememberedSubtitle, formatSubtitleTimeInput, getBoundFixedCuePlan, getBoundLocalExclusion, getSubtitleCorrectionStatus, getSubtitleReviewIssues, getSubtitleTimingCandidate, getSubtitleTimingConfirmation, isLocallyExcluded, normalizeReviewMemory, normalizeSubtitleReview, parseSubtitleTimeInput, rememberSubtitleCandidate, restoreFixedCuePlan, setSubtitleExclusion, subtitleEditSignature, subtitleReviewIssueLabel, validateSubtitleCandidate, validateSubtitleTiming } from '../utils/subtitle-review.js';
+import { confirmSubtitleCandidate, confirmSubtitleTiming, editSubtitleText, findRememberedSubtitle, formatSubtitleTimeInput, getBoundFixedCuePlan, getBoundLocalExclusion, getBoundLocalStartEvidence, getSubtitleCorrectionStatus, getSubtitleReviewIssues, getSubtitleTimingCandidate, getSubtitleTimingConfirmation, isLocallyExcluded, normalizeReviewMemory, normalizeSubtitleReview, parseSubtitleTimeInput, rememberSubtitleCandidate, restoreFixedCuePlan, setLocalStartEvidenceStatus, setSubtitleExclusion, subtitleEditSignature, subtitleReviewIssueLabel, validateSubtitleCandidate, validateSubtitleTiming } from '../utils/subtitle-review.js';
 import {
   buildSceneContext,
   createCaptionRequestTracker,
@@ -49,6 +49,40 @@ function joinSegmentLines(segments) {
 function hasIncludedDialogue(segments, exclusionEnabled) {
   return segments.some((segment) => segment.text?.replace(/\./g, '').trim() && segment.end > segment.start
     && (!exclusionEnabled || !isLocallyExcluded(segment)));
+}
+
+function localExclusionAudioLabel(value) {
+  const labels = {
+    exact_zero: '모든 원채널의 디지털 0 확인 · 발화·문구 일치 미확인',
+    signal_present: '음향 신호 있음 · 발화·문구 일치 미확인',
+    unavailable: '오디오 검증 결과 없음 · 원음 확인 필요',
+    not_checked: '오디오 미검증 · 원음 확인 필요',
+  };
+  return labels[value?.audioStatus] || labels.not_checked;
+}
+
+function localStartUnavailableLabel(reason) {
+  const reasons = {
+    unsupported_audio: '지원되지 않는 오디오 형식',
+    audio_unavailable_or_limit: '오디오 분석 불가 또는 분석 한도',
+    no_exact_zero_prefix: '적용할 연속 디지털 0 근거 없음',
+    busy: '오디오 분석 처리 한도',
+    aborted: '오디오 분석 중단',
+    analysis_limit: '오디오 분석 한도',
+    analysis_failed: '오디오 분석 실패',
+    decode_failed: '오디오 해석 실패',
+    origin_unverified: '오디오 시간 원점 미검증',
+    range_or_budget_limit: '검사 범위 또는 분석 한도',
+    ambiguous_ownership: '원전사와 자막의 귀속 미확인',
+    partial_verification_unavailable: '일부 내부 큐의 오디오 검증 미완료',
+  };
+  return `${reasons[reason] || '오디오 검증 불가'}로 시작 하한을 적용하지 않았습니다. 기존 자막을 유지하며 원음으로 확인할 수 있습니다.`;
+}
+
+function localStartStatusLabel(value) {
+  return value?.status === 'automatic' ? '검증된 시작 하한 보관 · 최종 큐 일치 시 적용'
+    : value?.status === 'restored' ? '원래 시작 사용 · 시작 하한 보정 해제'
+      : '시작 하한 미검증 · 기존 시작 유지';
 }
 
 // 변환 기록 ID로만 편집본을 식별한다. 세그먼트 개수와 앞뒤 시간으로 식별하던 때는
@@ -189,6 +223,7 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
   onConfirmTiming,
   exclusionEnabled,
   onSetExclusion,
+  onSetLocalStartStatus,
   onRestoreCueCorrection,
 }) {
   const review = normalizeSubtitleReview(segment.subtitleReview, segment.text);
@@ -206,6 +241,7 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
   const localExclusion = exclusionEnabled ? review?.localExclusion : undefined;
   const boundExclusion = exclusionEnabled ? getBoundLocalExclusion(segment) : undefined;
   const excluded = exclusionEnabled && isLocallyExcluded(segment);
+  const localStart = timingEnabled ? getBoundLocalStartEvidence(segment) : undefined;
   return (
     <article className={`result-segment-row${excluded ? ' result-segment-row--excluded' : ''}`} id={`subtitle-segment-${index}`}>
       <div className="result-segment-meta">
@@ -234,7 +270,7 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
         rows={2}
         value={segment.text}
       />
-      <details className="subtitle-review">
+      <details className="subtitle-review" id={`review-details-${index}`}>
         <summary>문구·시간 검토{issues.length > 0 ? ` · ${issues.length}개 표시` : ''}</summary>
         <div className="subtitle-review__body">
           <p className="subtitle-review__status">{review?.textStatus === 'confirmed' ? '문구 확인됨 · 발화 싱크 미확인' : '문구·발화 싱크 미확인'}</p>
@@ -261,9 +297,8 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
               : localExclusion && !boundExclusion ? '문구·시간 변경으로 이전 제외는 적용하지 않음 · 현재 자막 포함'
                 : boundExclusion?.status === 'restored' ? '복원됨 · 현재 자막 포함' : '현재 자막 포함'}</p>
             {boundExclusion?.groupId && <p>같은 문구의 반복 검토 묶음 · 처리 당시 {boundExclusion.occurrences || 1}곳. 실제로 반복한 대사인지 원음을 확인해 주세요.</p>}
-            {boundExclusion?.status === 'review' && <p className="subtitle-review__hint">{boundExclusion.audioStatus === 'signal_present'
-              ? '음향 신호가 있어 무음으로 제외하지 않았습니다. 반복만으로 잘못된 자막이라고 판단하지 않습니다.'
-              : '무음 여부가 확인되지 않아 대사를 유지했습니다. 원음을 듣고 확인해 주세요.'}</p>}
+            {boundExclusion && <p className="subtitle-review__hint">{localExclusionAudioLabel(boundExclusion)}</p>}
+            {boundExclusion?.status === 'review' && <p className="subtitle-review__hint">자동 제외 조건을 충족하지 않아 대사를 유지했습니다. 신호나 반복만으로 실제 발화와 문구의 정답을 판단하지 않습니다.</p>}
             {localExclusion && <p className="subtitle-review__hint">판단 당시 문구: {localExclusion.binding.text}<br />판단 당시 범위: {formatSegmentTime(localExclusion.binding.start)} - {formatSegmentTime(localExclusion.binding.end)}</p>}
             <p className="subtitle-review__hint">원음을 확인한 뒤 잘못된 자막만 제외하세요. 문구와 시간은 보존하며 SRT·ASS·TXT에서만 빠집니다. 문구나 시간을 바꾸면 이전 제외는 해제됩니다.</p>
             <button id={`review-exclusion-action-${index}`} type="button" className="button button--secondary" disabled={reviewApplyDisabled}
@@ -276,6 +311,19 @@ const SegmentEditorRow = memo(function SegmentEditorRow({
               {review?.originalTiming && <div><dt>보존 발화 범위</dt><dd>{formatSegmentTime(review.originalTiming.start)} - {formatSegmentTime(review.originalTiming.end)}</dd></div>}
               <div><dt>현재 발화 범위</dt><dd>{formatSegmentTime(segment.start)} - {formatSegmentTime(segment.end)}</dd></div>
             </dl>
+            {localStart && <div className="subtitle-review__timing-candidate" id={`review-local-start-${index}`}>
+              <p className="subtitle-review__status" role="status">{localStartStatusLabel(localStart)}</p>
+              {localStart.status === 'unavailable' ? <p className="subtitle-review__hint">{localStartUnavailableLabel(localStart.reason)}</p> : <>
+                <ul>{localStart.cues.map(([start, end, text, minimumStart], cueIndex) => <li key={`${start}-${end}-${cueIndex}`}>
+                  <p>{text}</p>
+                  <p className="subtitle-review__hint">보정 전 시작 {formatSegmentTime(start)} → 최종 큐 일치 시 시작 {formatSegmentTime(localStart.status === 'automatic' ? minimumStart : start)} · 끝 {formatSegmentTime(end)}</p>
+                  <p className="subtitle-review__hint">확인된 시작 하한 {formatSegmentTime(minimumStart)}</p>
+                </li>)}</ul>
+                <p className="subtitle-review__hint">모든 원채널의 연속된 디지털 0 구간으로 확인한 하한입니다. 첫 비영 샘플은 음소 시작 정답이 아니며, 수동 시간 확인을 뜻하지 않습니다. 내보내기에서 문구·범위가 일치하는 최종 큐에만 적용합니다. 이웃 자막 편집으로 최종 큐가 달라지면 적용하지 않으며 원문·원시간은 보존합니다.</p>
+                <button id={`review-local-start-action-${index}`} type="button" className="button button--secondary" disabled={reviewApplyDisabled}
+                  onClick={() => onSetLocalStartStatus(index, segment, localStart.status === 'automatic' ? 'restored' : 'automatic', reviewSession)}>{localStart.status === 'automatic' ? '원래 시작 사용' : '검증 시작 다시 사용'}</button>
+              </>}
+            </div>}
             {displayHoldEnabled && <p className="subtitle-review__hint">발화 끝과 표시 끝은 다를 수 있습니다. 일반 단일 SRT·ASS는 발화 뒤 간격이 1초 이내면 다음 자막까지 표시합니다. 마지막 자막과 1초 초과 간격은 늘리지 않습니다.</p>}
             {timingCandidate && <div className="subtitle-review__timing-candidate">
               <p className="subtitle-review__status">오디오 재측정 시간 후보 · {timingCandidate.status === 'consistent_estimate' ? '반복 측정 추정' : '미확인'}</p>
@@ -524,19 +572,28 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
   const timingEnabled = !diarize && segments.every((segment) => segment.speaker === undefined || segment.speaker === null || segment.speaker === '');
   const exclusionEnabled = timingEnabled;
   const localExclusionSummary = useMemo(() => {
-    const summary = { automatic: 0, user: 0, restored: 0, review: 0, groups: [] };
+    const summary = { automatic: 0, user: 0, restored: 0, review: 0, groups: [], rows: [], startAutomatic: 0, startRestored: 0, startUnavailable: 0, unavailableReasons: [] };
     if (!exclusionEnabled) return summary;
     const groups = new Map();
+    const unavailableReasons = new Map();
     editedSegments.forEach((segment, index) => {
       const value = getBoundLocalExclusion(segment);
-      if (!value) return;
-      summary[value.status] += 1;
-      if (value.groupId) {
-        if (!groups.has(value.groupId)) groups.set(value.groupId, { id: value.groupId, text: segment.text, members: [] });
-        groups.get(value.groupId).members.push({ index, start: segment.start, end: segment.end });
+      const localStart = getBoundLocalStartEvidence(segment);
+      if (!value && !localStart) return;
+      if (value) summary[value.status] += 1;
+      if (localStart) summary[localStart.status === 'automatic' ? 'startAutomatic' : localStart.status === 'restored' ? 'startRestored' : 'startUnavailable'] += 1;
+      if (localStart?.status === 'unavailable') {
+        const label = localStartUnavailableLabel(localStart.reason);
+        unavailableReasons.set(label, (unavailableReasons.get(label) || 0) + 1);
       }
+      const member = { index, start: segment.start, end: segment.end, text: segment.text, exclusion: value, localStart };
+      if (value?.groupId) {
+        if (!groups.has(value.groupId)) groups.set(value.groupId, { id: value.groupId, text: segment.text, members: [] });
+        groups.get(value.groupId).members.push(member);
+      } else if (value || localStart?.status !== 'unavailable') summary.rows.push(member);
     });
     summary.groups = [...groups.values()];
+    summary.unavailableReasons = [...unavailableReasons].map(([label, count]) => ({ label, count }));
     return summary;
   }, [editedSegments, exclusionEnabled]);
   const hasIncludedSubtitles = hasIncludedDialogue(editedSegments, exclusionEnabled);
@@ -717,6 +774,30 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
     setEditedSegments(next);
     setFullTextDraft(joinSegmentLines(next));
   }, [exclusionEnabled]);
+
+  const changeLocalStartStatus = useCallback((index, base, status, session) => {
+    if (!timingEnabled || !reviewMountedRef.current || reviewSessionRef.current !== session
+      || editedSegmentsRef.current[index] !== base || lineCountMismatchRef.current) return;
+    const changed = setLocalStartEvidenceStatus(base, status);
+    if (changed === base) return;
+    const next = editedSegmentsRef.current.map((segment, position) => position === index ? changed : segment);
+    editedSegmentsRef.current = next;
+    setEditedSegments(next);
+    setFullTextDraft(joinSegmentLines(next));
+  }, [timingEnabled]);
+
+  const openSegmentReview = useCallback((index, base, session) => {
+    if (!reviewMountedRef.current || reviewSessionRef.current !== session || editedSegmentsRef.current[index] !== base) return;
+    selectEditorMode('segments');
+    window.requestAnimationFrame(() => {
+      if (!reviewMountedRef.current || reviewSessionRef.current !== session || editedSegmentsRef.current[index] !== base) return;
+      const row = document.getElementById(`subtitle-segment-${index}`);
+      const details = document.getElementById(`review-details-${index}`);
+      if (details) details.open = true;
+      row?.scrollIntoView({ block: 'center' });
+      details?.querySelector('summary')?.focus();
+    });
+  }, [selectEditorMode]);
 
   const restoreCueCorrection = useCallback((index, base, session) => {
     if (!timingEnabled || !reviewMountedRef.current || reviewSessionRef.current !== session
@@ -991,6 +1072,10 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
         if (segment.grammarPolish.originalTimingSource === undefined) delete restored.timingSource;
         else restored.timingSource = segment.grammarPolish.originalTimingSource;
       }
+      if (restored.text !== segment.text && restored.subtitleReview?.localStart !== undefined) {
+        restored.subtitleReview = { ...restored.subtitleReview };
+        delete restored.subtitleReview.localStart;
+      }
       delete restored.grammarPolish;
       return restored;
     });
@@ -1254,12 +1339,23 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
           </details>
           {saveState === 'failed' && saveError && <p className="subtitle-review__error" role="alert">{saveError}</p>}
           <p className="subtitle-review-guidance">구간별 편집에서 문구·시간 검토와 원본 듣기를 사용할 수 있습니다. {exclusionEnabled ? '무음 근거로 자동 제외되거나 직접 제외한 구간 외에는 미검토 대사도 다운로드에 포함합니다.' : '검토가 끝나지 않은 대사도 다운로드에 포함합니다.'}</p>
-          {exclusionEnabled && (localExclusionSummary.groups.length > 0 || localExclusionSummary.automatic + localExclusionSummary.user + localExclusionSummary.restored + localExclusionSummary.review > 0) && <details className="subtitle-review subtitle-review-groups">
-            <summary>반복·제외 검토 · {localExclusionSummary.groups.length}개 묶음 · 제외 {localExclusionSummary.automatic + localExclusionSummary.user}개</summary>
+          {exclusionEnabled && (localExclusionSummary.groups.length > 0 || localExclusionSummary.rows.length > 0 || localExclusionSummary.startUnavailable > 0) && <details className="subtitle-review subtitle-review-groups">
+            <summary>반복·제외 검토 · {localExclusionSummary.groups.length}개 묶음 · 제외 {localExclusionSummary.automatic + localExclusionSummary.user}개{localExclusionSummary.rows.length > 0 ? ` · 개별 구간 ${localExclusionSummary.rows.length}개` : ''}</summary>
             <p role="status">무음 근거 자동 제외 {localExclusionSummary.automatic}개 · 사용자 제외 {localExclusionSummary.user}개 · 복원 {localExclusionSummary.restored}개 · 미확정 검토 {localExclusionSummary.review}개</p>
+            {localExclusionSummary.startAutomatic + localExclusionSummary.startRestored + localExclusionSummary.startUnavailable > 0 && <p className="subtitle-review__hint" role="status">시작 하한 사용 선택 {localExclusionSummary.startAutomatic}개 행 · 원래 시작 사용 {localExclusionSummary.startRestored}개 행 · 시작 하한 미검증 {localExclusionSummary.startUnavailable}개 행</p>}
+            {localExclusionSummary.unavailableReasons.map(({ label, count }) => <p key={label} className="subtitle-review__hint">{count}개 행 · {label}</p>)}
+            {localExclusionSummary.startUnavailable > 0 && <p className="subtitle-review__hint">미검증 사유는 각 행의 ‘발화 시간 검토’에서도 확인할 수 있습니다. 분석한 오디오 창 수가 아닌 자막 행 수를 표시합니다.</p>}
             <p className="subtitle-review__hint">반복 묶음은 정답이나 오류 판정이 아닙니다. 일괄 제외하지 않으며 각 구간의 원음을 확인한 뒤 제외·복원할 수 있습니다.</p>
             {localExclusionSummary.groups.length > 0 && <ul className="subtitle-review-groups__list">{localExclusionSummary.groups.map((group) => <li key={group.id}>
-              <p>{group.text}</p><p className="subtitle-review__hint">{group.members.map((member) => `#${member.index + 1} ${formatSegmentTime(member.start)} - ${formatSegmentTime(member.end)}`).join(' · ')}</p>
+              <p>{group.text}</p>{group.members.map((member) => <div key={member.index}>
+                <p className="subtitle-review__hint">#{member.index + 1} {formatSegmentTime(member.start)} - {formatSegmentTime(member.end)} · {localExclusionAudioLabel(member.exclusion)}{member.localStart ? ` · ${localStartStatusLabel(member.localStart)}` : ''}</p>
+                <button id={`review-row-link-${member.index}`} type="button" className="result-editor-tip__link" onClick={() => openSegmentReview(member.index, editedSegments[member.index], reviewSession)}>#{member.index + 1} 검토</button>
+              </div>)}
+            </li>)}</ul>}
+            {localExclusionSummary.rows.length > 0 && <ul className="subtitle-review-groups__list">{localExclusionSummary.rows.map((member) => <li key={member.index}>
+              <p>{member.text}</p>
+              <p className="subtitle-review__hint">#{member.index + 1} {formatSegmentTime(member.start)} - {formatSegmentTime(member.end)}{member.exclusion ? ` · ${localExclusionAudioLabel(member.exclusion)}` : ''}{member.localStart ? ` · ${localStartStatusLabel(member.localStart)}` : ''}</p>
+              <button id={`review-row-link-${member.index}`} type="button" className="result-editor-tip__link" onClick={() => openSegmentReview(member.index, editedSegments[member.index], reviewSession)}>#{member.index + 1} 검토</button>
             </li>)}</ul>}
             <button type="button" className="result-editor-tip__link" onClick={() => selectEditorMode('segments')}>구간별에서 검토</button>
           </details>}
@@ -1364,6 +1460,7 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
                     onUseTimingCandidate={useTimingCandidate}
                     onConfirmTiming={confirmTiming}
                     exclusionEnabled={exclusionEnabled}
+                    onSetLocalStartStatus={changeLocalStartStatus}
                     onSetExclusion={changeExclusion}
                     onRestoreCueCorrection={restoreCueCorrection}
                   />
@@ -1401,7 +1498,9 @@ export function ResultEditor({ resultOverride = null, resultState = null, server
               ))}
             </div>
 
-            <p className="result-tool-note">SRT에는 인식된 대사만 포함되며 첫 대사의 타임코드와 원문을 유지합니다. 글자 크기는 편집 프로그램에 따라 달라질 수 있습니다.</p>
+            <p className="result-tool-note">{localExclusionSummary.startAutomatic > 0
+              ? 'SRT에는 인식된 대사만 포함되며, 현재 큐와 일치하는 검증된 시작 하한을 반영합니다.'
+              : 'SRT에는 인식된 대사만 포함되며 첫 대사의 타임코드와 원문을 유지합니다.'} 글자 크기는 편집 프로그램에 따라 달라질 수 있습니다.</p>
             {!hasIncludedSubtitles && <p className="result-tool-note" role="status">남은 자막 없음 · 내보낼 대사가 없어 SRT·ASS·TXT를 만들 수 없습니다. 구간별 검토에서 제외한 자막을 복원할 수 있습니다.</p>}
             <p className="result-tool-note">SRT는 밀리초 타임코드로 저장됩니다. 프리미어 시퀀스의 프레임레이트를 원본 영상과 맞춰 주세요.</p>
             {hasSpeakers && (

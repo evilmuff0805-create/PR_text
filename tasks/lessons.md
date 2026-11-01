@@ -43,3 +43,4 @@
 - A zero gap and valid word times do not prove the same speaker. Preserve uncertainty at source boundaries; dependent-predicate joins must distinguish dialogue-opening discourse markers from syntactic continuations and must not erase a known speaker boundary.
 - 교정 내용의 보존 검사와 단어 시간 대응 검사는 별개다. 원전사·현재 결과·유일한 큐 소유권이 검증된 경우에만 기존 큐 시간으로 문구를 확정하고, 복원 정보와 저장·내보내기 경계도 함께 보존한다.
 - 같은 글자 수나 긴 문장 전체의 낮은 편집 비율은 가까운 철자 교정의 근거가 아니다. 변경 부분의 한글 자모·부정 표현·말투·반복을 따로 검사하고, 동의어 치환과 숫자 변경 등의 정상적으로 보이는 위험 반례를 기존 전체 회귀에 포함한다.
+- 최종 큐의 시작만 바꾸는 보정도 동일 시작 경쟁 큐의 일부에 적용하면 순서와 겹침을 바꿀 수 있다. 원시각과 고정 교정 계획을 유지하는 별도 근거로 처리하고, 부분 성공·사용자 원복·분석 한도에 따른 비대칭 상태를 함께 검증한다. 큐 끝을 잘라 반례를 숨기지 않는다.

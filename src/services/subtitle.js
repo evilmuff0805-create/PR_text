@@ -2,6 +2,7 @@ import { isKoreanDependentPredicateTail, splitKoreanSubtitleText } from './korea
 import { alignKoreanSegmentWithWordTimings } from './korean-word-timing.js';
 import { annotateSubtitleReviews, mergeSubtitleReviews, overlapTrimReview, retainManualSubtitleRange, getBoundLocalExclusion, isLocallyExcluded } from './subtitle-review.js';
 import { getBoundFixedCuePlan } from './fixed-cue-plan.js';
+import { getBoundLocalStartEvidence } from './local-start-evidence.js';
 
 // Transient ownership survives splitting/merging, but is never serialized into
 // API captions. Local exclusion is applied only after the full timeline freezes.
@@ -114,7 +115,7 @@ function splitSegment(segment, maxLen = SUBTITLE_MAX_CHARS) {
   // Full-line candidates remain on editor source rows. Export diagnostics may
   // carry numeric issues, but never duplicate that candidate into split text.
   const review = mergeSubtitleReviews(segment.subtitleReview);
-  const cueReview = review ? {
+  const cueReview = review && (review.issues.length || review.timingStatus) ? {
     version: 1, issues: review.issues,
     ...(review.timingStatus ? { timingStatus: review.timingStatus } : {}),
   } : undefined;
@@ -277,6 +278,30 @@ export function buildSubtitleCues(segments, options = {}) {
     cues = normalizeCueTimeline(usable.flatMap((segment) => splitSegment(segment)));
   }
 
+  if (ordinary && options?.ignoreLocalStartEvidence !== true) {
+    // Moving only one simultaneous cue could reverse source order or create a
+    // new overlap. Preserve the whole equal-start group, including restorations.
+    const seenStarts = new Set(), competingStarts = new Set();
+    for (const cue of cues) {
+      if (seenStarts.has(cue.start)) competingStarts.add(cue.start);
+      seenStarts.add(cue.start);
+    }
+    const evidenceByOwner = new Map();
+    const cueKey = cue => JSON.stringify([cue.start, cue.end, cue.text]);
+    cues = cues.map(cue => {
+      const owners = cue[SUBTITLE_SOURCE_INDICES] ?? [];
+      if (owners.length !== 1 || competingStarts.has(cue.start)) return cue;
+      const owner = owners[0];
+      if (!evidenceByOwner.has(owner)) {
+        const evidence = getBoundLocalStartEvidence(segments[owner]);
+        evidenceByOwner.set(owner, new Map(evidence?.status === 'automatic'
+          ? evidence.cues.map(([start, end, text, minimum]) => [cueKey({ start, end, text }), minimum]) : []));
+      }
+      const minimum = evidenceByOwner.get(owner).get(cueKey(cue));
+      return Number.isFinite(minimum) && minimum > cue.start && minimum < cue.end
+        ? { ...cue, start: minimum } : cue;
+    });
+  }
   const exclusions = ordinary && segments.every(segment => segment.speaker === undefined || segment.speaker === null || segment.speaker === '')
     && options?.ignoreLocalExclusions !== true
     ? new Set(segments.flatMap((segment, index) => isLocallyExcluded(segment) ? [index] : [])) : new Set();
